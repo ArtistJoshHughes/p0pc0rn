@@ -44,7 +44,7 @@
   },
   "download_policy": {
     "terms_before_download": "Every pack's terms are shown and accepted on the phone before its first byte downloads.",
-    "pin": "revision is the upload commit SHA of each Hugging Face repository, except Klein 9B, which reads \"main\" and is pinned by its manifest_sha256 until its commit pin lands in the next update. The app reads every pack at resolve/<revision>/ and checks its manifest.json against manifest_sha256 (also in config.js) before it uses or keeps it; the manifest lists the sha256 of every chunk",
+    "pin": "revision is the upload commit SHA of each Hugging Face repository. The app reads every pack at resolve/<revision>/ and checks its manifest.json against manifest_sha256 (also in config.js) before it uses or keeps it; the manifest lists the sha256 of every chunk",
     "verify": "manifest_sha256 checks manifest.json; the manifest's per-shard and per-chunk sha256 check everything else",
     "modified_notice": "Modified by the p0pc0rn project: converted and quantized from the original weights."
   },
@@ -492,7 +492,7 @@
       "bytes": 9636509952,
       "hf_repo": "JoshHughes/p0pc0rn-klein-9b-q4",
       "repo_type": "model",
-      "revision": "main",
+      "revision": "c22668f0345d0087c9d7b0ac4b6817154bb257aa",
       "manifest": "manifest.json",
       "manifest_sha256": "c58df346c543692ebeda0c7ac2cbc34cf364cbf71c17ec4aea5bd79677a4025d",
       "licence_id": "LicenseRef-FLUX-Non-Commercial-License-2.1 AND Apache-2.0",

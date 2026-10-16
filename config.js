@@ -7,10 +7,10 @@
 // A classic script loaded BEFORE pocketflux.js: it defines one global, P0_CONFIG.
 (function () {
   var HF = 'https://huggingface.co/';
-  // each repository's upload commit (40 hex): the packs are read at exactly that revision. Klein 9B reads 'main' until its commit
-  // pin lands in the next update; its manifest sha256 below still pins every byte of it.
+  // each repository's upload commit (40 hex): the packs are read at exactly that revision, and each manifest sha256 below
+  // pins every byte of it.
   var REV = {
-    'flux2-klein-4b': '37790478492991e235008d292fa14d686b0625bb', 'flux2-klein-9b': 'main', 'sanavideo2-5b': '4415a9a340a3770ce3d779acd616c4269dfb5f6c', 'ltx23-still-enc': 'f6abf6baf632af19a6a2d5f9e05428207ca35fa3', 'gemma4-e2b': '141f0e8665691d74f824c4469725cf19a2ded9e8',
+    'flux2-klein-4b': '37790478492991e235008d292fa14d686b0625bb', 'flux2-klein-9b': 'c22668f0345d0087c9d7b0ac4b6817154bb257aa', 'sanavideo2-5b': '4415a9a340a3770ce3d779acd616c4269dfb5f6c', 'ltx23-still-enc': 'f6abf6baf632af19a6a2d5f9e05428207ca35fa3', 'gemma4-e2b': '141f0e8665691d74f824c4469725cf19a2ded9e8',
     'acestep15-turbo': 'd9cbd6ddb0bcd8ca2edc950d523e0c738136efe5', 'qwen3-tts-0.6b': '26a6f7acbd6f80f206756c2a72ab6f99c1df930f', 'musetalk-1.5': '526a7ece698aa7512fe285a252ff6137f22b8c04', 'starter-kb': '8c86bfa537ce8f96fabb849b276c968d00ca490c'
   };
   var hf = function (key, repo) { return HF + repo + '/resolve/' + REV[key] + '/'; };
