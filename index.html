@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- v027.3 (security review M2): what this page may load and talk to: its own files, the model packs on Hugging Face (and its CDN), and the lookups on Wikipedia, Wikimedia and Fandom; inline scripts by hash (csp_hashes.py). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-qqCPNeJmDeaW59jeNXVjC8rP+xmqGR62X5rLL9FTqn4='; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F6F6F8" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" id="sb-style">
+<!-- black-translucent draws WHITE status-bar text over the page: right for the dark theme, unreadable over the light one.
+     In light mode the Home Screen app asks for the opaque default bar (dark text) instead; iOS reads this when the app opens. -->
+<script>try { if (matchMedia('(prefers-color-scheme: light)').matches) document.getElementById('sb-style').content = 'default'; } catch (e) {}</script>
+<!-- v026.1: after a planned fresh page the FIRST frame is the cover, never the start screen or the Create tab; the app takes it down
+     once the same screen is back (20 s fallback). The marker is the app's own ('p0pc0rn:planned', read-only here); v026.7: only once the old page stamped it as it left. -->
+<style>html.pf-fresh body > * { visibility: hidden !important; }
+html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: #000; color: #f2f2f7; font: 17px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; z-index: 2147483647; visibility: visible; }
+@media (prefers-color-scheme: light) { html.pf-fresh body::after { background: #F6F6F8; color: #1c1c1e; } }</style>
+<script>try { var pfp = JSON.parse(localStorage.getItem('p0pc0rn:planned') || 'null'); if (pfp && pfp.left && Date.now() - pfp.t < 600000) { document.documentElement.classList.add('pf-fresh');
+  setTimeout(function () { document.documentElement.classList.remove('pf-fresh'); }, 20000); } } catch (e) {}</script>
+<meta name="apple-mobile-web-app-title" content="p0pc0rn">
+<link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<title>p0pc0rn</title>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="cast/cast.css">
+<!-- Engine bridge (classic script, exposes window.PF). Then the app (ES module, runs after parsing). -->
+<script src="gpuclamp.js"></script>
+<script src="config.js"></script>
+<script src="pocketflux.js"></script>
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<!-- Icon sprite: 24-unit grid, 1.5 stroke, round caps. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3.5c.6 4.3 2.2 5.9 6.5 6.5-4.3.6-5.9 2.2-6.5 6.5-.6-4.3-2.2-5.9-6.5-6.5 4.3-.6 5.9-2.2 6.5-6.5Z"/><path d="M18.5 15.5c.2 1.6.9 2.3 2.5 2.5-1.6.2-2.3.9-2.5 2.5-.2-1.6-.9-2.3-2.5-2.5 1.6-.2 2.3-.9 2.5-2.5Z"/></symbol>
+    <symbol id="i-photo-plus" viewBox="0 0 24 24"><path d="M20 12.5V17a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h5.5"/><path d="m4.5 16 4-4 3 3 2-2 5 5"/><path d="M18 3v6M15 6h6"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"/><circle cx="12" cy="12" r="6.6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5L8 5.5Z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 11.2A2 2 0 0 0 9.3 20h5.4a2 2 0 0 0 2-1.8L17.5 7"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3.5v11M8 7.5l4-4 4 4M8.5 11H7a2 2 0 0 0-2 2v5.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V13a2 2 0 0 0-2-2h-1.5"/></symbol>
+    <symbol id="i-dice" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r=".9" fill="currentColor"/><circle cx="15" cy="15" r=".9" fill="currentColor"/><circle cx="15" cy="9" r=".9" fill="currentColor"/><circle cx="9" cy="15" r=".9" fill="currentColor"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5.5M12 16.2v.3"/></symbol>
+    <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0Z"/><path d="M12 16v-5"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M14.5 5.5 18.5 9.5M4.5 19.5l1-4.5L16 4.5a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L9 18.5l-4.5 1Z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.5c0 4.3-2.9 7.6-7 9-4.1-1.4-7-4.7-7-9V6l7-2.5Z"/><path d="m9 12 2.2 2.2L15.5 10"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="18" cy="12" r="1.4" fill="currentColor"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 4.5v15M4.5 8 8 4.5 11.5 8M16 19.5v-15M12.5 16l3.5 3.5 3.5-3.5"/></symbol>
+    <symbol id="i-frames" viewBox="0 0 24 24"><rect x="3" y="6.5" width="8" height="11" rx="2"/><rect x="13" y="6.5" width="8" height="11" rx="2"/><path d="M11 12h2"/></symbol>
+    <symbol id="i-anim" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="M10 9.5v5l4.5-2.5L10 9.5Z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7.5L7 21v-3.5H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><path d="M8 10.5h8M8 13.5h5"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18.5V6l10-2v12.5"/><circle cx="6.5" cy="18.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19.5V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-queue" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14.5 6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="M7.5 5.5v13M16.5 5.5v13M3.5 12h4M16.5 12h4"/></symbol>
+  </defs>
+</svg>
+
+<!-- GATE: boot, unsupported, setup (no tabs until the engines have answered and one model is installed). One card at a time. -->
+<section id="gate" class="gate">
+  <div class="mark logo" aria-hidden="true"><img src="icon-180.png" alt="" width="64" height="64"></div>
+  <div id="g-boot" class="card-g"><p class="title">p0pc0rn</p><p class="callout dim">Checking this phone…</p></div>
+  <div id="g-stop" class="card-g" hidden>
+    <p class="title" id="g-stop-title">Can't run here</p><p class="body dim" id="g-stop-text"></p>
+    <button class="btn cta" id="g-retry" type="button">Try again</button>
+    <details class="details"><summary>Details</summary><p class="footnote mono" id="g-stop-detail"></p></details>
+  </div>
+  <div id="g-home" class="card-g" hidden>
+    <p class="title">Add to Home Screen first</p>
+    <p class="body dim">iPhone gives Home Screen apps their own storage, so a model downloaded in Safari isn't shared with the icon.</p>
+    <ol class="steps"><li>Tap <b>Share</b> <svg class="ic"><use href="#i-share"/></svg></li><li>Choose <b>Add to Home Screen</b></li><li>Open p0pc0rn from the new icon</li></ol>
+    <button class="btn ghost" id="g-in-safari" type="button">Download in Safari instead</button>
+    <p class="footnote dim">Already downloaded somewhere else? Open p0pc0rn from that place.</p>
+  </div>
+  <div id="g-dl" class="card-g" hidden>
+    <p class="title" id="dl-title">Get the picture model</p>
+    <div id="dl-intro">
+      <p class="body" id="dl-body">One-time download · 4.6 GB · works offline after.</p>
+      <p class="callout dim">Wi-Fi + charger recommended. Keep this screen open.</p>
+      <p class="footnote dim" id="dl-free"></p>
+      <p class="footnote dim" id="dl-sep" hidden>Already downloaded it in Safari? iPhone keeps Home Screen apps' storage separate, so this icon needs its own copy. You can also keep using p0pc0rn in Safari.</p>
+    </div>
+    <div id="dl-live" hidden>
+      <p class="big num" id="dl-pct">0%</p>
+      <div class="bar"><i id="dl-fill"></i></div>
+      <p class="footnote dim num" id="dl-line">&nbsp;</p>
+    </div>
+    <p class="note warn" id="dl-note" hidden></p>
+    <button class="btn cta" id="dl-go" type="button"><svg class="ic"><use href="#i-download"/></svg><span>Download 4.6 GB</span></button>
+    <button class="btn ghost" id="dl-other" type="button" hidden>Start with videos instead · 5.7 GB</button>
+  </div>
+  <div id="g-done" class="card-g" hidden>
+    <div class="done-check" aria-hidden="true"><svg><use href="#i-check"/></svg></div>
+    <p class="title">Ready</p><p class="body dim">Everything now runs on this phone.</p>
+    <button class="btn cta" id="g-start" type="button"><svg class="ic"><use href="#i-sparkle"/></svg><span>Start making</span></button>
+  </div>
+</section>
+
+<!-- APP SHELL: header / scrolling main / sticky Make / tab bar -->
+<div id="shell" class="shell" hidden>
+  <header class="hdr">
+    <div class="hdr-l"><img class="hdr-logo" src="icon-180.png" alt="p0pc0rn" width="30" height="30"><h1 id="title" class="large">Create</h1></div>
+    <button id="pill" class="pill" type="button" data-tone="ok"><i></i><span>Ready</span></button>
+  </header>
+  <main id="main">
+    <section id="v-create" class="view" aria-label="Create">
+      <div class="seg kind" id="kind" role="radiogroup" aria-label="What to make"><i class="ind"></i>
+        <button type="button" role="radio" data-v="image"><b>Picture</b></button>
+        <button type="button" role="radio" data-v="video"><b>Video</b></button></div>
+      <div class="seg three src" id="vsrc" role="radiogroup" aria-label="Start the clip from" hidden><i class="ind"></i>
+        <button type="button" role="radio" data-v="words"><b>From words</b></button>
+        <button type="button" role="radio" data-v="pic"><b>From a picture</b></button>
+        <button type="button" role="radio" data-v="two"><b>Between two pictures</b></button></div>
+      <div id="b-killed" class="banner warn" hidden>
+        <svg class="ic"><use href="#i-alert"/></svg>
+        <div><p class="callout" id="b-killed-text"></p>
+          <div class="row-btns"><button class="btn sm" id="k-retry" type="button">Try again</button><button class="btn sm ghost" id="k-small" type="button">Smaller size</button></div></div>
+        <button class="icon-btn b-x" id="k-dismiss" type="button" aria-label="Dismiss"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div id="b-clip" class="banner" hidden>
+        <svg class="ic"><use href="#i-film"/></svg>
+        <div><p class="headline">Unfinished clip</p><p class="footnote dim" id="b-clip-text"></p>
+          <div class="row-btns"><button class="btn sm" id="c-go" type="button">Decode the last clip</button></div></div>
+        <button class="icon-btn b-x" id="c-x" type="button" aria-label="Hide for now"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+      <div id="agree-card" class="need" hidden>
+        <p class="headline">Before you make anything</p>
+        <p class="footnote dim">A short lesson about copyright, trademarks and people's likeness, then one agreement. About two minutes. You can't make pictures or clips until you agree.</p>
+        <button class="btn sm" id="agree-go" type="button"><svg class="ic"><use href="#i-shield"/></svg><span>Start the lesson</span></button>
+      </div>
+      <div id="need" class="need" hidden>
+        <p class="headline" id="need-title">Get the video model</p>
+        <p class="footnote dim" id="need-text"></p>
+        <div class="bar" id="need-bar"><i id="need-fill"></i></div>
+        <p class="footnote dim num" id="need-line"></p>
+        <button class="btn sm" id="need-go" type="button"><svg class="ic"><use href="#i-download"/></svg><span>Download</span></button>
+      </div>
+      <div id="stage" class="stage" data-mode="empty">
+        <img id="st-photo" class="fill contain" alt="Your photo">
+        <div id="st-crop" class="crop" aria-hidden="true"></div>
+        <canvas id="st-pop" class="fill pop" aria-hidden="true"></canvas>
+        <button id="st-result" class="fill result-btn" type="button" aria-label="Open it full screen"><img id="st-img" alt=""><video id="st-vid" muted loop playsinline preload="auto" hidden></video></button>
+        <span id="st-dim" class="dim-label mono"></span>
+        <span class="st-play" aria-hidden="true"><svg><use href="#i-play"/></svg></span>
+        <div class="hair" aria-hidden="true"><i id="st-fill"></i><span class="lead" id="st-lead"><b class="progress-pulse"></b></span></div>
+      </div>
+      <div id="work" class="work" hidden aria-live="polite">
+        <p class="headline" id="w-phase">Getting ready</p>
+        <p class="footnote dim num" id="w-time">&nbsp;</p>
+        <p class="note warn" id="w-hot" hidden><svg class="ic"><use href="#i-thermo"/></svg><span>Your phone is warm, so it's slowing down to stay cool. This one will take a little longer.</span></p>
+        <p class="footnote dim" id="w-keep">Keep p0pc0rn open — the screen stays on.</p>
+      </div>
+      <button class="qlink" id="c-queue" type="button" hidden><svg class="ic"><use href="#i-queue"/></svg><span>Queue</span><svg class="ic chev"><use href="#i-chevron"/></svg></button>
+      <div id="err" class="err" hidden role="alert">
+        <svg class="ic"><use href="#i-alert"/></svg>
+        <div><p class="headline" id="err-title"></p><p class="footnote dim" id="err-note"></p>
+          <div class="row-btns" id="err-actions"></div>
+          <details class="details" id="err-more"><summary>Details</summary><p class="footnote mono" id="err-detail"></p></details></div>
+      </div>
+      <div id="res" class="res" hidden>
+        <div class="hq-review" id="hq-review" hidden>
+          <p class="headline" id="hq-title">Check the frames</p>
+          <div class="hq-frames"><figure><img id="hq-first" alt="The first frame"><figcaption class="footnote dim">First frame · Klein 9B</figcaption></figure>
+            <figure><img id="hq-last" alt="The last frame"><figcaption class="footnote dim">Last frame · a 9B edit of the first</figcaption></figure></div>
+          <div class="row-btns"><button class="btn sm" id="hq-re1" type="button">Reroll first frame</button><button class="btn sm" id="hq-re2" type="button">Reroll last frame</button></div>
+          <button class="btn cta" id="hq-go" type="button">Animate</button>
+          <button class="btn ghost" id="hq-x" type="button">Start over</button>
+          <p class="footnote dim" id="hq-est"></p>
+        </div>
+        <div class="res-top"><p class="footnote dim num" id="res-meta"></p><button class="mini" id="r-seed" type="button">Use this seed</button></div>
+        <div class="actions" id="r-actions">
+          <button class="act" id="r-save" type="button"><svg><use href="#i-share"/></svg><span>Save</span></button>
+          <button class="act" id="r-again" type="button"><svg><use href="#i-dice"/></svg><span>Again</span></button>
+          <button class="act" id="r-change" type="button"><svg><use href="#i-pencil"/></svg><span>Change prompt</span></button>
+          <button class="act" id="r-edit" type="button"><svg><use href="#i-photo-plus"/></svg><span>Edit this</span></button>
+        </div>
+      </div>
+      <div id="compose" class="compose">
+        <div class="vpics" id="vpics" hidden>
+          <div class="vslot" data-i="0"></div>
+          <button class="mini vs-swap" id="vs-swap" type="button"><svg class="ic"><use href="#i-swap"/></svg><span>Swap first and last</span></button>
+          <div class="vslot" data-i="1"></div>
+          <div class="v-reader" id="v-reader" hidden>
+            <p class="footnote dim" id="v-reader-text"></p>
+            <div class="bar" id="v-reader-bar" hidden><i id="v-reader-fill"></i></div>
+            <button class="mini" id="v-reader-go" type="button" hidden>Pause</button>
+          </div>
+        </div>
+        <div class="vattests" id="vattests" hidden></div>
+        <div class="prompt-box">
+          <label class="vh" for="prompt">Prompt</label>
+          <textarea id="prompt" rows="3" placeholder="Describe a picture…" enterkeyhint="done" autocapitalize="sentences"></textarea>
+          <div class="prompt-row" id="prompt-row">
+            <label for="file" class="chip" id="add-photo"><svg class="ic"><use href="#i-photo-plus"/></svg><span>Add photo</span></label>
+            <span id="photo-chip" class="chip on" hidden><img id="photo-thumb" alt=""><span>Photo</span>
+              <button id="photo-x" class="x" type="button" aria-label="Remove photo"><svg><use href="#i-x"/></svg></button></span>
+          </div>
+        </div>
+        <p class="footnote dim v-phint" id="v-phint" hidden></p>
+        <div class="attest" id="attest-box" hidden>
+          <label class="attest-row" for="attest"><input type="checkbox" id="attest"><span id="attest-text"></span></label>
+          <details class="attest-more" id="attest-more"><summary><span>What this means</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary>
+            <ul class="means" id="attest-means"></ul><p class="footnote dim asof"></p></details>
+        </div>
+        <div class="group" id="g-shape"><p class="label" id="l-shape">Shape</p><div class="sizes" id="sizes" role="radiogroup" aria-labelledby="l-shape"><i class="ind"></i></div></div>
+        <div class="group" id="g-q"><p class="label" id="l-q">Quality</p>
+          <div class="seg" id="steps" role="radiogroup" aria-labelledby="l-q"><i class="ind"></i>
+            <button type="button" role="radio" data-v="4"><b>Best</b><span id="t-best">4 steps</span></button>
+            <button type="button" role="radio" data-v="3"><b>Fast</b><span id="t-fast">3 steps</span></button></div></div>
+        <div class="group" id="g-pmodel" hidden><p class="label" id="l-pm">Model</p>
+          <div class="seg" id="pmodel" role="radiogroup" aria-labelledby="l-pm"><i class="ind"></i>
+            <button type="button" role="radio" data-v="4b"><b>Fast (4B)</b><span id="t-4b"></span></button>
+            <button type="button" role="radio" data-v="9b"><b>Better (9B, slower)</b><span id="t-9b"></span></button></div></div>
+        <div class="group" id="g-detail" hidden><p class="label" id="l-d">Photo detail</p>
+          <div class="seg" id="detail" role="radiogroup" aria-labelledby="l-d"><i class="ind"></i>
+            <button type="button" role="radio" data-v="half"><b>Fast</b><span>follows your words</span></button>
+            <button type="button" role="radio" data-v="full"><b>Sharp</b><span>closer to your photo, slower</span></button></div></div>
+        <div class="group" id="g-vshape" hidden><p class="label" id="l-vshape">Size</p><div class="sizes" id="vsizes" role="radiogroup" aria-labelledby="l-vshape"><i class="ind"></i></div>
+          <p class="note warn v-slow" id="v-slow" hidden><svg class="ic"><use href="#i-alert"/></svg><span>Slow, may run out of memory. About 15 minutes on an iPhone; 832×480 is the safe choice.</span></p></div>
+        <div class="group" id="g-vmode" hidden><p class="label" id="l-vm">Quality</p>
+          <div class="seg three" id="vmode" role="radiogroup" aria-labelledby="l-vm"><i class="ind"></i>
+            <button type="button" role="radio" data-v="standard"><b>Standard</b><span id="t-std"></span></button>
+            <button type="button" role="radio" data-v="high"><b>High</b><span id="t-high"></span></button>
+            <button type="button" role="radio" data-v="highest"><b>Highest</b><span id="t-highest"></span></button></div>
+          <p class="footnote dim" id="v-tip">For high quality renderings use 9B with first frame or first frame last frame.</p>
+          <div id="v-end-row" hidden><label class="label" for="v-end">How it ends</label>
+            <textarea id="v-end" class="input" rows="2" maxlength="300" placeholder="e.g. she has turned to the window, smiling"></textarea></div></div>
+        <div class="group" id="g-vlen" hidden><p class="label" id="l-vlen">Length</p>
+          <div class="seg five" id="vlen" role="radiogroup" aria-labelledby="l-vlen"><i class="ind"></i>
+            <button type="button" role="radio" data-v="1"><b>1 s</b></button><button type="button" role="radio" data-v="2"><b>2 s</b></button>
+            <button type="button" role="radio" data-v="3"><b>3 s</b></button><button type="button" role="radio" data-v="4"><b>4 s</b></button>
+            <button type="button" role="radio" data-v="5"><b>5 s</b></button></div>
+          <p class="footnote dim v-est num" id="v-est"></p></div>
+        <details class="more" id="more"><summary><span>More</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary>
+          <div class="seed-row"><p class="label">Seed</p>
+            <div class="seg small" id="seedmode" role="radiogroup" aria-label="Seed"><i class="ind"></i>
+              <button type="button" role="radio" data-v="random"><b>Random</b></button><button type="button" role="radio" data-v="fixed"><b>Number</b></button></div>
+            <input id="seed" class="input num" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" placeholder="e.g. 48213" aria-label="Seed number" hidden></div>
+        </details>
+        <p class="tip footnote dim" id="tip" hidden>Each picture takes 2–3 minutes. Plug in, and keep p0pc0rn open until it's done.</p>
+      </div>
+    </section>
+
+    <section id="v-assistant" class="view chat-view" aria-label="Assistant" hidden>
+      <div id="as-need" class="need" hidden>
+        <p class="headline" id="as-need-title">Get the assistant</p>
+        <p class="footnote dim" id="as-need-text"></p>
+        <div class="bar" id="as-need-bar"><i id="as-need-fill"></i></div>
+        <p class="footnote dim num" id="as-need-line"></p>
+        <button class="btn sm" id="as-need-go" type="button"><svg class="ic"><use href="#i-download"/></svg><span>Download</span></button>
+      </div>
+      <div id="as-agree" class="need" hidden>
+        <p class="headline">Before the assistant makes anything</p>
+        <p class="footnote dim">A short lesson about copyright, trademarks and people's likeness, then one agreement. About two minutes.</p>
+        <button class="btn sm" id="as-agree-go" type="button"><svg class="ic"><use href="#i-shield"/></svg><span>Start the lesson</span></button>
+      </div>
+      <p class="note warn" id="as-note" hidden><svg class="ic"><use href="#i-alert"/></svg><span id="as-note-text"></span></p>
+      <div id="as-hello" class="as-hello" hidden>
+        <p class="title">Ask for a song, a picture or a clip</p>
+        <p class="footnote dim">The assistant writes the prompt, the song's style and its lyrics for you, then the job waits its turn in the queue. Everything runs on this phone.</p>
+        <div class="as-try" id="as-try"></div>
+      </div>
+      <div class="as-top" id="as-top"><button class="qlink" id="as-queue" type="button" hidden><svg class="ic"><use href="#i-queue"/></svg><span>Queue</span><svg class="ic chev"><use href="#i-chevron"/></svg></button><button class="mini" id="as-new" type="button" hidden>New chat</button></div>
+      <div id="as-log" class="as-log" role="log" aria-live="polite" aria-label="Conversation"></div>
+    </section>
+
+    <section id="v-library" class="view" aria-label="Library" hidden>
+      <div class="lib-top" id="lib-top" hidden>
+        <p class="footnote dim" id="lib-sel-text">Two pictures make a clip between them.</p>
+        <span class="li-end"><button class="btn sm" id="lib-clip" type="button" hidden><svg class="ic"><use href="#i-frames"/></svg><span>Make a clip</span></button>
+          <button class="mini" id="lib-select" type="button">Select</button></span>
+      </div>
+      <p class="note" id="lib-mem" hidden>This browser can't keep pictures between visits. Save the ones you like to Photos.</p>
+      <div class="empty" id="lib-empty"><svg><use href="#i-grid"/></svg><p class="body dim">Pictures, clips and songs you make stay on this phone.</p></div>
+      <div class="masonry" id="grid"><div class="col"></div><div class="col"></div></div>
+    </section>
+
+    <section id="v-settings" class="view" aria-label="Settings" hidden>
+      <p class="label">Models</p>
+      <p class="footnote pad warn-note" id="s-android" hidden>Android (Chrome): experimental. Prepared on a desktop with Android-like limits; not yet tested on a phone. Run <b>Settings › About › Device check</b> first and send Josh the report.</p>
+      <div class="list" id="models"></div>
+      <p class="footnote dim pad" id="s-models-why">Deleting is not available while something is being made.</p>
+      <p class="label" id="l-cast">Cast</p>
+      <div id="cast-root">
+        <div class="list cast-list" id="cast-list" hidden></div>
+        <p class="footnote dim pad" id="cast-none">People you can name in a request: “make Sam say …” speaks in their own recorded voice, and their photos put them in a picture, a clip or a music video. Each one is added with their permission and stays on this phone.</p>
+        <p class="footnote dim pad" id="cast-voice-note" hidden>Download Voice in Models above to make anyone here speak.</p>
+        <button class="btn" id="cast-add" type="button"><svg class="ic"><use href="#i-photo-plus"/></svg><span>Add a person</span></button>
+      </div>
+      <p class="label" id="l-budget">Video decode memory</p>
+      <div class="seg three" id="budget" role="radiogroup" aria-labelledby="l-budget"><i class="ind"></i>
+        <button type="button" role="radio" data-v="450"><b>450 MB</b><span>safest</span></button>
+        <button type="button" role="radio" data-v="560"><b>560 MB</b><span>faster</span></button>
+        <button type="button" role="radio" data-v="700"><b>700 MB</b><span>fastest</span></button></div>
+      <p class="footnote dim pad">How much graphics memory a clip may use while it develops. 560 MB is faster on a cool phone; 700 MB may stop the clip. If a clip stops while developing, go back to 450 MB.</p>
+      <p class="label" id="l-assistant">Assistant</p>
+      <div class="list" id="s-assistant">
+        <label class="li sw-row" for="s-research"><span><span class="sw-name">Look things up on Wikipedia &amp; Fandom</span><span class="footnote dim">Answers and songs about real things, characters and franchises are written from what the assistant looks up, with the sources shown. The words of a lookup are sent to Wikipedia or Fandom. Nothing else leaves the phone.</span></span><input type="checkbox" class="sw" id="s-research"></label>
+        <label class="li sw-row" for="s-review"><span><span class="sw-name">Look at results and retry</span><span class="footnote dim">The assistant checks each picture or clip and makes it again if something is clearly wrong (at most twice).</span></span><input type="checkbox" class="sw" id="s-review"></label>
+        <button class="li link" id="s-queue" type="button"><span>Queue</span><span class="li-end"><span class="dim" id="s-qstate">–</span><svg class="ic"><use href="#i-chevron"/></svg></span></button>
+        <div class="li kb-row" id="s-kb"><span><span class="sw-name">Things the assistant has looked up · <span id="s-kbn">0</span></span><span class="footnote dim">Kept on this phone for good, so asking again is instant, even offline. Private: never uploaded.</span></span><span class="li-end"><button class="btn sm" id="s-kbclear" type="button">Clear</button></span></div>
+      </div>
+      <p class="label" id="l-brainmode">Assistant memory</p>
+      <div class="seg" id="brainmode" role="radiogroup" aria-labelledby="l-brainmode"><i class="ind"></i>
+        <button type="button" role="radio" data-v="resident"><b>Full</b><span>fastest, about 1.4 GB</span></button>
+        <button type="button" role="radio" data-v="lean"><b>Lighter</b><span>about 1.2 GB, slower</span></button></div>
+      <p class="footnote dim pad" id="s-brain-info"></p>
+      <button class="btn" id="s-qclear" type="button"><svg class="ic"><use href="#i-trash"/></svg><span>Clear finished jobs</span></button>
+      <p class="footnote dim pad" id="s-qclear-why"></p>
+      <p class="label">Storage</p>
+      <div class="list">
+        <div class="li"><span id="s-persist-label">Protected from iOS cleanup</span><span class="li-end"><span class="dim" id="s-persist">–</span><button class="btn sm" id="s-allow" type="button" hidden>Allow</button></span></div>
+        <div class="li"><span>Used by p0pc0rn</span><span class="dim num" id="s-used">–</span></div>
+        <div class="li"><span>Free for this app</span><span class="dim num" id="s-free">–</span></div>
+        <div class="li"><span>This copy lives</span><span class="dim" id="s-where">–</span></div>
+      </div>
+      <p class="label">On this phone</p>
+      <div class="list" id="files"><p class="li footnote dim">Checking…</p></div>
+      <button class="btn" id="s-clean" type="button"><svg class="ic"><use href="#i-trash"/></svg><span>Clean up other files</span></button>
+      <p class="footnote dim pad" id="s-clean-why">Removes only files that neither model nor the Library uses. You'll see the list first.</p>
+      <p class="label">Rights &amp; Copyright</p>
+      <div class="list" id="rights">
+        <div class="li"><span>Your agreement</span><span class="dim num" id="r-agreed">–</span></div>
+        <button class="li link" id="r-lesson" type="button"><span>Read the lesson again</span><svg class="ic"><use href="#i-chevron"/></svg></button>
+        <details class="li ref" id="r-ref-lesson"><summary><span>The lesson</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body" id="r-cards"></div></details>
+        <details class="li ref" id="r-ref-steps"><summary><span>If someone copies your work</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body" id="r-steps"></div></details>
+        <details class="li ref" id="r-ref-channels"><summary><span>Reaching AI and cloud providers</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body" id="r-channels"></div></details>
+        <details class="li ref" id="r-ref-cases"><summary><span>AI cases to know</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body" id="r-cases"></div></details>
+        <p class="li footnote dim asof"></p>
+      </div>
+      <p class="label">Heat</p>
+      <div class="list"><p class="li callout">A picture takes 2–3 minutes, a 5-second clip about 6 and a song a minute or two. After about a minute the phone warms and slows down. Plugged in, out of the sun, case off, and a short break between jobs all help.</p></div>
+      <p class="label">About</p>
+      <div class="list">
+        <div class="li brand-row"><img src="icon-180.png" alt="" width="40" height="40"><div class="brand-txt"><p class="brand-name">p0pc0rn</p><p class="footnote dim">by Joshua Hughes</p></div></div>
+        <div class="li"><span>Graphics</span><span class="dim" id="s-gpu">–</span></div>
+        <div class="li"><span>App version</span><span class="dim mono" id="s-ver">–</span></div>
+        <div class="li"><span>Phones</span><span class="dim" id="s-platforms">iPhone (Safari) · Android (Chrome): experimental</span></div>
+        <a class="li link" href="devcheck.html" target="_blank" rel="noopener"><span>Device check</span><svg class="ic"><use href="#i-chevron"/></svg></a>
+        <div class="li" id="s-clamp" hidden><span>Test mode</span><span class="li-end"><span class="dim" id="s-clamp-mode">–</span><button class="btn sm" id="s-clamp-off" type="button">Turn off</button></span></div>
+        <details class="li ref" id="s-diag"><summary><span>Diagnostics</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body"><p class="footnote dim">The last 50 steps on this phone with a memory estimate. Nothing leaves the phone unless you copy it.</p><pre class="mono footnote" id="s-diagtext" style="white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto"></pre><button class="btn sm" type="button" id="s-diagcopy">Copy</button></div></details>
+        <div class="li"><span>Built by</span><span class="dim">Josh Hughes</span></div>
+        <p class="li footnote dim">FLUX.2 [klein] 4B and FLUX.2 autoencoder © Black Forest Labs, Apache-2.0 · Qwen3-4B text encoder © 2024 Alibaba Cloud, Apache-2.0 · SANA-Video 2.0 5B © NVIDIA, Apache-2.0 · LTX-2.3 video decoder and picture reader (VAE decoder and encoder) © Lightricks, LTX-2 Community License Agreement · tokenizers.js © Hugging Face, Apache-2.0. The model files are modified (re-quantised) copies. The popcorn progress animation was generated with LTX-2.3 (Lightricks) from FLUX.2 [klein] stills.</p>
+        <p class="li footnote dim">The assistant: Gemma 4 E2B-it © Google, Apache-2.0 (not the Gemma Terms of Use). Songs: ACE-Step 1.5 turbo, its 5 Hz lyrics planner and its audio decoder © ACE Studio and StepFun, MIT; the Qwen3-Embedding-0.6B text encoder inside it © Alibaba Cloud, Apache-2.0. These model files are modified (re-quantised) copies too. Lookups use Wikipedia (CC BY-SA 4.0) and Fandom wikis (CC BY-SA, as each wiki states): the assistant cites the pages it used.</p>
+        <p class="li footnote dim">Cast voices: Qwen3-TTS-12Hz-0.6B-Base and its 12 Hz codec © Alibaba Cloud (Qwen), Apache-2.0 (re-quantised copies). Face finding for Cast photos: MediaPipe BlazeFace © Google, Apache-2.0 (engine/face/LICENSE-mediapipe.txt). Lip-sync (experimental): MuseTalk 1.5 UNet (MIT; experimental, for consented faces and voices only; its CreativeML Open RAIL-M use restrictions are part of your terms), sd-vae-ft-mse © Stability AI (MIT), whisper-tiny encoder © OpenAI (MIT), MediaPipe Face Landmarker © Google (Apache-2.0), re-quantised copies.</p>
+        <p class="li footnote dim">Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms. The video model reads your words with Gemma-2-2B-it; using it is subject to the Gemma Prohibited Use Policy, and the use restrictions of the LTX-2 Community License (paragraph 4 and Attachment A). Both are part of p0pc0rn's terms of use.</p>
+        <button class="li link" id="s-lic" type="button"><span>Licences and notices</span><svg class="ic"><use href="#i-chevron"/></svg></button>
+        <a class="li link" href="MODELS.md" target="_blank" rel="noopener"><span>Model licences</span><svg class="ic"><use href="#i-chevron"/></svg></a>
+        <button class="li link" id="s-credits" type="button"><span>Starter pack credits</span><svg class="ic"><use href="#i-chevron"/></svg></button>
+      </div>
+      <p class="label">Road map</p>
+      <div class="list" id="s-roadmap">
+        <p class="li callout">🖼️ FLUX 3 [klein] image model as the Better picture option.</p>
+        <p class="li callout">🔊 Sound for clips: sound effects made with your videos.</p>
+        <p class="li callout">✈️ Complete airplane mode (coming soon): once p0pc0rn is on your Home Screen it runs fully offline, and updates only when you choose.</p>
+        <p class="li callout">👀 Live Preview of renders: watch your picture or video take shape while it renders.</p>
+        <p class="li callout">👄 LoRAs for SANA video, starting with a lip-dub LoRA like LTX's.</p>
+        <p class="li callout">🎬 Animated cartoons, sitcoms and cinema, rendered locally and free on your own device.</p>
+        <p class="li callout">🎷 Labs: experimental features, starting with Playing Jazz — give it one idea and the AI improvises a short film, each clip picking up from the last frame of the one before, scored with an instrumental track.</p>
+        <p class="li callout">🔄 Updated workflows.</p>
+        <p class="li callout">🐞 Debugging.</p>
+        <p class="li callout">✨ More features.</p>
+        <p class="li footnote dim">The app is updated periodically, when Josh Hughes decides to.</p>
+      </div>
+      <p class="label">Connect</p>
+      <div class="list"><a class="li link" id="s-x" href="https://x.com/p0pc0rnapp" target="_blank" rel="noopener noreferrer"><span>X · p0pc0rn App · @p0pc0rnapp</span><svg class="ic"><use href="#i-chevron"/></svg></a></div>
+    </section>
+  </main>
+  <div class="cta-bar" id="cta-bar">
+    <button class="btn cta big-cta" id="cta" type="button"><svg class="ic"><use href="#i-sparkle"/></svg><span>Make</span></button>
+  </div>
+  <div class="chat-bar" id="chat-bar" hidden>
+    <div class="as-photo" id="as-photo" hidden>
+      <div class="as-photo-top"><span class="chip on"><img id="as-photo-img" alt=""><span>Your photo</span>
+        <button id="as-photo-x" class="x" type="button" aria-label="Remove the photo"><svg><use href="#i-x"/></svg></button></span></div>
+      <div class="attest" id="as-attest-box"><label class="attest-row" for="as-attest"><input type="checkbox" id="as-attest"><span id="as-attest-text"></span></label></div>
+    </div>
+    <div class="as-compose">
+      <label for="as-file" class="icon-btn as-add" id="as-add" aria-label="Add a photo"><svg class="ic"><use href="#i-photo-plus"/></svg></label>
+      <label class="vh" for="as-in">Message</label>
+      <textarea id="as-in" rows="1" placeholder="Make me a song about…" enterkeyhint="send" autocapitalize="sentences"></textarea>
+      <button class="icon-btn as-send" id="as-send" type="button" aria-label="Send"><svg class="ic"><use href="#i-send"/></svg></button>
+    </div>
+  </div>
+  <nav class="tabs" aria-label="Sections">
+    <div class="tab-hair" aria-hidden="true"><i id="tab-fill"></i></div>
+    <button class="tab" type="button" data-tab="create" aria-current="page"><svg><use href="#i-sparkle"/></svg><span>Create</span></button>
+    <button class="tab" type="button" data-tab="assistant"><svg><use href="#i-chat"/></svg><span>Assistant</span><i class="tab-dot" aria-hidden="true"></i></button>
+    <button class="tab" type="button" data-tab="library"><svg><use href="#i-grid"/></svg><span>Library</span></button>
+    <button class="tab" type="button" data-tab="settings"><svg><use href="#i-gear"/></svg><span>Settings</span></button>
+  </nav>
+</div>
+
+<!-- Full-screen viewer (also the "press and hold to save" fallback) -->
+<div id="viewer" class="viewer" role="dialog" aria-modal="true" aria-label="Picture" hidden>
+  <div class="v-top"><button class="icon-btn" id="v-close" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button><span class="footnote dim num" id="v-count"></span></div>
+  <div class="v-stage" id="v-stage"><img id="v-img" alt=""><video id="v-vid" muted loop playsinline preload="auto" hidden></video><audio id="v-aud" class="v-aud" controls preload="metadata" hidden></audio></div>
+  <p class="v-hint callout" id="v-hint" hidden><span id="v-hint-pic">Press and hold the picture, then <b>Save to Photos</b>.</span><span id="v-hint-clip" hidden>This browser can't open the share sheet for clips.</span><a id="v-dl" hidden>Or download the file</a></p>
+  <div class="v-meta"><p class="callout" id="v-prompt"></p><p class="footnote dim num" id="v-info"></p>
+    <div class="v-src" id="v-src" hidden><span class="footnote dim" id="v-src-label">Made from</span><span class="v-src-list" id="v-src-list"></span></div>
+    <details class="v-lyrics" id="v-lyrics" hidden><summary><span>Style and lyrics</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><p class="footnote dim" id="v-lyr-tags"></p><p class="callout v-lyr" id="v-lyr-text"></p></details></div>
+  <div class="actions v-actions" id="v-actions">
+    <button class="act" id="v-save" type="button"><svg><use href="#i-share"/></svg><span>Save</span></button>
+    <button class="act" id="v-anim" type="button"><svg><use href="#i-anim"/></svg><span>Animate</span></button>
+    <button class="act" id="v-reuse" type="button"><svg><use href="#i-copy"/></svg><span>Reuse prompt</span></button>
+    <button class="act" id="v-edit" type="button"><svg><use href="#i-photo-plus"/></svg><span>Edit this</span></button>
+    <button class="act" id="v-talk" type="button" hidden><svg><use href="#i-chat"/></svg><span>Lip-sync · experimental</span></button>
+    <button class="act" id="v-del" type="button"><svg><use href="#i-trash"/></svg><span>Delete</span></button>
+    <button class="act" id="v-more" type="button" aria-haspopup="dialog"><svg><use href="#i-more"/></svg><span>More</span></button>
+  </div>
+</div>
+
+<!-- The lesson: 6 cards + the agreement. Opens while a model downloads, on first open without an agreement, and from Settings. -->
+<div id="lesson" class="lesson" role="dialog" aria-modal="true" aria-labelledby="ls-head" hidden>
+  <div class="ls-top"><button class="icon-btn" id="ls-close" type="button" aria-label="Close the lesson"><svg><use href="#i-x"/></svg></button>
+    <p class="headline" id="ls-head">Before you make anything</p><span class="footnote dim num" id="ls-count"></span></div>
+  <div class="ls-dl" id="ls-dl" hidden><div class="ls-dl-row"><p class="footnote num" id="ls-dl-text"></p><button class="mini" id="ls-dl-btn" type="button">Pause</button></div><div class="bar"><i id="ls-dl-fill"></i></div></div>
+  <div class="ls-dots" id="ls-dots" aria-hidden="true"></div>
+  <div class="ls-track" id="ls-track"></div>
+  <div class="ls-nav"><button class="btn ghost" id="ls-back" type="button">Back</button><button class="btn cta" id="ls-next" type="button">Next</button></div>
+</div>
+
+<!-- Library picker: a picture for a clip slot -->
+<div id="picker" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet picker" role="dialog" aria-modal="true" aria-labelledby="pk-title">
+    <div class="pk-top"><p class="title" id="pk-title">Pick a picture</p><button class="mini" type="button" data-close>Cancel</button></div>
+    <p class="footnote dim" id="pk-note"></p>
+    <div class="pk-grid" id="pk-grid"></div>
+    <p class="footnote dim pk-empty" id="pk-empty" hidden>No pictures in the Library yet. Make one under Picture, or use a photo from your phone.</p>
+  </div>
+</div>
+
+<!-- Action menu (a picture's More) -->
+<div id="menu" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet menu" role="dialog" aria-modal="true" aria-labelledby="mn-title">
+    <p class="headline" id="mn-title"></p>
+    <div class="mn-list" id="mn-list"></div>
+    <button class="btn ghost" type="button" data-close>Cancel</button>
+  </div>
+</div>
+
+<!-- The queue: what runs, what waits (in the order it will run), cancel, reorder, pause -->
+<div id="queue" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet qsheet" role="dialog" aria-modal="true" aria-labelledby="q-title">
+    <div class="pk-top"><p class="title" id="q-title">Queue</p><button class="mini" type="button" data-close>Done</button></div>
+    <p class="footnote dim" id="q-note">One job at a time, in this order. A chat goes first; a job that has started is never stopped for another.</p>
+    <div class="q-list" id="q-list"></div>
+    <div class="q-done" id="q-done"></div>
+    <button class="btn" id="q-pause" type="button"><svg class="ic"><use href="#i-pause"/></svg><span>Pause the queue</span></button>
+  </div>
+</div>
+
+<!-- Confirm sheet -->
+<div id="sheet" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title">
+    <p class="title" id="sh-title"></p><p class="callout dim" id="sh-text"></p>
+    <ul class="sh-list footnote mono" id="sh-list" hidden></ul>
+    <button class="btn danger" id="sh-ok" type="button"></button>
+    <button class="btn ghost" type="button" data-close>Cancel</button>
+  </div>
+</div>
+
+<!-- v026.4: the LTX-2 licence, accepted before the video model or the picture reader downloads -->
+<div id="ltx" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet docsheet" role="dialog" aria-modal="true" aria-labelledby="ltx-title">
+    <div class="pk-top"><p class="title" id="ltx-title">The video model’s licence</p><button class="mini" type="button" data-close>Not now</button></div>
+    <p class="callout">Clips are decoded with the LTX-2.3 video autoencoder by Lightricks (the video model and the picture reader). It comes under the <b>LTX-2 Community License Agreement</b> (January 5, 2026). Read it and accept it before p0pc0rn downloads it. In short:</p>
+    <ul class="footnote ltx-points" id="ltx-points"></ul>
+    <p class="footnote dim">The video model also reads your words with Gemma 2 by Google. Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms. Its <a href="licenses/GEMMA_PROHIBITED_USE_POLICY.txt" target="_blank" rel="noopener noreferrer">Prohibited Use Policy</a> applies too.</p>
+    <p class="label">The full licence, with Attachment A</p>
+    <pre class="doc-text" id="ltx-text" tabindex="0"></pre>
+    <button class="btn" id="ltx-ok" type="button">I accept</button>
+  </div>
+</div>
+<!-- v026.6: the FLUX Non-Commercial License, once, before Klein 9B downloads -->
+<div id="flux" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet docsheet" role="dialog" aria-modal="true" aria-labelledby="flux-title">
+    <div class="pk-top"><p class="title" id="flux-title">Klein 9B's licence</p><button class="mini" type="button" data-close>Not now</button></div>
+    <p class="callout" id="flux-label"></p>
+    <p class="footnote dim" id="flux-size"></p>
+    <p class="label">The full licence</p>
+    <pre class="doc-text" id="flux-text" tabindex="0"></pre>
+    <button class="btn" id="flux-ok" type="button">I accept</button>
+  </div>
+</div>
+<!-- v026.4: Settings › About › Licences and notices -->
+<div id="lic" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet docsheet" role="dialog" aria-modal="true" aria-labelledby="lic-title">
+    <div class="pk-top"><p class="title" id="lic-title">Licences and notices</p><button class="mini" type="button" data-close>Done</button></div>
+    <div class="lic-list" id="lic-list"></div>
+  </div>
+</div>
+<!-- v026.4: a text document (the starter pack's credits) -->
+<div id="docv" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet docsheet" role="dialog" aria-modal="true" aria-labelledby="docv-title">
+    <div class="pk-top"><p class="title" id="docv-title"></p><button class="mini" type="button" data-close>Done</button></div>
+    <pre class="doc-text tall" id="docv-text" tabindex="0"></pre>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"><span id="toast-text"></span><button id="toast-btn" type="button" hidden>Undo</button></div>
+<input type="file" id="file" accept="image/*" class="vh" tabindex="-1">
+<input type="file" id="vfile" accept="image/*" class="vh" tabindex="-1">
+<input type="file" id="as-file" accept="image/*" class="vh" tabindex="-1">
+</body>
+</html>

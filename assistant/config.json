@@ -1,0 +1,6 @@
+{
+ "_about": "p0pc0rn assistant settings that are set once at launch. userAgentUrl = the public repository's address, sent to Wikipedia and Fandom in the Api-User-Agent header (MediaWiki etiquette for browser clients). It must be a public URL: never a personal email address (research.js refuses anything with an @ and falls back to the placeholder).",
+ "userAgentName": "p0pc0rn-assistant",
+ "userAgentVersion": "0.1",
+ "userAgentUrl": "https://github.com/ArtistJoshHughes/p0pc0rn"
+}

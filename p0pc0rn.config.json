@@ -1,0 +1,565 @@
+{
+  "schema": "p0pc0rn.config/0.1",
+  "_about": "Describes each model pack of this release: its Hugging Face repository, size, licence and conditions. The app itself reads config.js (the same addresses). No tokens, addresses or personal paths ever go in this file.",
+  "app": {
+    "name": "p0pc0rn",
+    "author": "Joshua Hughes",
+    "base_url": "./",
+    "_base_url": "Relative on purpose: works at the GitHub Pages path (/p0pc0rn/), at the repo root on 127.0.0.1, and behind tailscale serve.",
+    "official_distribution": "https://artistjoshhughes.github.io/p0pc0rn/",
+    "_official_distribution": "The GitHub Pages site, built from this repository by .github/workflows/pages.yml; also written in README.md (LICENSE.md section 1).",
+    "terms_version": "2026-10-14.2"
+  },
+  "github": {
+    "owner": "ArtistJoshHughes",
+    "repo": "p0pc0rn",
+    "visibility": "public",
+    "pages_url": "https://artistjoshhughes.github.io/p0pc0rn/",
+    "repo_url": "https://github.com/ArtistJoshHughes/p0pc0rn",
+    "issues_url": "https://github.com/ArtistJoshHughes/p0pc0rn/issues"
+  },
+  "huggingface": {
+    "owner": "JoshHughes",
+    "endpoint": "https://huggingface.co",
+    "model_url": "{endpoint}/{hf_repo}/resolve/{revision}/",
+    "dataset_url": "{endpoint}/datasets/{hf_repo}/resolve/{revision}/",
+    "login": {
+      "prompt_in_app": true,
+      "when": "only for a pack with requires_hf_login: true (none in this release; the in-app sign-in is not built)",
+      "token_scope": "read",
+      "token_storage": "on the phone only; sent only to the Hugging Face endpoint; never logged, never in Diagnostics"
+    }
+  },
+  "contacts": {
+    "x_official": {
+      "handle": "@p0pc0rnapp",
+      "url": "https://x.com/p0pc0rnapp"
+    },
+    "x_author": {
+      "handle": "@joshhughes___",
+      "url": "https://x.com/joshhughes___"
+    },
+    "issues": "https://github.com/ArtistJoshHughes/p0pc0rn/issues",
+    "email": null
+  },
+  "download_policy": {
+    "terms_before_download": "Every pack's terms are shown and accepted on the phone before its first byte downloads.",
+    "pin": "revision is the upload commit SHA of each Hugging Face repository, except Klein 9B, which reads \"main\" and is pinned by its manifest_sha256 until its commit pin lands in the next update. The app reads every pack at resolve/<revision>/ and checks its manifest.json against manifest_sha256 (also in config.js) before it uses or keeps it; the manifest lists the sha256 of every chunk",
+    "verify": "manifest_sha256 checks manifest.json; the manifest's per-shard and per-chunk sha256 check everything else",
+    "modified_notice": "Modified by the p0pc0rn project: converted and quantized from the original weights."
+  },
+  "packs": [
+    {
+      "pack": "klein-4b",
+      "app_key": "image",
+      "app_model": "flux2-klein-4b",
+      "feature": "Pictures",
+      "label": "FLUX.2 Klein 4B",
+      "status": "default",
+      "bytes": 4620000000,
+      "hf_repo": "JoshHughes/p0pc0rn-klein-4b-q4",
+      "repo_type": "model",
+      "revision": "37790478492991e235008d292fa14d686b0625bb",
+      "manifest": "manifest.json",
+      "manifest_sha256": "501bd72ce5633486db7756107fe973b0c516a4d6b31f8c727dfecee840a94868",
+      "licence_id": "Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-Apache-2.0.txt"
+      ],
+      "terms": [
+        {
+          "sheet": "apache-2.0",
+          "licence_version": "2.0"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Ship the Apache-2.0 text and the copyright notices with the pack.",
+        "Carry the modified-files notice.",
+        "No Black Forest Labs or FLUX trademarks used in a way that implies endorsement."
+      ],
+      "components": [
+        {
+          "part": "FLUX.2 [klein] 4B transformer + FLUX.2 autoencoder",
+          "source": "black-forest-labs/FLUX.2-klein-4B",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        },
+        {
+          "part": "Qwen3-4B text encoder",
+          "source": "black-forest-labs/FLUX.2-klein-4B",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
+      "pack": "video",
+      "app_key": "video",
+      "app_model": "sanavideo2-5b",
+      "feature": "Videos",
+      "label": "SANA-Video 2.0 5B (+ its text encoder and the LTX-2.3 video decoder)",
+      "status": "default",
+      "bytes": 5720000000,
+      "hf_repo": "JoshHughes/p0pc0rn-video-sana-5b-q4",
+      "repo_type": "model",
+      "revision": "4415a9a340a3770ce3d779acd616c4269dfb5f6c",
+      "manifest": "manifest.json",
+      "manifest_sha256": "91f1a1c52bc241917f7c42140f0f3643b3e44bed2e093a0474083770428df0ce",
+      "licence_id": "Apache-2.0 AND LicenseRef-Gemma-Terms-of-Use AND LicenseRef-LTX-2-Community-License",
+      "licence_files": [
+        "licenses/LICENSE-SANA-Video.txt",
+        "licenses/GEMMA_TERMS_OF_USE.txt",
+        "licenses/GEMMA_PROHIBITED_USE_POLICY.txt",
+        "licenses/NOTICE-Gemma.txt",
+        "licenses/LICENSE-LTX-2.txt",
+        "licenses/NOTICE-video.md"
+      ],
+      "terms": [
+        {
+          "sheet": "ltx-2",
+          "licence_version": "2026-01-05"
+        },
+        {
+          "sheet": "gemma-terms",
+          "licence_version": "2026-04-01"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "SANA-Video: Apache-2.0 text + 'Copyright 2024 Nvidia' notice.",
+        "Gemma-2-2B-it: pass on the Gemma Terms of Use and the Prohibited Use Policy with the pack; include the notice 'Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms'; the section 3.2 use restrictions stay enforceable terms for the user (USE-POLICY.md).",
+        "LTX-2.3 decoder: distribute only under the LTX-2 Community License Agreement, with a complete copy including Attachment A; paragraph 4 and Attachment A are part of the user's terms and are accepted before download.",
+        "LTX-2: users disclose machine-generated content when they share it; entities with annual revenue of USD 10 million or more need a paid licence from Lightricks; no Lightricks trademarks.",
+        "Carry the modified-files notice on every converted file."
+      ],
+      "components": [
+        {
+          "part": "SANA-Video 2.0 5B 720p 4-step transformer",
+          "source": "Efficient-Large-Model/SANA-Video_2.0_5B_720p_4step",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        },
+        {
+          "part": "Gemma-2-2B-it text encoder + tokenizer",
+          "source": "google/gemma-2-2b-it",
+          "source_revision": null,
+          "licence_id": "LicenseRef-Gemma-Terms-of-Use"
+        },
+        {
+          "part": "LTX-2.3 video VAE decoder (vae.* tensors)",
+          "source": "Lightricks/LTX-2.3",
+          "source_revision": "3c6a4e66e5d0a684231950b9c74dd4ded7b6fadc",
+          "licence_id": "LicenseRef-LTX-2-Community-License"
+        }
+      ]
+    },
+    {
+      "pack": "picture-reader",
+      "app_key": "reader",
+      "app_model": "ltx23-still-enc",
+      "feature": "Clips from a picture, or between two pictures",
+      "label": "Picture reader (LTX-2.3 video VAE encoder)",
+      "status": "default",
+      "needs": [
+        "video"
+      ],
+      "bytes": 212701440,
+      "hf_repo": "JoshHughes/p0pc0rn-picture-reader-f16",
+      "repo_type": "model",
+      "revision": "f6abf6baf632af19a6a2d5f9e05428207ca35fa3",
+      "manifest": "manifest.json",
+      "manifest_sha256": "852a046ce368042493a0eb705ee9c74cc0236b781f34607413d8ec466dfa4f20",
+      "licence_id": "LicenseRef-LTX-2-Community-License",
+      "licence_files": [
+        "licenses/LICENSE-LTX-2.txt",
+        "licenses/NOTICE-video.md"
+      ],
+      "terms": [
+        {
+          "sheet": "ltx-2",
+          "licence_version": "2026-01-05"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Distribute only under the LTX-2 Community License Agreement, complete copy with Attachment A; accepted before download.",
+        "State the modification (2-D collapse, padding, rescale, f16; NOTICE-video.md) and the modified-files notice.",
+        "AI disclosure, the USD 10 million revenue rule and no Lightricks trademarks, as for the video pack."
+      ],
+      "components": [
+        {
+          "part": "LTX-2.3 video VAE encoder (vae.* tensors)",
+          "source": "Lightricks/LTX-2.3",
+          "source_revision": "3c6a4e66e5d0a684231950b9c74dd4ded7b6fadc",
+          "licence_id": "LicenseRef-LTX-2-Community-License"
+        }
+      ]
+    },
+    {
+      "pack": "assistant",
+      "app_key": "brain",
+      "app_model": "gemma4-e2b",
+      "feature": "Assistant",
+      "label": "Gemma 4 E2B-it (balanced 4/8-bit)",
+      "status": "default",
+      "bytes": 3262871724,
+      "hf_repo": "JoshHughes/p0pc0rn-assistant-gemma4-e2b-q4",
+      "repo_type": "model",
+      "revision": "141f0e8665691d74f824c4469725cf19a2ded9e8",
+      "manifest": "manifest.json",
+      "manifest_sha256": "e34bc23f7aa8c17244b53068e402a55fbc0ec68fb989b42e2615c7439d792178",
+      "licence_id": "Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-Gemma-4-Apache-2.0.txt",
+        "licenses/NOTICE-Gemma-4.md"
+      ],
+      "terms": [
+        {
+          "sheet": "apache-2.0",
+          "licence_version": "2.0"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Apache-2.0 text + NOTICE-Gemma-4.md; modified-files notice (derivative under Apache-2.0 section 4).",
+        "'Gemma' is a Google trademark; no trademark rights are granted.",
+        "This is not the Gemma Terms of Use (those cover only the video pack's Gemma-2-2B-it)."
+      ],
+      "components": [
+        {
+          "part": "Gemma 4 E2B-it (tokenizer converted; chat template verbatim)",
+          "source": "google/gemma-4-E2B-it",
+          "source_revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
+      "pack": "music",
+      "app_key": "music",
+      "app_model": "acestep15-turbo",
+      "feature": "Songs",
+      "label": "ACE-Step 1.5 turbo",
+      "status": "default",
+      "bytes": 2774088531,
+      "hf_repo": "JoshHughes/p0pc0rn-songs-ace-step-15-turbo",
+      "repo_type": "model",
+      "revision": "d9cbd6ddb0bcd8ca2edc950d523e0c738136efe5",
+      "manifest": "manifest.json",
+      "manifest_sha256": "8c21def5c0b255b6bdca1f37d679fc7d2ae67293ade5a52aa4c07859276679e0",
+      "licence_id": "MIT AND Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-ACE-Step-1.5.txt",
+        "licenses/LICENSE-Qwen3-Embedding-Apache-2.0.txt",
+        "licenses/NOTICE-music.md"
+      ],
+      "terms": [
+        {
+          "sheet": "mit-apache",
+          "licence_version": "MIT; Apache-2.0"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Keep 'Copyright (c) 2026 ACEStep' and the MIT text; Apache-2.0 text for the Qwen3-Embedding-0.6B text encoder.",
+        "The publisher asks users to check a song's originality and to disclose AI involvement.",
+        "Modified-files notice."
+      ],
+      "components": [
+        {
+          "part": "ACE-Step 1.5 turbo DiT, condition encoder, Oobleck audio decoder",
+          "source": "ACE-Step/Ace-Step1.5",
+          "source_revision": null,
+          "licence_id": "MIT"
+        },
+        {
+          "part": "Qwen3-Embedding-0.6B text encoder (as shipped in the ACE-Step repo)",
+          "source": "Qwen/Qwen3-Embedding-0.6B",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
+      "pack": "lyrics-planner",
+      "app_key": "planner",
+      "app_model": "acestep15-lm06",
+      "feature": "Songs: helps the singer follow the words (optional)",
+      "label": "Lyrics planner (ACE-Step 5 Hz LM 0.6B)",
+      "status": "optional",
+      "needs": [
+        "music"
+      ],
+      "_engine": "The music engine reads it from the Songs pack's lm/ folder (its default lmPackUrl).",
+      "bytes": 939540992,
+      "hf_repo": "JoshHughes/p0pc0rn-songs-ace-step-15-turbo",
+      "repo_type": "model",
+      "revision": "d9cbd6ddb0bcd8ca2edc950d523e0c738136efe5",
+      "manifest": "lm/manifest.json",
+      "manifest_sha256": "298e9b63aa5f73fc7ded2f69a92438b8155e744c9387f8737a78ed0f92ba1818",
+      "licence_id": "MIT AND Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-ACE-Step-1.5.txt",
+        "licenses/LICENSE-Apache-2.0.txt",
+        "licenses/NOTICE-music.md"
+      ],
+      "terms": [
+        {
+          "sheet": "mit-apache",
+          "licence_version": "MIT; Apache-2.0"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "MIT text + 'Copyright (c) 2026 ACEStep'; Apache-2.0 for the Qwen3-0.6B base it is built on.",
+        "Modified-files notice."
+      ],
+      "components": [
+        {
+          "part": "ACE-Step 5 Hz LM 0.6B + audio-token detokenizer",
+          "source": "ACE-Step/acestep-5Hz-lm-0.6B",
+          "source_revision": null,
+          "licence_id": "MIT AND Apache-2.0"
+        }
+      ],
+      "path_in_repo": "lm/"
+    },
+    {
+      "pack": "starter-kb",
+      "app_key": "starter",
+      "app_model": "starter-kb",
+      "feature": "Starter knowledge (3,214 Wikipedia articles, offline)",
+      "label": "Starter knowledge",
+      "status": "default",
+      "bytes": 2631059,
+      "hf_repo": "JoshHughes/p0pc0rn-starter-kb",
+      "repo_type": "dataset",
+      "revision": "8c86bfa537ce8f96fabb849b276c968d00ca490c",
+      "manifest": "manifest.json",
+      "manifest_sha256": "b654e4ad03d69a87c685851d29d02a449c19b285d390f1a52e419f44dc0a6c3b",
+      "licence_id": "CC-BY-SA-4.0",
+      "licence_files": [
+        "LICENSE",
+        "CREDITS.md",
+        "NOTICE.md"
+      ],
+      "terms": [
+        {
+          "sheet": "cc-by-sa-4.0",
+          "licence_version": "4.0"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "The pack stays CC BY-SA 4.0 (ShareAlike).",
+        "Article credits travel with it: title, address, revision, retrieved date, authors (CREDITS.md; Settings > About > Starter pack credits).",
+        "Say that the text was condensed into facts (changes indicated)."
+      ],
+      "components": [
+        {
+          "part": "English Wikipedia text",
+          "source": "Wikipedia",
+          "source_revision": null,
+          "licence_id": "CC-BY-SA-4.0"
+        }
+      ]
+    },
+    {
+      "pack": "voice",
+      "app_key": "voice",
+      "app_model": "qwen3-tts-0.6b",
+      "feature": "Cast voices",
+      "label": "Qwen3-TTS 0.6B Base + 12 Hz codec",
+      "status": "default",
+      "bytes": 1388000000,
+      "hf_repo": "JoshHughes/p0pc0rn-voice-qwen3-tts-06b",
+      "repo_type": "model",
+      "revision": "26a6f7acbd6f80f206756c2a72ab6f99c1df930f",
+      "manifest": "manifest.json",
+      "manifest_sha256": "3269e07668e9672584b2d3a1e31d38a16097d2d572bb189a69d3c90ad7ce7548",
+      "licence_id": "Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-Qwen3-TTS-Apache-2.0.txt"
+      ],
+      "terms": [
+        {
+          "sheet": "apache-2.0",
+          "licence_version": "2.0"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Apache-2.0 text + 'Copyright 2026 Alibaba Cloud'; modified-files notice.",
+        "p0pc0rn's own rule: only your own voice, or a voice you have permission to use; no impersonation."
+      ],
+      "components": [
+        {
+          "part": "Qwen3-TTS-12Hz-0.6B-Base + its 12 Hz codec",
+          "source": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
+      "pack": "lipsync",
+      "app_key": "lipsync",
+      "app_model": "musetalk-1.5",
+      "feature": "Lip-sync (experimental)",
+      "label": "Lip-sync (experimental)",
+      "status": "experimental",
+      "needs": [
+        "voice"
+      ],
+      "bytes": 1037000000,
+      "hf_repo": "JoshHughes/p0pc0rn-lipsync-musetalk-15",
+      "repo_type": "model",
+      "revision": "526a7ece698aa7512fe285a252ff6137f22b8c04",
+      "manifest": "manifest.json",
+      "manifest_sha256": "14f8df9ad2ab1f003590b577f55aac3d3f1aa6a8a0e821364e37a50f53108374",
+      "licence_id": "MIT AND Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-MuseTalk-MIT.txt",
+        "licenses/LICENSE-Whisper-MIT.txt",
+        "licenses/LICENSE-sd-vae-ft-mse-MIT.txt",
+        "licenses/LICENSE-MediaPipe-Apache-2.0.txt",
+        "licenses/LICENSE-CreativeML-OpenRAIL-M.txt"
+      ],
+      "terms": [
+        {
+          "sheet": "mit-apache",
+          "licence_version": "MIT; Apache-2.0"
+        },
+        {
+          "sheet": "openrail-m-restrictions",
+          "licence_version": "2022-08-22"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "MIT texts and copyright lines (Tencent Music, OpenAI, Stability AI); Apache-2.0 for the MediaPipe face models; modified-files notice.",
+        "MuseTalk's card is tagged CreativeML Open RAIL-M: its Attachment A use restrictions apply as a precaution and are shown before download.",
+        "Consented faces and voices only (Cast members or the user's own ticked uploads); labelled Experimental everywhere."
+      ],
+      "components": [
+        {
+          "part": "MuseTalk 1.5 UNet",
+          "source": "TMElyralab/MuseTalk",
+          "source_revision": null,
+          "licence_id": "MIT"
+        },
+        {
+          "part": "sd-vae-ft-mse",
+          "source": "stabilityai/sd-vae-ft-mse",
+          "source_revision": null,
+          "licence_id": "MIT"
+        },
+        {
+          "part": "whisper-tiny encoder",
+          "source": "openai/whisper-tiny",
+          "source_revision": null,
+          "licence_id": "MIT"
+        },
+        {
+          "part": "MediaPipe Face Landmarker",
+          "source": "Google MediaPipe",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
+      "pack": "klein-9b",
+      "app_key": "k9b",
+      "app_model": "flux2-klein-9b",
+      "feature": "Better pictures (optional: slower, better)",
+      "label": "FLUX.2 Klein 9B",
+      "status": "optional",
+      "needs": [
+        "klein-4b"
+      ],
+      "_needs": "Offered as an option next to Pictures (the 4B); the 9B pack carries its own copy of the FLUX.2 autoencoder.",
+      "bytes": 9636509952,
+      "hf_repo": "JoshHughes/p0pc0rn-klein-9b-q4",
+      "repo_type": "model",
+      "revision": "main",
+      "manifest": "manifest.json",
+      "manifest_sha256": "c58df346c543692ebeda0c7ac2cbc34cf364cbf71c17ec4aea5bd79677a4025d",
+      "licence_id": "LicenseRef-FLUX-Non-Commercial-License-2.1 AND Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-FLUX-Non-Commercial-v2.1.md",
+        "licenses/LICENSE-Apache-2.0.txt"
+      ],
+      "terms": [
+        {
+          "sheet": "flux-nc",
+          "licence_version": "2.1"
+        }
+      ],
+      "label_on_download_sheet": "FLUX.2 klein 9B is under Black Forest Labs' FLUX Non-Commercial License. BFL says you may use outputs \"for any purpose (including for commercial purposes)\" (§2(d)), and limits use of the model itself to non-commercial purposes (§1(c), §4(a)). Read the licence before using it for business. The 4B model is Apache-2.0.",
+      "redistributable": true,
+      "redistributable_for": "non-commercial purposes only",
+      "requires_hf_login": false,
+      "conditions": [
+        "Distribute only for non-commercial purposes; never sold, never bundled into anything paid.",
+        "Include a complete copy of the FLUX Non-Commercial License with the pack and in licenses/.",
+        "Include BFL's attribution notice exactly as the licence words it.",
+        "State that the files are modified (the modified-files notice).",
+        "The label above shows only on the 9B download sheet, before 'I accept'; afterwards only in MODELS.md and Settings > About > Licences and notices; it shows again only if BFL's licence version changes.",
+        "The Qwen3-8B text encoder inside the pack is Apache-2.0.",
+        "FLUX NC section 2(e): content filtering or review of outputs for unlawful or infringing content, and AI disclosure where the law requires it."
+      ],
+      "components": [
+        {
+          "part": "FLUX.2 [klein] 9B transformer",
+          "source": "black-forest-labs/FLUX.2-klein-9B",
+          "source_revision": null,
+          "licence_id": "LicenseRef-FLUX-Non-Commercial-License"
+        },
+        {
+          "part": "Qwen3-8B text encoder",
+          "source": "Qwen/Qwen3-8B",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    }
+  ],
+  "bundled_in_repo": [
+    {
+      "part": "MediaPipe BlazeFace (Cast face finding)",
+      "path": "engine/face/",
+      "licence_id": "Apache-2.0"
+    },
+    {
+      "part": "tokenizers.js",
+      "path": "engine/vendor/",
+      "licence_id": "Apache-2.0"
+    },
+    {
+      "part": "TOON (modified fork)",
+      "path": "assistant/",
+      "licence_id": "MIT"
+    },
+    {
+      "part": "Popcorn progress animation (AI-generated)",
+      "path": "popcorn/",
+      "licence_id": "see licenses/NOTICE-progress-animation.md"
+    }
+  ],
+  "not_in_this_build": [
+    "LTX-2.3 text-to-video",
+    "Sound for clips (the LTX-2.3 sound transplant; still a separate test)",
+    "Sound effects with MMAudio (non-commercial licence; never shipped)"
+  ]
+}

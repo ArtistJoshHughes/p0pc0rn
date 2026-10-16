@@ -1,0 +1,9 @@
+# Local files that must never be committed or published
+.env
+.env.*
+*token*
+!*tokenizer*
+pack/
+.cache/
+node_modules/
+*.log

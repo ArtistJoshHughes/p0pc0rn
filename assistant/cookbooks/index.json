@@ -1,0 +1,986 @@
+{
+ "version": 1,
+ "tokenizer": "google/gemma-4-E2B-it",
+ "budgetTokens": 1400,
+ "always": [
+  "safety#rules",
+  "safety#how-to-refuse"
+ ],
+ "review": {
+  "picture": [
+   "klein4b#review-look-at-result"
+  ],
+  "edit": [
+   "klein4b#review-look-at-result"
+  ],
+  "clip": [
+   "sana_video#review-look-at-result"
+  ],
+  "animate": [
+   "sana_video#review-look-at-result"
+  ],
+  "between": [
+   "sana_video#review-look-at-result"
+  ],
+  "musicvideo": [
+   "musicvideo#review-across-the-cut",
+   "sana_video#review-look-at-result"
+  ]
+ },
+ "shotplan": [
+  "musicvideo#the-first-15-seconds-vertical-videos",
+  "musicvideo#the-story-lives-in-the-b-roll",
+  "musicvideo#visual-variety",
+  "musicvideo#things-to-avoid",
+  "musicvideo#shot-prompt-checklist",
+  "musicvideo#stills-for-consistency",
+  "sana_video#writing-the-motion-prompt",
+  "sana_video#the-clip-ends-with",
+  "sana_video#camera-grammar",
+  "sana_video#animating-a-picture-animate-picture"
+ ],
+ "songwrite": [
+  "ace_song#tags-the-style",
+  "ace_song#tempo-key-and-metre",
+  "ace_song#lyrics-structure",
+  "ace_song#grounded-songs",
+  "ace_song#writing-words-that-are-not-cliches",
+  "ace_song#for-a-music-video"
+ ],
+ "sources": {
+  "ace_song": "Sources: ACE-Step 1.5 Hugging Face card, huggingface.co/ACE-Step/Ace-Step1.5, and GitHub README, github.com/ace-step/ACE-Step-1.5 (MIT; turbo DiT + Qwen3-Embedding-0.6B + VAE + optional 5 Hz lyrics LM; 10 s to 10 min; 50+ languages; training data licensed / royalty-free / synthetic MIDI; caveat: unintentional similarity to existing styles), read through a research agent, Oct 12 2026. Line budget, tempo defaults and structure: p0pc0rn music probe v002 (Oct 12 2026, the 5 Hz LM 0.6B planner on: lines heard 21 to 35 of 40; back-to-back identical choruses scored worse). Marker and end-on-chorus rules: the song-lane measurements (Sep 23 2026), rewritten. No-coffee rule: Josh, Oct 8 2026.",
+  "faq": "Sources: p0pc0rn's model-download design (Oct 12 2026: the video model's Gemma 2 text encoder is gated, so each person logs in once); the Gemma Terms of Use shipped in licenses/GEMMA_TERMS_OF_USE.txt; the video pack notice (licenses/NOTICE-video.md: SANA-Video reads prompts with Gemma-2-2B-it).",
+  "foley": "Sources: MMAudio GitHub README, github.com/hkchengrex/MMAudio (code MIT; checkpoints CC BY-NC 4.0; video-to-audio; trained length 8 s; limits: speech-like mumbling, weak background music, unfamiliar concepts), and the Hugging Face card hkchengrex/MMAudio (licence tag cc-by-nc-4.0), read through a research agent, Oct 12 2026. Image-encoder licence: the p0pc0rn audio probe notes (Apple DFN5B CLIP, research only).",
+  "klein4b": "Sources: FLUX.2 [klein] 4B model card, huggingface.co/black-forest-labs/FLUX.2-klein-4B (Apache-2.0; 3.876 B parameters; text-to-image and editing; card caveats on text rendering and prompt style), read through a research agent, Oct 12 2026. Phone timings and the 4-bit text finding: p0pc0rn engine measurements (iPhone 16 Pro Max, Oct 11 2026). Skin, text-on-screens and prompt-bleed rules: lessons from the picture lane, rewritten.",
+  "musicvideo": "Sources: Josh's standing rules: the vertical hook in the first 15 seconds (Oct 5 2026), b-roll carries the arc (Oct 6 2026), visual variety and a strict arc (Oct 4-5 2026), no coffee cliche (Oct 8 2026), \"the clip ends with\" (Sep 23 2026), never compute times in the model (lip-sync cookbook); rewritten for a phone with no lip-sync. Clip timing: p0pc0rn estimate (about 6 minutes per 5-second 832x480 clip).",
+  "safety": "Sources: p0pc0rn's copyright, trademark and likeness lesson and use policy (rights.js and USE-POLICY.md, from Josh's \"Copyright & IP Policy Research: AI Media Generation App\", Oct 12 2026: 17 U.S.C. §§ 106, 107, 1202; the TAKE IT DOWN Act; state right-of-publicity laws; the studio suits against Midjourney). General information as of Oct 12, 2026, not legal advice.",
+  "sana_video": "Sources: SANA-Video 2.0 5B 720p 4-step model card, huggingface.co/Efficient-Large-Model/SANA-Video_2.0_5B_720p_4step (Apache-2.0; text-to-video only; 81 frames at 16 fps; Gemma-2-2B-it text encoder with a detailed-description instruction; card caveats on motion, anatomy, text, object permanence and long prompts), read through a research agent and the pack's card copy, Oct 12 2026. Phone timing: p0pc0rn estimate. SANA-Video 2.0 5B 720p base card (huggingface.co/Efficient-Large-Model/SANA-Video_2.0_5B_720p: text-image-to-video; \"image-conditioned generation can drift from fine details in the source image\"). Ending-frame and camera-word rules: adapted from an LTX camera cookbook and \"the clip ends with\" rule; picture-start and two-picture rules: adapted from a first/last-frame lane and identity notes (never move back from a face). None measured on SANA-Video yet."
+ },
+ "sections": [
+  {
+   "id": "ace_song#what-the-model-is",
+   "file": "ace_song.md",
+   "book": "Songs: ACE-Step 1.5 turbo",
+   "heading": "What the model is",
+   "tokens": 147,
+   "keywords": [
+    "beat",
+    "chorus",
+    "instrumental",
+    "lyrics",
+    "melody",
+    "music",
+    "rap",
+    "sing",
+    "song",
+    "track",
+    "tune"
+   ],
+   "tools": [
+    "make_song"
+   ]
+  },
+  {
+   "id": "ace_song#tags-the-style",
+   "file": "ace_song.md",
+   "book": "Songs: ACE-Step 1.5 turbo",
+   "heading": "Tags (the style)",
+   "tokens": 137,
+   "keywords": [
+    "beat",
+    "chorus",
+    "genre",
+    "instrumental",
+    "lyrics",
+    "melody",
+    "music",
+    "rap",
+    "sing",
+    "song",
+    "style",
+    "track",
+    "tune",
+    "vibe"
+   ],
+   "tools": [
+    "make_song"
+   ]
+  },
+  {
+   "id": "ace_song#tempo-key-and-metre",
+   "file": "ace_song.md",
+   "book": "Songs: ACE-Step 1.5 turbo",
+   "heading": "Tempo, key and metre",
+   "tokens": 134,
+   "keywords": [
+    "beat",
+    "bpm",
+    "chorus",
+    "fast",
+    "instrumental",
+    "key",
+    "lyrics",
+    "melody",
+    "music",
+    "rap",
+    "sing",
+    "slow",
+    "song",
+    "tempo",
+    "track",
+    "tune",
+    "waltz"
+   ],
+   "tools": [
+    "make_song"
+   ]
+  },
+  {
+   "id": "ace_song#lyrics-structure",
+   "file": "ace_song.md",
+   "book": "Songs: ACE-Step 1.5 turbo",
+   "heading": "Lyrics structure",
+   "tokens": 313,
+   "keywords": [
+    "beat",
+    "chorus",
+    "instrumental",
+    "lyrics",
+    "melody",
+    "music",
+    "rap",
+    "sing",
+    "song",
+    "track",
+    "tune",
+    "verse",
+    "words"
+   ],
+   "tools": [
+    "make_song"
+   ]
+  },
+  {
+   "id": "ace_song#grounded-songs",
+   "file": "ace_song.md",
+   "book": "Songs: ACE-Step 1.5 turbo",
+   "heading": "Grounded songs",
+   "tokens": 192,
+   "keywords": [
+    "about",
+    "ballad",
+    "beat",
+    "chorus",
+    "event",
+    "facts",
+    "history",
+    "instrumental",
+    "lyrics",
+    "melody",
+    "music",
+    "place",
+    "rap",
+    "real",
+    "ship",
+    "sing",
+    "song",
+    "track",
+    "tribute",
+    "true story",
+    "tune",
+    "wreck"
+   ],
+   "tools": [
+    "make_song"
+   ]
+  },
+  {
+   "id": "ace_song#writing-words-that-are-not-cliches",
+   "file": "ace_song.md",
+   "book": "Songs: ACE-Step 1.5 turbo",
+   "heading": "Writing words that are not cliches",
+   "tokens": 78,
+   "keywords": [
+    "beat",
+    "chorus",
+    "instrumental",
+    "lyrics",
+    "melody",
+    "music",
+    "rap",
+    "sing",
+    "song",
+    "track",
+    "tune"
+   ],
+   "tools": [
+    "make_song"
+   ]
+  },
+  {
+   "id": "ace_song#for-a-music-video",
+   "file": "ace_song.md",
+   "book": "Songs: ACE-Step 1.5 turbo",
+   "heading": "For a music video",
+   "tokens": 81,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "ace_song#review",
+   "file": "ace_song.md",
+   "book": "Songs: ACE-Step 1.5 turbo",
+   "heading": "Review",
+   "tokens": 31,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "faq#hugging-face-account-video-model",
+   "file": "faq.md",
+   "book": "FAQ: questions people ask about p0pc0rn",
+   "heading": "Hugging Face account (video model)",
+   "tokens": 334,
+   "keywords": [
+    "account",
+    "download",
+    "gated",
+    "gemma",
+    "hf",
+    "hugging face",
+    "huggingface",
+    "log in",
+    "login",
+    "sign in",
+    "sign up",
+    "terms",
+    "token",
+    "video model",
+    "why do i need"
+   ],
+   "tools": []
+  },
+  {
+   "id": "faq#looking-things-up-wikipedia-and-fandom",
+   "file": "faq.md",
+   "book": "FAQ: questions people ask about p0pc0rn",
+   "heading": "Looking things up (Wikipedia and Fandom)",
+   "tokens": 151,
+   "keywords": [
+    "clear what",
+    "forget",
+    "look things up",
+    "looked up",
+    "lookups",
+    "offline",
+    "privacy",
+    "private",
+    "remember what",
+    "where do you get",
+    "your sources"
+   ],
+   "tools": []
+  },
+  {
+   "id": "foley#what-the-model-is",
+   "file": "foley.md",
+   "book": "Sound for a clip: MMAudio (small, 44.1 kHz)",
+   "heading": "What the model is",
+   "tokens": 95,
+   "keywords": [
+    "ambience",
+    "audio",
+    "effects",
+    "foley",
+    "hear",
+    "noise",
+    "sfx",
+    "sound"
+   ],
+   "tools": [
+    "add_sound"
+   ]
+  },
+  {
+   "id": "foley#licence-personal-non-commercial-use-only",
+   "file": "foley.md",
+   "book": "Sound for a clip: MMAudio (small, 44.1 kHz)",
+   "heading": "Licence: personal, non-commercial use only",
+   "tokens": 94,
+   "keywords": [
+    "ad",
+    "ambience",
+    "audio",
+    "client",
+    "commercial",
+    "effects",
+    "foley",
+    "hear",
+    "noise",
+    "sell",
+    "sfx",
+    "sound"
+   ],
+   "tools": [
+    "add_sound"
+   ]
+  },
+  {
+   "id": "foley#writing-the-sound-prompt-optional",
+   "file": "foley.md",
+   "book": "Sound for a clip: MMAudio (small, 44.1 kHz)",
+   "heading": "Writing the sound prompt (optional)",
+   "tokens": 108,
+   "keywords": [
+    "ambience",
+    "audio",
+    "effects",
+    "foley",
+    "hear",
+    "noise",
+    "sfx",
+    "sound"
+   ],
+   "tools": [
+    "add_sound"
+   ]
+  },
+  {
+   "id": "foley#what-fails",
+   "file": "foley.md",
+   "book": "Sound for a clip: MMAudio (small, 44.1 kHz)",
+   "heading": "What fails",
+   "tokens": 60,
+   "keywords": [
+    "ambience",
+    "audio",
+    "dialogue",
+    "effects",
+    "foley",
+    "hear",
+    "noise",
+    "sfx",
+    "sound",
+    "speech",
+    "voice"
+   ],
+   "tools": []
+  },
+  {
+   "id": "foley#in-a-music-video",
+   "file": "foley.md",
+   "book": "Sound for a clip: MMAudio (small, 44.1 kHz)",
+   "heading": "In a music video",
+   "tokens": 34,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "foley#review",
+   "file": "foley.md",
+   "book": "Sound for a clip: MMAudio (small, 44.1 kHz)",
+   "heading": "Review",
+   "tokens": 30,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "klein4b#what-the-model-is",
+   "file": "klein4b.md",
+   "book": "Pictures: FLUX.2 [klein] 4B",
+   "heading": "What the model is",
+   "tokens": 136,
+   "keywords": [
+    "art",
+    "draw",
+    "drawing",
+    "illustration",
+    "image",
+    "paint",
+    "painting",
+    "photo",
+    "picture",
+    "portrait",
+    "poster",
+    "render",
+    "sketch",
+    "wallpaper"
+   ],
+   "tools": [
+    "make_picture"
+   ]
+  },
+  {
+   "id": "klein4b#sizes",
+   "file": "klein4b.md",
+   "book": "Pictures: FLUX.2 [klein] 4B",
+   "heading": "Sizes",
+   "tokens": 115,
+   "keywords": [
+    "art",
+    "draw",
+    "drawing",
+    "illustration",
+    "image",
+    "paint",
+    "painting",
+    "phone screen",
+    "photo",
+    "picture",
+    "portrait",
+    "poster",
+    "render",
+    "size",
+    "sketch",
+    "square",
+    "story",
+    "tall",
+    "wallpaper",
+    "wide"
+   ],
+   "tools": [
+    "make_picture",
+    "edit_picture"
+   ]
+  },
+  {
+   "id": "klein4b#writing-the-prompt",
+   "file": "klein4b.md",
+   "book": "Pictures: FLUX.2 [klein] 4B",
+   "heading": "Writing the prompt",
+   "tokens": 195,
+   "keywords": [
+    "art",
+    "draw",
+    "drawing",
+    "illustration",
+    "image",
+    "paint",
+    "painting",
+    "photo",
+    "picture",
+    "portrait",
+    "poster",
+    "render",
+    "sketch",
+    "wallpaper"
+   ],
+   "tools": [
+    "make_picture",
+    "edit_picture"
+   ]
+  },
+  {
+   "id": "klein4b#rules-that-save-rerolls",
+   "file": "klein4b.md",
+   "book": "Pictures: FLUX.2 [klein] 4B",
+   "heading": "Rules that save rerolls",
+   "tokens": 182,
+   "keywords": [
+    "art",
+    "draw",
+    "drawing",
+    "face",
+    "hands",
+    "illustration",
+    "image",
+    "paint",
+    "painting",
+    "people",
+    "photo",
+    "picture",
+    "portrait",
+    "poster",
+    "render",
+    "sign",
+    "sketch",
+    "skin",
+    "text",
+    "wallpaper"
+   ],
+   "tools": [
+    "make_picture"
+   ]
+  },
+  {
+   "id": "klein4b#editing-a-picture-edit-picture",
+   "file": "klein4b.md",
+   "book": "Pictures: FLUX.2 [klein] 4B",
+   "heading": "Editing a picture (edit_picture)",
+   "tokens": 107,
+   "keywords": [
+    "background",
+    "change",
+    "edit",
+    "make it",
+    "my photo",
+    "recolor",
+    "recolour",
+    "remove",
+    "replace",
+    "this photo",
+    "turn it"
+   ],
+   "tools": [
+    "edit_picture"
+   ]
+  },
+  {
+   "id": "klein4b#what-fails",
+   "file": "klein4b.md",
+   "book": "Pictures: FLUX.2 [klein] 4B",
+   "heading": "What fails",
+   "tokens": 61,
+   "keywords": [
+    "art",
+    "draw",
+    "drawing",
+    "hug",
+    "illustration",
+    "image",
+    "logo",
+    "map",
+    "paint",
+    "painting",
+    "photo",
+    "picture",
+    "portrait",
+    "poster",
+    "render",
+    "sketch",
+    "text",
+    "wallpaper"
+   ],
+   "tools": []
+  },
+  {
+   "id": "klein4b#review-look-at-result",
+   "file": "klein4b.md",
+   "book": "Pictures: FLUX.2 [klein] 4B",
+   "heading": "Review (look_at_result)",
+   "tokens": 130,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "musicvideo#how-a-music-video-is-made-here",
+   "file": "musicvideo.md",
+   "book": "Music videos: song, shots, clips, cut",
+   "heading": "How a music video is made here",
+   "tokens": 236,
+   "keywords": [
+    "animate my song",
+    "instagram",
+    "music video",
+    "mv",
+    "reel",
+    "shorts",
+    "storyboard",
+    "tiktok",
+    "vertical",
+    "video for my song",
+    "visualizer"
+   ],
+   "tools": []
+  },
+  {
+   "id": "musicvideo#the-first-15-seconds-vertical-videos",
+   "file": "musicvideo.md",
+   "book": "Music videos: song, shots, clips, cut",
+   "heading": "The first 15 seconds (vertical videos)",
+   "tokens": 120,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "musicvideo#the-story-lives-in-the-b-roll",
+   "file": "musicvideo.md",
+   "book": "Music videos: song, shots, clips, cut",
+   "heading": "The story lives in the b-roll",
+   "tokens": 137,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "musicvideo#stills-for-consistency",
+   "file": "musicvideo.md",
+   "book": "Music videos: song, shots, clips, cut",
+   "heading": "Stills for consistency",
+   "tokens": 101,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "musicvideo#visual-variety",
+   "file": "musicvideo.md",
+   "book": "Music videos: song, shots, clips, cut",
+   "heading": "Visual variety",
+   "tokens": 84,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "musicvideo#things-to-avoid",
+   "file": "musicvideo.md",
+   "book": "Music videos: song, shots, clips, cut",
+   "heading": "Things to avoid",
+   "tokens": 56,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "musicvideo#shot-prompt-checklist",
+   "file": "musicvideo.md",
+   "book": "Music videos: song, shots, clips, cut",
+   "heading": "Shot prompt checklist",
+   "tokens": 55,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "musicvideo#review-across-the-cut",
+   "file": "musicvideo.md",
+   "book": "Music videos: song, shots, clips, cut",
+   "heading": "Review across the cut",
+   "tokens": 55,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "safety#rules",
+   "file": "safety.md",
+   "book": "Safety: rights, likeness and what to refuse",
+   "heading": "Rules",
+   "tokens": 369,
+   "keywords": [
+    "actor",
+    "brand",
+    "celebrity",
+    "copy",
+    "copyright",
+    "deepfake",
+    "disney",
+    "famous",
+    "fan art",
+    "in the style of",
+    "logo",
+    "mario",
+    "marvel",
+    "mickey",
+    "naked",
+    "nude",
+    "pikachu",
+    "pokemon",
+    "president",
+    "real person",
+    "sexy",
+    "singer",
+    "style of",
+    "trademark"
+   ],
+   "tools": []
+  },
+  {
+   "id": "safety#facts-are-fine",
+   "file": "safety.md",
+   "book": "Safety: rights, likeness and what to refuse",
+   "heading": "Facts are fine",
+   "tokens": 39,
+   "keywords": [
+    "actor",
+    "brand",
+    "celebrity",
+    "copy",
+    "copyright",
+    "deepfake",
+    "disney",
+    "famous",
+    "fan art",
+    "fandom",
+    "in the style of",
+    "logo",
+    "lore",
+    "mario",
+    "marvel",
+    "mickey",
+    "naked",
+    "nude",
+    "pikachu",
+    "pokemon",
+    "president",
+    "real person",
+    "sexy",
+    "singer",
+    "style of",
+    "trademark",
+    "wiki"
+   ],
+   "tools": [
+    "research"
+   ]
+  },
+  {
+   "id": "safety#how-to-refuse",
+   "file": "safety.md",
+   "book": "Safety: rights, likeness and what to refuse",
+   "heading": "How to refuse",
+   "tokens": 109,
+   "keywords": [
+    "actor",
+    "brand",
+    "celebrity",
+    "copy",
+    "copyright",
+    "deepfake",
+    "disney",
+    "famous",
+    "fan art",
+    "in the style of",
+    "logo",
+    "mario",
+    "marvel",
+    "mickey",
+    "naked",
+    "nude",
+    "pikachu",
+    "pokemon",
+    "president",
+    "real person",
+    "sexy",
+    "singer",
+    "style of",
+    "trademark"
+   ],
+   "tools": []
+  },
+  {
+   "id": "safety#when-unsure",
+   "file": "safety.md",
+   "book": "Safety: rights, likeness and what to refuse",
+   "heading": "When unsure",
+   "tokens": 65,
+   "keywords": [
+    "actor",
+    "brand",
+    "celebrity",
+    "copy",
+    "copyright",
+    "deepfake",
+    "disney",
+    "famous",
+    "fan art",
+    "in the style of",
+    "logo",
+    "mario",
+    "marvel",
+    "mickey",
+    "naked",
+    "nude",
+    "pikachu",
+    "pokemon",
+    "president",
+    "real person",
+    "sexy",
+    "singer",
+    "style of",
+    "trademark"
+   ],
+   "tools": []
+  },
+  {
+   "id": "sana_video#what-the-model-is",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "What the model is",
+   "tokens": 186,
+   "keywords": [
+    "animate",
+    "animation",
+    "camera",
+    "clip",
+    "footage",
+    "motion",
+    "moving",
+    "scene",
+    "shot",
+    "video"
+   ],
+   "tools": [
+    "make_clip"
+   ]
+  },
+  {
+   "id": "sana_video#writing-the-motion-prompt",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "Writing the motion prompt",
+   "tokens": 139,
+   "keywords": [
+    "animate",
+    "animation",
+    "camera",
+    "clip",
+    "footage",
+    "motion",
+    "moving",
+    "scene",
+    "shot",
+    "video"
+   ],
+   "tools": [
+    "make_clip"
+   ]
+  },
+  {
+   "id": "sana_video#the-clip-ends-with",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "The clip ends with",
+   "tokens": 136,
+   "keywords": [
+    "animate",
+    "animation",
+    "camera",
+    "clip",
+    "footage",
+    "motion",
+    "moving",
+    "scene",
+    "shot",
+    "video"
+   ],
+   "tools": [
+    "make_clip"
+   ]
+  },
+  {
+   "id": "sana_video#camera-grammar",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "Camera grammar",
+   "tokens": 132,
+   "keywords": [
+    "animate",
+    "animation",
+    "camera",
+    "clip",
+    "dolly",
+    "footage",
+    "motion",
+    "moving",
+    "orbit",
+    "pan",
+    "scene",
+    "shot",
+    "tracking",
+    "video",
+    "zoom"
+   ],
+   "tools": [
+    "make_clip"
+   ]
+  },
+  {
+   "id": "sana_video#matching-the-length",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "Matching the length",
+   "tokens": 58,
+   "keywords": [
+    "animate",
+    "animation",
+    "camera",
+    "clip",
+    "footage",
+    "motion",
+    "moving",
+    "scene",
+    "second",
+    "seconds",
+    "short",
+    "shot",
+    "video"
+   ],
+   "tools": [
+    "make_clip",
+    "animate_picture",
+    "clip_between"
+   ]
+  },
+  {
+   "id": "sana_video#animating-a-picture-animate-picture",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "Animating a picture (animate_picture)",
+   "tokens": 158,
+   "keywords": [
+    "animate",
+    "bring it to life",
+    "cinemagraph",
+    "from my photo",
+    "from the picture",
+    "from this picture",
+    "living photo",
+    "make it move",
+    "move",
+    "moving picture"
+   ],
+   "tools": [
+    "animate_picture"
+   ]
+  },
+  {
+   "id": "sana_video#between-two-pictures-clip-between",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "Between two pictures (clip_between)",
+   "tokens": 111,
+   "keywords": [
+    "between",
+    "end on",
+    "first frame",
+    "from this picture to",
+    "last frame",
+    "morph",
+    "start on",
+    "transition",
+    "two photos",
+    "two pictures"
+   ],
+   "tools": [
+    "clip_between"
+   ]
+  },
+  {
+   "id": "sana_video#what-fails",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "What fails",
+   "tokens": 68,
+   "keywords": [
+    "animate",
+    "animation",
+    "camera",
+    "clip",
+    "footage",
+    "hands",
+    "motion",
+    "moving",
+    "scene",
+    "shot",
+    "text",
+    "video"
+   ],
+   "tools": []
+  },
+  {
+   "id": "sana_video#review-look-at-result",
+   "file": "sana_video.md",
+   "book": "Clips: SANA-Video 2.0 5B",
+   "heading": "Review (look_at_result)",
+   "tokens": 139,
+   "keywords": [],
+   "tools": []
+  }
+ ]
+}
