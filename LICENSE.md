@@ -1,6 +1,6 @@
-# p0pc0rn Non-Commercial License 1.1 — DRAFT
+# p0pc0rn Non-Commercial License 1.1
 
-> DRAFT for review, October 14, 2026. Not yet adopted. Not legal advice; have it reviewed before publishing.
+> Effective October 15, 2026. Not legal advice. Later versions may update these terms; a copy you already have keeps the version it came with.
 
 Copyright (c) 2026 Joshua Hughes. All rights reserved except as granted below.
 

@@ -1,7 +1,7 @@
-# DRAFT: p0pc0rn use policy
+# p0pc0rn use policy
 
-> DRAFT. It is part of the p0pc0rn License (LICENSE.md, section 3.5) and of the agreement you accept in the app (terms 2026-10-14.2).
-> Not legal advice; have a licensed U.S. attorney review it before publishing. General information as of Oct 14, 2026.
+> It is part of the p0pc0rn License (LICENSE.md, section 3.5) and of the agreement you accept in the app (terms 2026-10-14.2).
+> Not legal advice. General information as of Oct 14, 2026.
 
 Anyone who uses p0pc0rn, or software built from its source, agrees to these rules in addition to the code licence and the model
 licences. They are written in plain language; where a rule comes from a model's licence, the full text is linked and governs.

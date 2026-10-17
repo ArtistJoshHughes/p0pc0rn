@@ -51,8 +51,8 @@ steps; with Claude Code, open the folder and say "set up p0pc0rn with me" ([CLAU
 
 ## Licence, in short
 
-p0pc0rn is source-available, non-commercial software. [LICENSE.md](LICENSE.md) is the p0pc0rn Non-Commercial License 1.1, a
-**draft**; the file governs. In short:
+p0pc0rn is source-available, non-commercial software. [LICENSE.md](LICENSE.md) is the p0pc0rn Non-Commercial License 1.1;
+the file governs. In short:
 
 - **Use the official site, or run your own copy only for yourself.** Don't host it for anyone else, free or paid.
 - **No commercial use of the app.** Don't sell it, charge for it, or put ads in it.

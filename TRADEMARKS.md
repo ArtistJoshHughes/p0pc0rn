@@ -1,7 +1,6 @@
-# DRAFT: p0pc0rn name and icon policy
+# p0pc0rn name and icon policy
 
-> DRAFT for the repository, not part of the app's UI. Revised October 14, 2026. Not legal advice; have it reviewed
-> before publishing.
+> For the repository, not part of the app's UI. Revised October 14, 2026. Not legal advice.
 
 ## The mark
 

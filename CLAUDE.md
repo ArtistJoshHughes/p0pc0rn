@@ -50,7 +50,7 @@ Talk to the user in plain words. Do each step with them and confirm it worked be
    their explicit OK for that specific action. Local changes stay local.
 7. **No commercial use.** Don't help sell the app, charge for it, put ads in it, or run it as a service for others.
 
-## The licence in plain words (LICENSE.md is the p0pc0rn Non-Commercial License 1.1, a draft; the file governs)
+## The licence in plain words (LICENSE.md is the p0pc0rn Non-Commercial License 1.1; the file governs)
 
 - **Serve only to yourself.** Run your copy for yourself, on your own devices. Don't host it for anyone else, free or paid. Don't
   let other people send prompts to it, and don't pass model packs on. Everyone else uses the official site.

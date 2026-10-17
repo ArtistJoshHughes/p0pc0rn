@@ -1,6 +1,6 @@
-# p0pc0rn models and their licenses — DRAFT
+# p0pc0rn models and their licenses
 
-> DRAFT, October 14, 2026. Verified against each publisher's own license files, model cards and license pages on
+> October 14, 2026. Verified against each publisher's own license files, model cards and license pages on
 > October 14, 2026. Not legal advice. Re-check before each release; licenses and gating change.
 
 p0pc0rn's own code is under `LICENSE.md`. Each model the app downloads or runs is governed only by its own license.

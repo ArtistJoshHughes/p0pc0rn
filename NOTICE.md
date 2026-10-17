@@ -1,6 +1,6 @@
 # p0pc0rn: notices
 
-p0pc0rn, by Joshua Hughes. Its own code is under LICENSE.md (the p0pc0rn License, 1.1 draft). The models and the data it uses are not
+p0pc0rn, by Joshua Hughes. Its own code is under LICENSE.md (the p0pc0rn License 1.1). The models and the data it uses are not
 part of p0pc0rn: each keeps its own licence, listed in MODELS.md, with the full texts in `licenses/` (Settings › About › Licences and
 notices). Nothing here is legal advice.
 
