@@ -44,7 +44,8 @@ By Joshua Hughes. **Open it at [https://artistjoshhughes.github.io/p0pc0rn/](htt
    - **Android (Chrome): experimental.** Prepared on desktop with Android-like limits; the first device test (Pixel 10) is pending.
      Run Settings › About › Device check first.
 2. Read the rights lesson and tap **I agree**.
-3. **Settings › Models:** download what you want. Each model shows its licence first. Sizes and tips: [SETUP.md](SETUP.md).
+3. **Download what you want.** p0pc0rn opens in the Assistant chat, which offers its own download first and the other models when
+   you ask for them; **Settings › Models** has every model. Each model shows its licence first. Sizes and tips: [SETUP.md](SETUP.md).
 
 Running your own copy is optional, and the licence allows it only for yourself, on your own devices. [SETUP.md](SETUP.md) has the
 steps; with Claude Code, open the folder and say "set up p0pc0rn with me" ([CLAUDE.md](CLAUDE.md)).

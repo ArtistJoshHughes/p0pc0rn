@@ -38,14 +38,14 @@ import { createKB } from './assistant/kb.js';   // v023: the likeness gate reads
 import { startMusicVideo, requestGo, requestFrameReroll, requestShotReroll, boardOf, progressOf, estimate as mvEstimate, mvRoot } from './assistant/mvflf.js';   // v023
 // p0pc0rn Cast (Josh, Oct 14: "Voice clone successful. Wire it in to cast under settings"): people the phone may use by name, their voice
 // (the voice probe v002 engine) and photos (Klein references); + "Make them talk" (EXPERIMENTAL lip-sync, the lip-sync probe v002 engine)
-import { createCast, refForShape, refPrompt } from './cast/cast.js';
+import { createCast, refForShape, refPrompt, sayIntent } from './cast/cast.js';
 import { sayRunner, sayTurn, wrapAsk } from './cast/castsay.js';
 import { initCast } from './cast/cast_ui.js';
 import { lipsyncRunner, talkRunner } from './cast/talk.js';
 import { initTalk } from './cast/talk_ui.js';
 import { NUDGE_MAX, shotsOfFrame } from './assistant/storyboard.js';   // v023
 
-const APP_VERSION = '3.6 · v027.3';
+const APP_VERSION = '3.7 · v030';
 const MODELS = {
   image: { id: 'flux2-klein-4b', name: 'FLUX.2 Klein 4B', what: 'Pictures', noun: 'picture', total: 4.62e9 },
   video: { id: 'sanavideo2-5b', name: 'SANA-Video 2.0 5B', what: 'Videos', noun: 'video', total: 5.72e9 },
@@ -65,7 +65,7 @@ const MODELS = {
 const PACKS = (window.PF && PF.packs) || (window.P0_CONFIG && P0_CONFIG.packs) || {};   // v026.6: every pack address comes from config.js
 const CAST_PACKS = { voice: PACKS['qwen3-tts-0.6b'], lipsync: PACKS['musetalk-1.5'] };
 const CAST_KINDS = new Set(['say', 'talk', 'lipsync']);   // queue jobs of Cast (never on Create's stage)
-const KEYS = ['image', 'video'];             // the two engines (the setup gate offers these)
+const KEYS = ['image', 'video'];             // the two engines made at boot (Create's pictures and clips)
 const DL = ['image', 'k9b', 'video', 'reader', 'brain', 'music', 'planner', 'starter', 'voice', 'lipsync'];   // everything that downloads; the reader rides on the video engine, the planner on the music engine
 const ADDON = { reader: 'video', planner: 'music' };   // add-ons that live inside another model's engine (and folder)
 const KEY_OF = { 'flux2-klein-4b': 'image', 'flux2-klein-9b': 'k9b', 'sanavideo2-5b': 'video', 'gemma4-e2b': 'brain', 'acestep15-turbo': 'music', 'qwen3-tts-0.6b': 'voice', 'musetalk-1.5': 'lipsync' };
@@ -109,6 +109,12 @@ const SONG_CAPTION = { load: 'Getting ready', plan: 'Planning the song', text: '
 const SONG_HEAT = new Set(['load', 'plan', 'text', 'lyrics', 'cond']);
 const NOUN = { picture: 'picture', edit: 'picture', clip: 'clip', animate: 'clip', between: 'clip', resume: 'clip', song: 'song', musicvideo: 'music video', assemble: 'music video', mvflf: 'music video', mvplan: 'storyboard', say: 'voice line', talk: 'lip-sync', lipsync: 'lip-sync' };
 const DECODE = [450, 560, 700];
+// v030: clips decode with 700 MB by default (720p -36% against v027.3 on an iPhone 16 Pro Max: one tile, peak ~580 MB). Android
+// (experimental, not yet run on a device) keeps 450. A clip that runs out of memory still offers "Use 450 MB and retry".
+const DECODE_DEFAULT = /Android/i.test(navigator.userAgent || '') ? 450 : 700;
+// v030: Android keeps the picture decoder's full-precision (fp32) sums: fp16 sums save only ~2 s a picture there, the Android picture
+// decoder already shows banding, and no Android device has run them yet
+const PIC_ACC = /Android/i.test(navigator.userAgent || '') ? { picAcc: 'f32' } : {};
 const size = (id) => SIZES.find((z) => z.id === id) || SIZES[0];
 const vsize = (id) => VSIZES.find((z) => z.id === id) || VSIZES[0];
 const sizeFor = (w, h) => (SIZES.find((z) => z.w === w && z.h === h) || {}).id;
@@ -116,7 +122,7 @@ const vsizeFor = (w, h) => (VSIZES.find((z) => z.w === w && z.h === h) || {}).id
 const msg = (e) => String((e && (e.message || e.name)) || e || '');
 const newSeed = () => crypto.getRandomValues(new Uint32Array(1))[0] % 2147483648;
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const decodeMB = () => { const v = Number(ls.get('pf.app.decodeMB', 450)); return DECODE.includes(v) ? v : 450; };
+const decodeMB = () => { const v = Number(ls.get('pf.app.decodeMB', DECODE_DEFAULT)); return DECODE.includes(v) ? v : DECODE_DEFAULT; };
 const tileOf = (m) => { const r = /tile (\d+)\s*(?:\/|of)\s*(\d+)/i.exec(m || ''); return r ? [Number(r[1]), Number(r[2])] : null; };
 const dlState = (total) => ({ sub: 'idle', have: 0, total, bps: 0, eta: null, low: false, userPaused: false, detail: '', ctl: null });
 const isClip = (m) => !!m && m.media === 'video';
@@ -126,12 +132,12 @@ const isMV = (m) => isClip(m) && m.vmode === 'mv';                    // a music
 const consented = () => !!rights.consent();
 
 const S = {
-  phase: 'boot',        // boot | stop | setup | ready | working | result | error
+  phase: 'boot',        // boot | stop | setup (iPhone: "Add to Home Screen first") | ready | working | result | error
   tab: 'create', mode: ls.get('pf.app.mode') === 'video' ? 'video' : 'image',
   caps: null, persisted: false, st: { image: null, video: null, reader: null, brain: null, music: null, planner: null, voice: null, lipsync: null, k9b: null },
   dl: Object.fromEntries(DL.map((k) => [k, dlState(MODELS[k].total)])),
   stop: null,           // {title, text, detail, retry: 'reload' | 'boot'}
-  setup: { card: 'dl', model: 'image' },
+  free: null,           // bytes free for p0pc0rn on this phone (the chat's first message says it)
   form: Object.assign({ prompt: '', size: 'wide', steps: 4, seedMode: 'random', seed: '', ref: 'half', model: '4b' }, ls.get('pf.app.draft', {})),   // v026.6: + model ('4b' | '9b', remembered)
   vform: Object.assign({ prompt: '', size: 'wide', len: 5, seedMode: 'random', seed: '', src: 'words', q: 'standard', end: '' }, ls.get('pf.app.vdraft', {})),   // v026.6: + q (standard | high | highest), end
   hq: ls.get('pf.app.hq', null),   // v026.6: a High / Highest video's 9B frames being made or reviewed (survives the planned fresh pages)
@@ -208,7 +214,7 @@ async function boot() {
   try {
     for (const k of KEYS) {
       if (E[k]) continue;
-      const e = await PF.createEngine(k === 'video' ? { model: MODELS.video.id, decodeBudgetMB: decodeMB() } : { model: MODELS.image.id });
+      const e = await PF.createEngine(k === 'video' ? { model: MODELS.video.id, decodeBudgetMB: decodeMB(), ...PIC_ACC } : { model: MODELS.image.id, ...PIC_ACC });
       wire(e, k); E[k] = e;   // same tick, before any other await: KILLED_LAST_RUN comes from a setTimeout(0) inside createEngine
     }
     E.reader = readerEngine(E.video);
@@ -248,7 +254,9 @@ async function boot() {
   if (bl) { ls.set('pf.app.brainLoading', null); if (bl.mode !== 'lean') { setBrainMode('lean'); S.brainNote = 'The assistant stopped while loading, so it now loads lighter (about 1.2 GB). Settings › Assistant can switch it back.'; } }
   refreshCk();
   if (!Q) { try { await initAssistant(); } catch (e) { S.agentError = S.agentError || msg(e); } }
-  if (KEYS.some(done)) enterApp(); else enterSetup();
+  // onboarding: an iPhone's Safari tab with nothing downloaded yet asks for the Home Screen first (its storage is separate); everyone
+  // else opens the app: a new install in the Assistant chat, an install that has a model or history on Create (homeTab)
+  if (!onPhone() && !standalone() && !ANDROID) enterSetup(); else await enterApp();
   startQueue();
   restoreUi();
   setTimeout(seedLazy, 6000);   // v026.7: the first open after the update learns the lazy engines' status once, in the background
@@ -329,34 +337,47 @@ function unsupportedText(reason = '') {
   if (r.includes('storage')) return 'Needs about 5 GB free. Free space in Settings › General › iPhone Storage.';
   return "This phone or browser can't run p0pc0rn.";
 }
-function enterApp() {
+async function enterApp() {
   const first = S.phase !== 'ready';
   if (!done(S.mode) && !(S.dl[S.mode].have > 0)) S.mode = KEYS.find(done) || S.mode;   // open on a model that is there
+  const home = first ? await homeTab() : S.tab;
   set({ phase: 'ready' });
-  if (first) { const c = $('compose'); c.classList.add('stagger'); setTimeout(() => c.classList.remove('stagger'), 700); }
+  if (first) { const c = $('compose'); c.classList.add('stagger'); setTimeout(() => c.classList.remove('stagger'), 700); freeSpace(); }
   syncPrompt(); placeAll();   // the shell is visible now, so the selectors can be measured
-  if (!consented()) openLesson();
+  if (home !== S.tab) go(home);
+  if (!consented()) openLesson();   // the rights lesson and the agreement come before anything is made, on every tab
+}
+/** anything downloaded on this phone (any model, complete or partly) */
+const onPhone = () => DL.some((k) => done(k) || S.dl[k].have > 0);
+// ---- onboarding (Josh: "like Ollama does"): a NEW install opens in the Assistant chat, whose first message offers the assistant and the
+// starter knowledge (ui/chat.js); the other models are offered there when they are asked for, and in Settings › Models. An install that
+// already has a model, Library items or chats keeps opening on Create, as before. Decided on the first open of this version, then kept.
+const HOME = 'p0pc0rn:home';
+async function homeTab() {
+  const h = ls.get(HOME, null);
+  if (h === 'assistant' || h === 'create') return h;
+  let had = onPhone() || (await store.list().catch(() => [])).length > 0;
+  if (!had && AG) had = (await AG.db.all('sessions').catch(() => [])).some((s) => s && s.messages && s.messages.length);
+  const tab = had ? 'create' : 'assistant';
+  ls.set(HOME, tab); diag('first open', { home: tab });
+  return tab;
 }
 
-// ------------------------------------------------------------------------------------------------ downloads (gate, Create card, Settings)
-function enterSetup(k) {
-  k = k || (S.dl.video.have > 0 && !(S.dl.image.have > 0) ? 'video' : 'image');
-  S.setup.model = k;
-  const u = S.dl[k]; if (!['downloading', 'pausing'].includes(u.sub)) Object.assign(u, { sub: 'idle', low: false, detail: '' });
-  S.setup.card = !standalone() && !ANDROID && !KEYS.some((m) => S.dl[m].have > 0) ? 'home' : 'dl';   // v026.9: Chrome's installed app shares the storage: no gate
-  set({ phase: 'setup' });
-  freeSpace();
-}
+// ------------------------------------------------------------------------------------------------ downloads (the chat, Create card, Settings)
+/** iPhone, a Safari tab with nothing downloaded: "Add to Home Screen first" (the Home Screen app's storage is its own). v026.9: not on
+ *  Android, where Chrome's installed app shares the storage. "Download in Safari instead" opens the app. */
+function enterSetup() { set({ phase: 'setup' }); }
+/** what the chat's first message says about space (navigator.storage.estimate: the quota left for this site) */
 async function freeSpace() {
   let free = null;
   try { const e = await navigator.storage.estimate(); free = (e.quota || 0) - (e.usage || 0); } catch (e) { /* */ }
   if (free == null && S.caps) free = S.caps.storageQuotaGB * 1e9;
-  $('dl-free').textContent = free != null ? `${gb(free)} free for p0pc0rn on this phone.` : '';
+  S.free = free; if (CH) CH.render();
 }
 function startDownload(k) {
   const u = S.dl[k];
   if (!['idle', 'paused', 'dropped', 'failed'].includes(u.sub)) return;   // Resume only after the old call has settled (no BUSY)
-  if (LTX_KEYS.has(k) && !ltxAccepted()) return openLtx(() => startDownload(k));   // v026.4: the LTX-2 licence, accepted first
+  if (LTX_KEYS.has(k) && !ltxOk()) return openLtx(() => startDownload(k));   // v026.4: the LTX-2 licence (+ the Gemma tick), accepted first: every download path comes here
   if (k === 'k9b' && !fluxAccepted()) return openFlux(() => startDownload(k));   // v026.6: the FLUX Non-Commercial License, accepted once
   const other = DL.find((m) => m !== k && ['downloading', 'pausing'].includes(S.dl[m].sub));
   if (other) { if (k === 'reader') S.pending = false; return toast(`One download at a time. Pause the ${dlNoun(other)} first.`); }
@@ -369,16 +390,18 @@ function startDownload(k) {
     .then(async () => {
       try { S.st[k] = await E[k].status(); } catch (e) { S.st[k] = { complete: false }; }
       if (!done(k)) Object.assign(u, { sub: 'failed', detail: 'The download ended early.' });
-      else if (S.phase === 'setup' && KEYS.includes(k)) u.sub = 'done';
       else if (k === 'reader') { u.sub = 'idle'; if (!S.pending) toast('The picture reader is ready'); }
       else {
         u.sub = 'idle';
         const next = k === 'music' && S.musicPair && E.planner && !done('planner');   // v021: one tap = the music model AND the lyrics planner
+        const nextS = k === 'brain' && S.brainPair && E.starter && !done('starter');   // onboarding: one tap = the assistant AND the starter knowledge
         if (k === 'planner' || (k === 'music' && !next)) S.musicPair = false;
+        if (k === 'starter' || (k === 'brain' && !nextS)) S.brainPair = false;
         if (k === 'starter') plugStarter();
-        toast(k === 'starter' ? 'The starter knowledge is ready' : k === 'brain' ? 'The assistant is ready' : next ? 'The music model is in · now the lyrics planner' : (k === 'planner' || k === 'music') && done('music') && (!E.planner || done('planner')) ? 'Music is ready'
+        toast(k === 'starter' ? 'The starter knowledge is ready' : k === 'brain' ? (nextS ? 'The assistant is ready · now the starter knowledge' : 'The assistant is ready') : next ? 'The music model is in · now the lyrics planner' : (k === 'planner' || k === 'music') && done('music') && (!E.planner || done('planner')) ? 'Music is ready'
           : k === 'planner' ? 'The lyrics planner is ready' : `The ${MODELS[k].noun} model is ready`);
         if (next) setTimeout(() => startDownload('planner'), 0);
+        if (nextS) setTimeout(() => startDownload('starter'), 0);
       }
       if (k === 'reader' && !done(k)) S.pending = false;
       syncWake(); render(); renderLessonDl(); if (S.tab === 'settings') renderSettings(); if (CH) CH.render();
@@ -423,6 +446,31 @@ function musicTap() {
   if (!done('music')) return startDownload('music');
   if (E.planner && !done('planner')) return startDownload('planner');
 }
+// ---- onboarding: the chat's first message offers the assistant AND the starter knowledge as one download (one button, one bar, both parts
+// listed), built like music's pair: the assistant first, then the starter knowledge by itself; the same button pauses and resumes the pair
+const assistKeys = () => ['brain', 'starter'].filter((k) => E[k]);
+/** the pair as one download: {total, have, pct, running, pausing, partial, ready, addStarter, failed, label, parts} */
+function assistDl() {
+  const ks = assistKeys(), total = ks.reduce((a, k) => a + partTotal(k), 0), have = ks.reduce((a, k) => a + partHave(k), 0);
+  const running = ks.find((k) => S.dl[k].sub === 'downloading') || null, pausing = ks.some((k) => S.dl[k].sub === 'pausing');
+  const failed = ks.find((k) => S.dl[k].sub === 'failed') || null, brainOk = done('brain'), ready = brainOk && (!E.starter || done('starter'));
+  const partial = ks.some((k) => !done(k) && S.dl[k].have > 0), starterHere = !E.starter || done('starter');   // the starter may already be here (Settings)
+  const addStarter = brainOk && !ready && !running && !pausing;   // the assistant is in, the starter knowledge is not (or it stopped)
+  const pct = total ? have / total : 0, left = fmtSize(Math.max(0, total - have));
+  const label = ready ? 'The assistant is ready' : running ? `Pause · ${Math.floor(pct * 100)}%` : pausing ? 'Pausing…' : addStarter ? `Add the starter knowledge · ${fmtSize(partTotal('starter'))}`
+    : partial ? `Resume the assistant · ${left} left` : starterHere ? `Download the assistant · ${fmtSize(partTotal('brain'))}` : `Download the assistant + starter knowledge · ${fmtSize(total)}`;
+  const part = (k) => `${k === 'brain' ? 'Assistant' : 'Starter knowledge'} ${done(k) ? '✓' : S.dl[k].have > 0 ? `${Math.floor(partHave(k) / partTotal(k) * 100)}%` : fmtSize(partTotal(k))}`;
+  return { total, have, pct, running, pausing, partial, ready, addStarter, failed, low: ks.some((k) => S.dl[k].low), label, parts: ks.map(part).join(' · ') };
+}
+/** the one button: download what is missing (the assistant, then the starter knowledge by itself), Pause / Resume the pair */
+function assistTap() {
+  const a = assistDl();
+  if (a.running) { S.brainPair = true; return pauseDownload(a.running); }   // a paused pair resumes as a pair
+  if (a.ready || a.pausing) return;
+  S.brainPair = true;
+  if (!done('brain')) return startDownload('brain');
+  if (E.starter && !done('starter')) return startDownload('starter');
+}
 const autoResume = () => { if (document.hidden) return; for (const k of DL) { const u = S.dl[k]; if (u.sub === 'dropped' && !u.userPaused && E[k]) startDownload(k); } };
 const dlPct = (u) => (u.total ? u.have / u.total : 0);
 function dlLine(u, pct) {
@@ -431,7 +479,7 @@ function dlLine(u, pct) {
   return u.sub === 'downloading' && u.bps > 0 ? `${of} · ${Math.round(u.bps / 1e6)} MB/s${u.eta != null ? ` · ${about(u.eta)} left` : ''}` : of;
 }
 const dlLabel = (u, short) => (u.sub === 'downloading' ? 'Pause' : u.sub === 'pausing' ? 'Pausing…' : u.have > 0 ? (short ? 'Resume' : `Resume · ${fmtSize(Math.max(0, u.total - u.have))} left`) : (short ? 'Download' : `Download ${fmtSize(u.total)}`));
-function renderDl() { renderLessonDl(); if (S.phase === 'setup') return renderGate(); renderPill(); if (S.tab === 'create') { renderNeed(); renderReader(); } if (S.tab === 'settings') renderModels(); if (CH) CH.renderDl(); }
+function renderDl() { renderLessonDl(); if (S.phase === 'setup') return; renderPill(); if (S.tab === 'create') { renderNeed(); renderReader(); } if (S.tab === 'settings') renderModels(); if (CH) CH.renderDl(); }
 /** what a download is called in a sentence ("Pause the music model first.") */
 const dlNoun = (k) => (k === 'reader' || k === 'planner' ? MODELS[k].noun : k === 'brain' ? 'assistant' : `${MODELS[k].noun} model`);
 
@@ -557,6 +605,7 @@ function make() {
     if (un >= 0) { toast('Tick the box about your photo first.'); return flag($(`vattest-box-${un}`)); }
   }
   if (!F().prompt.trim()) { toast(pic ? (vsrc() === 'two' ? 'Describe the change first.' : 'Describe what moves first.') : vid ? 'Describe the clip first.' : 'Describe the picture first.'); $('prompt').focus(); return; }
+  if (vid && !ltxOk()) return void openLtx(() => make());   // the Gemma tick: before any video job (also High / Highest, whose 9B frames come first)
   if (pic && !done('reader')) return readerThenMake();
   if (pic) return startJob(videoParams(), activeSlots().map((x) => x.blob), sourcesOf(activeSlots()));
   if (vid && vq() !== 'standard') return startHq();   // v026.6: High / Highest: the 9B frames first, reviewed before animating
@@ -569,6 +618,7 @@ async function startJob(params, input, srcs) {
   const k = params.media === 'video' ? 'video' : 'image', e = E[k], pic = isPic(params.kind);
   if (!['ready', 'result', 'error'].includes(S.phase) || !e) return;   // one job at a time on the stage: a double tap is a no-op
   if (!consented()) return openLesson();   // every way into a job (Make, Again, resume, retry) passes here
+  if (k === 'video' && !ltxOk()) return void openLtx(() => startJob(params, input, srcs));   // the Gemma tick (and the LTX licence) before a video job
   if (params.kind === 'i2i' && (!input || !params.attested)) return;
   if (pic && (!picOK() || (!params.resume && (!Array.isArray(input) || input.length < (params.kind === 'flf' ? 2 : 1) || !input.every(Boolean) || !params.attested)))) return;
   if (!Q) return toast('p0pc0rn is still starting. Try again in a moment.');
@@ -698,7 +748,7 @@ const fetchJSON = async (u) => { const r = await fetch(u); if (!r.ok) throw new 
 const installed = (id) => { const k = KEY_OF[id]; return !!k && done(k); };
 const SONG_INFO = new Map();   // seed -> what the music engine said about the song (planner on, codec, timings): the Library meta + the report
 let HOSTLOG = [];              // the last model loads / unloads
-// ---- v024 diagnostics (Josh's phone crash, Oct 13): the last 50 steps survive a page kill (localStorage); Settings > About > Diagnostics
+// ---- v024 diagnostics (Josh's phone crash, Oct 13): the last steps (200 since v026.2) survive a page kill (localStorage); Settings > About > Diagnostics
 const DIAG_KEY = 'p0pc0rn:diag', GPUM = { live: 0, peak: 0, on: false, n: 0, freed: 0, ring: [] };
 /** WebGPU buffer bytes alive (all engines), counted at createBuffer / destroy; the peak since the last diagnostics step */
 function installGpuMeter() {
@@ -819,6 +869,8 @@ async function initAssistant() {
     if (((ctx.params && ctx.params.ui) || {}).kind === 'flf') { const k = flfKeep(r.frames), t = await keepHead(r.blob, k, r.fps || 16); return { video: t.blob, frames: k, rendered: r.frames, fileFrames: t.frames, fps: r.fps, width: r.width, height: r.height, seed: r.seed, seconds: r.seconds, resumedFromStep: r.resumedFromStep || 0 }; }
     return { video: r.blob, frames: r.frames, fps: r.fps, width: r.width, height: r.height, seed: r.seed, seconds: r.seconds, resumedFromStep: r.resumedFromStep || 0 };
   } };
+  // the Gemma tick: every video job waits for the licence sheet while the LTX licence or the tick is missing (ltxGate)
+  for (const k of ['clip', 'animate', 'between', 'resume']) { const r = RUN[k]; if (r && r.run) RUN[k] = Object.assign({}, r, { run: async (ctx) => { if (!ltxOk()) await ltxGate(ctx.signal); return r.run(ctx); } }); }
   // p0pc0rn Cast: 'say' (a Cast member's voice), 'lipsync' + 'talk' (Make them talk, EXPERIMENTAL)
   RUN.say = sayRunner({ cast: CAST }); RUN.lipsync = lipsyncRunner();
   RUN.talk = talkRunner({ cast: CAST, say: (sid, m) => (AG ? AG.say(sid, m) : null), sizes: { tall: CLIP_SIZE.tall, wide: CLIP_SIZE.wide } });
@@ -869,10 +921,12 @@ function replyOnly(j) {
   return !(['picture', 'edit', 'clip', 'animate', 'between'].includes(c.kind) && AG && AG.hooks.review);
 }
 /** p0pc0rn Cast: a picture or clip request that names a Cast member with photos -> their face crop is Klein's reference (an 'edit' from it;
- *  a clip: that still first, then image-to-video). The name becomes "the person in the reference photo" (it means nothing to the model). */
+ *  a clip: that still first, then image-to-video). The name becomes "the person in the reference photo" (it means nothing to the model).
+ *  post-launch (security review I1): only the person's OWN words pick the Cast member, never the model-written prompt (page text the
+ *  assistant read could otherwise put a Cast photo into a picture). */
 async function castJob(job, tool, args, text) {
   if (!job || (job.kind !== 'picture' && job.kind !== 'clip')) return null;
-  const hits = (await CAST.find([text, args.prompt].filter(Boolean).join('\n'))).filter((h) => h.person.photos.length);
+  const hits = (await CAST.find(String(text || ''))).filter((h) => h.person.photos.length);
   if (!hits.length) return null;
   const { person, as } = hits[0], blob = await CAST.getBlob(person.photos[0].key); if (!blob) return null;
   const names = [person.name, person.name.split(/\s+/)[0], ...(as === 'me' ? ['myself', 'me'] : [as])].filter((v, i, a) => v && a.indexOf(v) === i);
@@ -960,7 +1014,7 @@ async function hostCreate(id) {
     if (E[k].lazy) { await refreshStatus(k); render(); }
     return k === 'voice' ? voiceAdapter(e) : lipsyncAdapter(e);
   }
-  if (!E[k]) { const e = await PF.createEngine(k === 'music' ? { model: id, decodeBudgetMB: 450 } : { model: id }); wire(e, k); E[k] = e; if (k === 'music') E.planner = plannerEngine(e); }   // v024.1: the phone's decode budget here too
+  if (!E[k]) { const e = await PF.createEngine(k === 'music' ? { model: id, decodeBudgetMB: 450 } : { model: id, ...(k === 'image' || k === 'video' ? PIC_ACC : {}) }); wire(e, k); E[k] = e; if (k === 'music') E.planner = plannerEngine(e); }   // v024.1: the phone's decode budget here too
   const e = E[k];
   if (k === 'brain') { await loadBrain(e); return brainAdapter(e); }
   if (k === 'music') return musicAdapter(e);
@@ -1265,7 +1319,18 @@ function chatApi() {
     animateSong, openBoard, mvStatus: (j) => mvStatusOf(j),   // v023: Animate on a landed song's bubble, the music video's storyboard and progress
     talkFromSay: (jobId, sid) => { const j = Q && Q.get(jobId); if (j && TALKUI) TALKUI.fromSay(j, sid); },   // p0pc0rn Cast: Lip-sync (experimental) on a say bubble
     readOnly: () => !!(Q && Q.readOnly), agentError: () => S.agentError || null,
-    openSettings: (id) => { go('settings'); const el = id && $(id); if (el) setTimeout(() => el.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' }), 60); } };
+    openSettings: (id) => { go('settings'); const el = id && $(id); if (el) setTimeout(() => el.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' }), 60); },
+    // onboarding: the assistant + starter knowledge as one download, what the first message says about the phone, the Cast's say asks
+    // (answered in code, with or without the assistant) and a request handed to Create when the assistant is not on the phone yet
+    assistDl, assistTap, isSayAsk: (t) => !!sayIntent(t), toCreate,
+    phone: () => ({ android: ANDROID, homeApp: standalone(), free: S.free }) };
+}
+/** onboarding: without the assistant, the chat hands a picture or clip request to Create as its prompt (Create needs no assistant) */
+function toCreate(prompt, mode) {
+  if (S.phase === 'working') { go('create'); return toast('Wait — something is being made'); }
+  backToCompose(false); if (mode === 'video') S.vform.src = 'words';
+  setMode(mode); F(mode).prompt = String(prompt || '').slice(0, 2000); saveDraft(); syncPrompt(); renderCta();
+  toast('Prompt is ready — tap Make');
 }
 /** open a Library item by id in the viewer (the chat's results are saved there as 'a-<job id>') */
 async function openLibraryItem(id) {
@@ -1438,7 +1503,8 @@ function openPicker(i, exclude) {
 }
 function closeWrap(id, after) {
   const w = $(id); if (w.hidden || w.classList.contains('out')) return;
-  w.classList.add('out'); setTimeout(() => { w.hidden = true; w.classList.remove('out'); if (after) after(); }, reducedMotion() ? 120 : 240);
+  // v030: reopened while it slid out (openWrap took 'out' away): it stays open (a queued clip's licence sheet reopens within 240 ms)
+  w.classList.add('out'); setTimeout(() => { if (!w.classList.contains('out')) return; w.hidden = true; w.classList.remove('out'); if (after) after(); }, reducedMotion() ? 120 : 240);
 }
 const closePicker = () => closeWrap('picker', () => { for (const u of PK.urls) URL.revokeObjectURL(u); PK.urls = []; $('pk-grid').textContent = ''; });
 // ---- a small action menu (a picture's More)
@@ -1666,8 +1732,7 @@ function askDeleteModel(k) {
     if (k === 'video') { ls.set('pf.app.ckGoneAt', Date.now()); refreshCk(); store.clearVideoInputs().catch(() => {}); }   // both checkpoints went with the folder
     toast(rd ? 'Picture reader deleted' : pl ? 'Lyrics planner deleted' : k === 'brain' ? 'Assistant model deleted' : `${cap(m.noun)} model deleted`);
     if (CH) CH.render();
-    if (!KEYS.some(done)) { backToCompose(false); return enterSetup(); }
-    render(); renderSettings();
+    render(); renderSettings();   // onboarding: no setup screen after the last model goes; Create and the chat offer the downloads
   });
 }
 /** leftovers inside the video model's folder that nothing needs while no job runs */
@@ -1773,9 +1838,9 @@ function renderLessonDl() {
   const k = KEYS.find((m) => ['downloading', 'pausing', 'paused', 'dropped', 'failed'].includes(S.dl[m].sub)) || L.dlKey;
   $('ls-dl').hidden = !k; if (!k) return;
   L.dlKey = k;
-  const u = S.dl[k], m = MODELS[k], ready = done(k) && !['downloading', 'pausing'].includes(u.sub);
-  $('ls-dl-text').textContent = ready ? `The ${m.noun} model is ready. Finish the lesson to start making.`
-    : u.sub === 'downloading' ? `Downloading the ${m.noun} model · ${dlLine(u, true)}` : u.sub === 'failed' ? `Download stopped · ${dlLine(u, true)}` : `Download paused · ${dlLine(u, true)}`;
+  const u = S.dl[k], ready = done(k) && !['downloading', 'pausing'].includes(u.sub), name = dlNoun(k);   // onboarding: "the assistant" too
+  $('ls-dl-text').textContent = ready ? `The ${name} is ready. Finish the lesson to start making.`
+    : u.sub === 'downloading' ? `Downloading the ${name} · ${dlLine(u, true)}` : u.sub === 'failed' ? `Download stopped · ${dlLine(u, true)}` : `Download paused · ${dlLine(u, true)}`;
   $('ls-dl-fill').style.transform = `scaleX(${(ready ? 1 : dlPct(u)).toFixed(4)})`;
   const b = $('ls-dl-btn'); b.hidden = ready; b.disabled = u.sub === 'pausing'; b.textContent = u.sub === 'downloading' ? 'Pause' : u.sub === 'pausing' ? 'Pausing…' : 'Resume';
 }
@@ -1851,9 +1916,17 @@ function shareItem(o, fallback) {
 
 // ---- v026.4: the LTX-2 Community License, shown in full with a short summary and accepted on this phone before the video model or the
 // picture reader (both carry Lightricks' LTX-2.3 autoencoder) downloads. Stored with the licence's date; a new licence date asks again.
+// The Gemma tick (Josh approved, post-launch): the video model reads prompts with Gemma 2, so the same sheet has a separate, unticked box
+// for Google's Gemma Prohibited Use Policy. "I accept" needs the full LTX text loaded and the box ticked, each only while it is missing (an
+// install that accepted the LTX licence before the tick is asked for the tick alone). The tick is kept in the same record (gemma = the
+// policy's date). Asked before every download of the two packs and before every video job (ltxGate), so an older install sees it once.
 const LTX_KEYS = new Set(['video', 'reader']), LTX_KEY = 'p0pc0rn:ltx-license', LTX_DATE = '2026-01-05';
-const ltxAccepted = () => { const a = ls.get(LTX_KEY); return !!(a && a.date === LTX_DATE && a.acceptedAt); };
-let ltxThen = null;
+const GEMMA_PUP_DATE = '2024-02-21';   // the policy's "Last modified" (licenses/GEMMA_PROHIBITED_USE_POLICY.txt)
+const ltxRec = () => ls.get(LTX_KEY) || null;
+const ltxAccepted = () => { const a = ltxRec(); return !!(a && a.date === LTX_DATE && a.acceptedAt); };
+const gemmaAccepted = () => { const a = ltxRec(); return !!(a && a.gemma === GEMMA_PUP_DATE && a.gemmaAcceptedAt); };
+const ltxOk = () => ltxAccepted() && gemmaAccepted();
+const LTXQ = [];   // who waits for the sheet's answer, [{yes, no}]: a download, a Create video job, a queued video job
 function buildLtx() {
   const ul = $('ltx-points'); ul.replaceChildren();
   for (const t of ['Free to use for any purpose, under the use restrictions in Attachment A. They become part of your p0pc0rn terms.',
@@ -1862,8 +1935,13 @@ function buildLtx() {
     'Companies with annual revenues of USD 10 million or more need a paid licence from Lightricks.',
     'p0pc0rn’s copy is converted for phones (a “Derivative”); it is given to you only under this licence.']) ul.append(mk('li', null, t));
 }
-async function openLtx(then) {
-  ltxThen = typeof then === 'function' ? then : null;
+async function openLtx(yes, no) {
+  LTXQ.push({ yes: typeof yes === 'function' ? yes : null, no: typeof no === 'function' ? no : null });
+  const w = $('ltx'); if (!w.hidden && !w.classList.contains('out')) return;   // already open: this one waits for the same answer
+  const a = ltxRec(), hadL = ltxAccepted(), hadG = gemmaAccepted(), box = $('ltx-gemma');
+  box.checked = hadG; box.disabled = hadG;   // a new ask always starts unticked
+  $('ltx-have').hidden = !hadL; $('ltx-have').textContent = hadL ? `You accepted the LTX-2 licence on ${day(a.acceptedAt)}. Only the Gemma box below is new.` : '';
+  $('ltx-gemma-when').hidden = !hadG; $('ltx-gemma-when').textContent = hadG ? `Agreed on ${day(a.gemmaAcceptedAt)}.` : '';
   openWrap('ltx');
   const pre = $('ltx-text'), ok = $('ltx-ok');
   if (!/ATTACHMENT A/.test(pre.textContent)) {
@@ -1871,14 +1949,28 @@ async function openLtx(then) {
     try { const r = await fetch('licenses/LICENSE-LTX-2.txt', { cache: 'no-cache' }); pre.textContent = r.ok ? await r.text() : ''; } catch (e) { pre.textContent = ''; }
     if (!/ATTACHMENT A/.test(pre.textContent)) pre.textContent = 'The licence text could not be loaded (licenses/LICENSE-LTX-2.txt). Check Wi-Fi, then open this again.';
   }
-  ok.disabled = !/ATTACHMENT A/.test(pre.textContent);
-  ok.focus();
+  ltxSync(); ok.focus();
 }
-function closeLtx() { ltxThen = null; closeWrap('ltx'); }
+/** "I accept": the full LTX text is there (unless that licence is already accepted) AND the Gemma box is ticked (unless already agreed) */
+function ltxSync() { $('ltx-ok').disabled = !((ltxAccepted() || /ATTACHMENT A/.test($('ltx-text').textContent)) && (gemmaAccepted() || $('ltx-gemma').checked)); }
+function closeLtx() { const q = LTXQ.splice(0); closeWrap('ltx'); for (const x of q) if (x.no) x.no(); }   // Not now: nothing downloads, nothing runs
 function acceptLtx() {
-  ls.set(LTX_KEY, { license: 'LTX-2 Community License Agreement', date: LTX_DATE, acceptedAt: new Date().toISOString(), gemmaNotice: true });
-  if (!ltxAccepted()) return toast("This browser couldn't save your acceptance. Private browsing blocks it.");
-  const then = ltxThen; closeLtx(); toast('Licence accepted'); if (then) then();
+  ltxSync(); if ($('ltx-ok').disabled) return;
+  const a = ltxRec() || {}, now = new Date().toISOString();
+  ls.set(LTX_KEY, Object.assign({}, a, { license: 'LTX-2 Community License Agreement', date: LTX_DATE, acceptedAt: ltxAccepted() ? a.acceptedAt : now, gemmaNotice: true,
+    gemma: GEMMA_PUP_DATE, gemmaPolicy: 'Gemma Prohibited Use Policy', gemmaAcceptedAt: gemmaAccepted() ? a.gemmaAcceptedAt : now }));
+  if (!ltxOk()) return toast("This browser couldn't save your acceptance. Private browsing blocks it.");
+  const q = LTXQ.splice(0); closeWrap('ltx'); toast('Licence accepted'); for (const x of q) if (x.yes) x.yes();
+}
+/** a queued video job (the chat's clips, a music video's shots, Cast's clip from a photo, a resumed clip) waits for the sheet while
+ *  something is missing: I accept -> it runs; Not now (or its Cancel) -> it stops, nothing made */
+function ltxGate(signal) {
+  if (ltxOk()) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const stop = () => rej(Object.assign(new Error('cancelled'), { name: 'AbortError', code: 'ABORTED' }));
+    if (signal) { if (signal.aborted) return stop(); signal.addEventListener('abort', stop, { once: true }); }
+    openLtx(res, () => { toast('Nothing was made: the video model needs its licence first.'); stop(); });
+  });
 }
 
 // ---- v026.6: the FLUX Non-Commercial License for Klein 9B, shown ONCE at its download (Josh: "Upon download. Never again after that"):
@@ -1943,7 +2035,8 @@ function buildLic() {
 }
 function openLic() {
   const a = ls.get(LTX_KEY);
-  $('lic-ltx').textContent = a && a.acceptedAt ? `You accepted the LTX-2 licence (${a.date}) on ${day(a.acceptedAt)}.` : 'The LTX-2 licence is shown for you to accept before the video model or the picture reader downloads.';
+  $('lic-ltx').textContent = (a && a.acceptedAt ? `You accepted the LTX-2 licence (${a.date}) on ${day(a.acceptedAt)}.` : 'The LTX-2 licence is shown for you to accept before the video model or the picture reader downloads.')
+    + (a && a.gemma && a.gemmaAcceptedAt ? ` You agreed to the Gemma Prohibited Use Policy (${a.gemma}) on ${day(a.gemmaAcceptedAt)}.` : ' The Gemma Prohibited Use Policy is asked for on the same sheet.');
   openWrap('lic');
 }
 /** Settings › About › Starter pack credits: the pack's CREDITS.md, checked against its manifest, kept on the phone */
@@ -1986,38 +2079,13 @@ function render() {
   if (S.tab === 'assistant' && CH) CH.render();
 }
 function renderGate() {
-  const show = (id) => { for (const g of ['g-boot', 'g-stop', 'g-home', 'g-dl', 'g-done']) $(g).hidden = g !== id; };
+  const show = (id) => { for (const g of ['g-boot', 'g-stop', 'g-home']) $(g).hidden = g !== id; };
   if (S.phase === 'boot') return show('g-boot');
   if (S.phase === 'stop') {
     show('g-stop'); $('g-stop-title').textContent = S.stop.title; $('g-stop-text').textContent = S.stop.text;
     $('g-stop-detail').textContent = S.stop.detail || ''; $('g-stop-detail').parentElement.hidden = !S.stop.detail; return;
   }
-  const k = S.setup.model, m = MODELS[k], u = S.dl[k], o = k === 'video' ? 'image' : 'video';
-  if (u.sub === 'done') return show('g-done');
-  if (S.setup.card === 'home') return show('g-home');
-  show('g-dl');
-  const live = u.sub !== 'idle' || u.have > 0, pct = dlPct(u);
-  $('dl-title').textContent = { downloading: 'Downloading', pausing: 'Pausing…', paused: 'Paused', dropped: 'Paused', failed: 'Download stopped' }[u.sub]
-    || (u.have > 0 ? 'Almost there' : `Get the ${m.noun} model`);
-  $('dl-body').textContent = `${k === 'video' ? 'Makes 1–5 second clips. ' : ''}One-time download · ${gb(u.total)} · works offline after.`;
-  $('dl-intro').firstElementChild.hidden = live;
-  $('dl-sep').hidden = live || !standalone();   // the icon can't see a copy downloaded in a Safari tab, so say so
-  $('dl-live').hidden = !live;
-  $('dl-pct').textContent = `${Math.floor(pct * 100)}%`;
-  $('dl-fill').style.transform = `scaleX(${pct.toFixed(4)})`;
-  $('dl-line').textContent = dlLine(u, false);
-  const note = u.sub === 'dropped' ? 'Paused — connection dropped. It picks up where it left off.'
-    : u.sub === 'failed' ? "Couldn't reach the model server. Check Wi-Fi (and that you are signed in to it), then Resume."
-    : u.low ? `${ANDROID ? 'This phone' : 'Your iPhone'} may be short on space for the ${m.noun} model.` : '';
-  $('dl-note').hidden = !note; $('dl-note').textContent = note; $('dl-note').title = u.detail || '';
-  const b = $('dl-go'), dl = u.sub === 'downloading';
-  b.disabled = u.sub === 'pausing';
-  b.querySelector('use').setAttribute('href', dl ? '#i-pause' : u.have > 0 ? '#i-play' : '#i-download');
-  b.querySelector('span').textContent = dlLabel(u);
-  b.classList.toggle('ghost', dl);
-  const other = $('dl-other');   // a first-time setup may start with either model
-  other.hidden = live || S.dl[o].have > 0;
-  other.textContent = `Start with ${o === 'video' ? 'videos' : 'pictures'} instead · ${gb(S.dl[o].total)}`;
+  show('g-home');   // setup: iPhone, "Add to Home Screen first"; the models download from the app (the chat's first message, Create, Settings)
 }
 function renderCreate() {
   const ph = S.phase, j = S.job, vid = S.mode === 'video', f = F(), z = vid ? vsize(f.size) : size(f.size), stage = $('stage');
@@ -2292,13 +2360,20 @@ function renderViewerActions() {
   const mvOk = !!V.meta && (isSong(V.meta) || isMV(V.meta));   // v023: a music video goes through the queue: never blocked by a running job
   for (const id of ['v-reuse', 'v-edit', 'v-anim', 'v-more']) $(id).setAttribute('aria-disabled', String(busy && !mvOk));
 }
+/** post-launch: a Library tile's shape [w, h]: a song's square cover, else the item's stored size when it is a real size; null = none
+ *  stored (an old item): the tile then takes its thumbnail's own shape */
+function tileShape(m) {
+  if (isSong(m)) return [1, 1];
+  const w = Number(m.width), h = Number(m.height);
+  return w > 0 && h > 0 && Number.isFinite(w) && Number.isFinite(h) ? [w, h] : null;
+}
 function renderLibrary() {
   const [a, b] = $('grid').children; a.textContent = b.textContent = ''; let ha = 0, hb = 0;
   for (const m of S.lib) {   // two columns, each item goes to the shorter one (reads newest-first, left to right)
     let u = thumbs.get(m.id); if (!u) { u = URL.createObjectURL(m.thumb); thumbs.set(m.id, u); }
     const t = document.createElement('button'); t.type = 'button'; t.className = 'tile'; t.dataset.id = m.id;
-    const song = isSong(m), mv = isMV(m);
-    t.style.aspectRatio = song ? '1 / 1' : `${m.width} / ${m.height}`;
+    const song = isSong(m), mv = isMV(m), shape = tileShape(m);
+    if (shape) t.style.aspectRatio = `${shape[0]} / ${shape[1]}`;   // post-launch: the picture inside takes the same shape (app.css .tile img)
     t.setAttribute('aria-label', song ? `Song, ${Math.round(m.duration || 0)} seconds: ${m.title || m.prompt}` : mv ? `Music video, ${Math.round(m.duration || 0)} seconds: ${m.title || m.prompt}`
       : isClip(m) ? `${m.vmode === 'flf' ? 'Clip between two pictures' : m.vmode === 'i2v' ? 'Clip from a picture' : 'Clip'}, ${lenText(m.frames)} seconds: ${m.prompt}` : m.prompt);
     if (isClip(m)) t.classList.add('clip'); if (song) t.classList.add('song');
@@ -2309,7 +2384,7 @@ function renderLibrary() {
       badge.innerHTML = song ? '<svg><use href="#i-note"/></svg>' : '<svg><use href="#i-play"/></svg>'; badge.append(song || mv ? clock(m.duration || 0) : `${lenText(m.frames)} s`); t.append(badge);
     }
     if (m.model === 'flux2-klein-9b' || m.hq) { const q = document.createElement('span'); q.className = 'badge9 num'; q.setAttribute('aria-hidden', 'true'); q.textContent = m.hq ? '9B frames' : '9B'; t.append(q); }   // v026.6
-    const r = song ? 1 : m.height / m.width;
+    const r = shape ? shape[1] / shape[0] : 1;   // post-launch: an item without a stored size counts as square (was NaN: every later tile went right)
     if (ha <= hb) { a.append(t); ha += r; } else { b.append(t); hb += r; }
   }
   $('lib-empty').hidden = S.lib.length > 0; $('lib-mem').hidden = store.available;
@@ -2421,7 +2496,8 @@ function placeAll() { for (const g of ['kind', 'vsrc', 'sizes', 'steps', 'detail
 // rerolls no QA from model"; "Sana will always need end capped first frame last frame". assistant/mvflf.js runs the phases through the
 // queue; this block is the UI: the Animate sheet, the storyboard (a strip of shots, each between its first and last frame, with the
 // popcorn and the time left for the WHOLE video), and the reroll sheet (the Edit-video inputs: a Nudge of up to 300 characters
-// and "Repaint the stills"). The UI is built here (no index.html / app.css changes): its styles are one <style> added once.
+// and "Repaint the stills"). The UI is built here; its styles are in app.css (post-launch: they were a <style> added once, which the
+// Content-Security-Policy now refuses: style-src 'self', no inline styles).
 const MB = { id: null, urls: new Map(), pop: null, t: 0, armed: 0, playing: null, kb: null };
 let mvRenderT = 0;
 const mvAbout = (s) => (s >= 5400 ? `about ${String(Math.round(s / 1800) / 2).replace(/\.5$/, '½')} h` : about(s));
@@ -2457,45 +2533,8 @@ async function mvRealPeople(texts, signal) {
   }
   return out;
 }
-function mvStyle() {
-  if (document.getElementById('mv-style')) return;
-  const s = document.createElement('style'); s.id = 'mv-style';
-  s.textContent = `
-.mvb { position: fixed; inset: 0; z-index: 21; background: var(--bg); color: var(--text-1); display: flex; flex-direction: column; padding: var(--safe-t) 0 calc(var(--safe-b) + 8px); }
-.mvb-top { flex: none; display: flex; align-items: center; gap: var(--s-2); min-height: 52px; padding: 0 var(--gutter-r) 0 calc(var(--gutter-l) - 10px); }
-.mvb-top .headline { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mvb-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--gutter-r) var(--s-4) var(--gutter-l); }
-.mvb-prog { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--s-3); align-items: center; margin-bottom: var(--s-3); }
-.mvb-pop { width: 112px; height: 63px; border-radius: var(--r-sm); background: #000; display: block; }
-.mvb-st { margin: 0 0 6px; }
-.mvb-acts { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-3); }
-.mvb-strip { display: flex; gap: var(--s-3); overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: var(--s-2); }
-.mvb-shot { flex: none; width: 236px; scroll-snap-align: start; border-radius: var(--r-md); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--hairline); padding: var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
-.mvb-shot.stale { box-shadow: inset 0 0 0 1.5px var(--accent); }
-.mvb-pair { display: grid; grid-template-columns: 1fr 16px 1fr; align-items: center; gap: 4px; }
-.mvb-frame { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.mvb-img { width: 100%; aspect-ratio: var(--mv-ar, 9 / 16); border-radius: var(--r-sm); background: var(--surface-3); object-fit: cover; display: block; }
-.mvb-frame.shared .mvb-img { opacity: .6; }
-.mvb-frame.busy .mvb-img { outline: 2px dashed var(--accent); outline-offset: -2px; }
-.mvb-arrow { color: var(--text-3); text-align: center; }
-.mvb-cap { font-size: 12px; line-height: 15px; color: var(--text-2); overflow-wrap: anywhere; }
-.mvb-motion { font-size: 13px; line-height: 17px; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.mvb-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.mvb-row .mini, .mvb-frame .mini { min-height: 36px; padding: 0 8px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-1); }
-#mvb-animate { background: var(--cta-bg); color: var(--cta-fg); box-shadow: none; }
-.mvb-player { width: 100%; max-height: 56dvh; border-radius: var(--r-md); background: #000; margin-bottom: var(--s-3); }
-.mv-sheet textarea { width: 100%; min-height: 84px; resize: vertical; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-1); border: 0; box-shadow: inset 0 0 0 1px var(--hairline); padding: 10px 12px; font: inherit; font-size: 16px; }
-.mv-sheet .mv-check { display: flex; gap: var(--s-2); align-items: flex-start; }
-.mv-sheet .mv-check input { width: 22px; height: 22px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
-.mv-sheet .mv-seg { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
-.mv-sheet .mv-seg button[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); }
-.mv-sheet { max-height: 88dvh; overflow-y: auto; }
-.mv-sheet p { margin: 0; }`;
-  document.head.append(s);
-}
 /** a sheet built on the fly (the app's sheet styles): returns {wrap, sheet, close} */
 function mvSheet(id, title) {
-  mvStyle();
   let w = document.getElementById(id); if (w) w.remove();
   w = mvEl('div', 'sheet-wrap'); w.id = id;
   const scrim = mvEl('div', 'scrim'); scrim.dataset.close = '';
@@ -2522,6 +2561,7 @@ async function animateSong(jobId) { const s = await mvSong({ jobId }); if (!s) r
 function openAnimate(song) {
   if (!Q) return toast('The queue is not ready yet');
   if (Q.readOnly) return toast('p0pc0rn is open in another tab.');
+  if (done('video') && !ltxOk()) return void openLtx(() => openAnimate(song));   // the Gemma tick: a music video ends in video jobs
   const brain = installed(MODELS.brain.id);
   const { sheet, close } = mvSheet('mv-sheet', 'Music video');
   let shape = 'tall';
@@ -2575,7 +2615,6 @@ function openAnimate(song) {
 // ---- the storyboard board (full screen, like the lesson): the whole video's progress + the strip of shots
 function mvBoardEl() {
   let w = document.getElementById('mvb'); if (w) return w;
-  mvStyle();
   w = mvEl('div', 'mvb'); w.id = 'mvb'; w.hidden = true; w.setAttribute('role', 'dialog'); w.setAttribute('aria-modal', 'true'); w.setAttribute('aria-label', 'Music video storyboard');
   const top = mvEl('div', 'mvb-top'), x = mvBtn('', 'icon-btn'); x.id = 'mvb-close'; x.setAttribute('aria-label', 'Close the storyboard');
   x.innerHTML = '<svg><use href="#i-x"/></svg>'; x.onclick = closeBoard;
@@ -2690,6 +2729,7 @@ async function mvPlay(s) {   // one video at a time: the board's own player
   p.ontimeupdate = () => { if (MB.playing === s.n && s.dur && p.currentTime >= s.dur) p.currentTime = 0; };
 }
 async function mvGo(id, btnEl) {
+  if (!ltxOk()) return void openLtx(() => mvGo(id, btnEl));   // the Gemma tick: Animate starts the video jobs
   btnEl.disabled = true;
   try { await requestGo(Q, id); toast('Animating: the shots start after the jobs still to come'); } catch (e) { btnEl.disabled = false; toast(msg(e)); }
 }
@@ -2771,7 +2811,8 @@ function init() {
   const chips = (box, list) => { for (const z of list) {   // shape chips: aspect glyph + name + pixels
     const b = document.createElement('button'), gw = z.w >= z.h ? z.g : Math.round(z.g * z.w / z.h), gh = z.h >= z.w ? z.g : Math.round(z.g * z.h / z.w);
     b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.v = z.id;
-    b.innerHTML = `<b>${z.name}</b><span><i class="glyph" style="width:${gw}px;height:${gh}px"></i>${z.w}×${z.h}</span>`;
+    b.innerHTML = `<b>${z.name}</b><span><i class="glyph"></i>${z.w}×${z.h}</span>`;
+    Object.assign(b.querySelector('.glyph').style, { width: `${gw}px`, height: `${gh}px` });   // post-launch: CSSOM, not a style attribute (the CSP allows none)
     box.append(b);
   } };
   chips($('sizes'), SIZES); chips($('vsizes'), VSIZES);
@@ -2978,7 +3019,7 @@ function init() {
   $('sheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
   // v026.4: the LTX-2 licence (accepted before the video model / picture reader download), Licences and notices, the credits
   $('ltx').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeLtx(); });
-  $('ltx-ok').onclick = acceptLtx;
+  $('ltx-ok').onclick = acceptLtx; $('ltx-gemma').addEventListener('change', ltxSync);   // the Gemma tick
   buildLtx(); buildLic();
   $('lic').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeWrap('lic'); });
   $('docv').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeWrap('docv'); });
@@ -2987,10 +3028,7 @@ function init() {
   $('sh-ok').onclick = () => { const f = sheetOk; sheetOk = null; closeSheet(); if (f) f(); };
   $('toast-btn').onclick = () => { const f = toastAct; toastAct = null; $('toast').classList.remove('on'); if (f) f(); };
   $('g-retry').onclick = () => (S.stop && S.stop.retry === 'boot' ? boot() : location.reload());
-  $('g-in-safari').onclick = () => { S.setup.card = 'dl'; render(); };
-  $('dl-go').onclick = tapGuard(() => dlTap(S.setup.model));
-  $('dl-other').onclick = () => { S.setup.model = S.setup.model === 'video' ? 'image' : 'video'; render(); };
-  $('g-start').onclick = () => { const k = S.setup.model; S.dl[k].sub = 'idle'; S.mode = k; ls.set('pf.app.mode', k); enterApp(); };
+  $('g-in-safari').onclick = () => { if (S.phase !== 'setup') return; S.phase = 'boot'; enterApp(); };   // onboarding: the app (a new install: the chat, whose first message offers the downloads); a 2nd tap is a no-op
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
     autoResume();
@@ -3002,4 +3040,9 @@ function init() {
   store.open().then(loadLib);
   boot();
 }
-init();
+// v030: the first update that changes the page's elements, and GitHub Pages lets a phone keep a file for 10 minutes. index.html asks
+// for app.js?v=030, so a new page never meets an old app.js; a phone that kept the OLD index.html but fetched this app.js can't start
+// on it (no Gemma tick), so it loads the page once more, past its cache (once: the 'fresh' mark stops a loop)
+if (!document.getElementById('ltx-gemma') && !new URL(location.href).searchParams.has('fresh')) {
+  const u = new URL(location.href); u.searchParams.set('fresh', Date.now().toString(36)); location.replace(u.href);
+} else init();

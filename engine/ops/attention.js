@@ -162,6 +162,8 @@ export function attnBytes(c) {
   return 128 * (BQ / 4) * 8 + 1024 * 8 + (kvs ? 0 : 1024 * 8) + 32 * BQ * (BQ === 64 ? 2 : 4) + (reg ? 0 : 3 * BQ * 4) + (reg && !c.sg ? BQ * 8 * 4 : 0);
 }
 export function attention(gpu, a) {
+  const F = a.cfgF !== undefined ? a.cfgF : gpu.tune && gpu.tune.attnF;   // p0pc0rn v028: the phone-tuned kernel (attnF below)
+  if (F && attnFFits(gpu, Object.assign({ D: 128 }, F))) { attnF(gpu, a, Object.assign({ D: 128, flavour: 'p', rate: gpu.rate.attn }, F)); return 4 * a.Lq * (a.Lk || a.Lq) * 128 * a.Hq; }
   let cfg = a.cfg || gpu.tune?.attn || { BQ: gpu.subgroups && gpu.sgMin >= 8 ? 64 : 32, sg: gpu.subgroups && gpu.sgMin >= 8 };
   const wgMax = (gpu.limits && gpu.limits.maxComputeWorkgroupStorageSize) || 16384;
   if (attnBytes(cfg) > wgMax) cfg = { BQ: 16, kvs: true };   // v026.9: Android-like 16 KB of workgroup memory (14.2 KB)
@@ -184,4 +186,182 @@ export function attention(gpu, a) {
     }
   }
   return 4 * Lq * Lk * 128 * Hq;
+}
+
+// ------------------------------------------------------------------ attnF: the phone-tuned flash attention (head_dim 128 and 256)
+
+// p0pc0rn v028 (phone benchmark, Oct 2026): register-tiled flash attention, tuned on an iPhone 16 Pro Max (Safari 26.6.1).
+// Q resident in workgroup memory, fp16 QK partials per 32-d chunk + fp16 PV partials flushed to fp32, exact online softmax, padded / interleaved
+// tiles. Picture attention 464 -> 749 GFLOP/s (1.61x), video anchors 145 -> 564 GFLOP/s (3.89x); every mode (causal + valid, valid length,
+// GQA, the Gemma-2 soft-cap) matches the old kernels to <= 0.15% (rel L2). Devices without 32 KB of workgroup memory keep the old kernels.
+export const ATTNF_P = { BQ: 64, BK: 64, TK: 4, PQ: 4, PD: 8, pv16: true, s16: true, il: true };
+export const ATTNF_V = { BQ: 32, BK: 128, TK: 8, PQ: 8, PD: 8, pv16: true, s16: true, il: true };
+export function attnFFits(gpu, c) {
+  try { return attnFCfg(c).bytes <= ((gpu.limits && gpu.limits.maxComputeWorkgroupStorageSize) || 16384); } catch (e) { return false; }
+}
+export function attnFCfg(c) {
+  const D = c.D, BQ = c.BQ, BK = c.BK, TK = c.TK || 4, PQ = c.PQ || 4, PD = c.PD || 16, pv16 = !!c.pv16, kpad = c.kpad || 0, ppad = c.ppad || 0, il = !!c.il;
+  const NT = (BQ / 4) * (BK / TK), NTv = (BQ / PQ) * (D / PD);
+  if (NT !== NTv) throw new Error(`attnF: QK threads ${NT} != PV threads ${NTv}`);
+  if (NT > 256 || TK % 4 || PD % 4) throw new Error('attnF: bad shape');
+  const qV = D * BQ / 4, kChunk = 32 * (BK / 4 + kpad), pV = BK * (BQ / 4 + ppad), red = Math.max((BQ / 4) * (BK / TK) * 2, BQ);   // vec4<f16> counts (+ alpha/l rows)
+  const kvBudget = 4096 - qV - pV;   // 32 KB = 4096 vec4<f16>; the KV region holds a K chunk, then the reduce, then V chunks
+  let VK = c.VK || 0;
+  if (!VK) { VK = 4; while (VK * 2 <= BK && VK * 2 * D / 4 <= Math.max(kvBudget, kChunk)) VK *= 2; }
+  const kv = Math.max(kChunk, VK * D / 4, red);
+  const bytes = (qV + kv + pV) * 8;
+  if (bytes > 32768) throw new Error(`attnF: ${bytes} bytes of workgroup memory`);
+  if (BK % VK) throw new Error('attnF: VK must divide BK');
+  return { D, BQ, BK, TK, PQ, PD, pv16, NT, VK, qV, kv, pV, bytes, kpad, ppad, il, flavour: c.flavour || (D === 256 ? 'v' : 'p') };
+}
+
+export function attnFCode(c0) {
+  const c = attnFCfg(c0), { D, BQ, BK, TK, PQ, PD, pv16, NT, VK } = c, D4 = D / 4, Q4 = BQ / 4, K4 = BK / 4, TX = BK / TK, e2 = c.flavour === 'p';
+  const KR = K4 + c.kpad, QR = Q4 + c.ppad;   // padded row strides (vec4) of the K chunk and of P
+  const L = [], ex = (x) => e2 ? `exp2(${x})` : `exp(${x})`;
+  L.push('enable f16;');
+  L.push(e2 ? 'struct P { Lq: u32, Lk: u32, ldo: u32, Hq: u32, Hkv: u32, scale: f32, mode: u32, nvalid: u32, qt0: u32, h0: u32, p0: u32, p1: u32 };'
+    : 'struct P { Lq: u32, Lk: u32, ldo: u32, Hq: u32, Hkv: u32, scale: f32, mode: u32, nvalid: u32, qt0: u32, h0: u32, cap: f32, p1: u32 };');
+  L.push('@group(0) @binding(0) var<uniform> p: P;');
+  L.push('@group(0) @binding(1) var<storage, read> Qb: array<vec4<f16>>;');
+  L.push('@group(0) @binding(2) var<storage, read> Kb: array<vec4<f16>>;');
+  L.push('@group(0) @binding(3) var<storage, read> Vb: array<vec4<f16>>;');
+  L.push('@group(0) @binding(4) var<storage, read_write> Ob: array<vec4<f16>>;');
+  L.push(`var<workgroup> qT: array<vec4<f16>, ${c.qV}>;`);
+  L.push(`var<workgroup> kv: array<vec4<f16>, ${c.kv}>;`);
+  L.push(`var<workgroup> pS: array<vec4<f16>, ${c.pV}>;`);
+  L.push('fn rd4(i: u32) -> vec4<f32> { return vec4<f32>(bitcast<vec2<f32>>(kv[i]), bitcast<vec2<f32>>(kv[i + 1u])); }');
+  L.push('fn wr4(i: u32, v: vec4<f32>) { kv[i] = bitcast<vec4<f16>>(v.xy); kv[i + 1u] = bitcast<vec4<f16>>(v.zw); }');
+  L.push(`@compute @workgroup_size(${NT})`);
+  L.push('fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {');
+  L.push(`  let h = wid.y + p.h0; let hk = h / (p.Hq / p.Hkv); let q0 = (wid.x + p.qt0) * ${BQ}u;`);
+  L.push(`  let qb = h * p.Lq * ${D4}u; let kb = hk * p.Lk * ${D4}u; let ty = li / ${TX}u; let tx = li % ${TX}u;`);
+  // Q tile -> qT[d][q4], transposed through registers
+  L.push(`  for (var t = li; t < ${Q4 * D4}u; t = t + ${NT}u) { let qq4 = t / ${D4}u; let d4 = t % ${D4}u; let qa = q0 + qq4 * 4u; let lq = p.Lq - 1u;`);
+  L.push(`    let a = Qb[qb + min(qa, lq) * ${D4}u + d4]; let b = Qb[qb + min(qa + 1u, lq) * ${D4}u + d4]; let c = Qb[qb + min(qa + 2u, lq) * ${D4}u + d4]; let e = Qb[qb + min(qa + 3u, lq) * ${D4}u + d4];`);
+  L.push(`    let o = d4 * ${4 * Q4}u + qq4;`);
+  ['x', 'y', 'z', 'w'].forEach((cc, j) => L.push(`    qT[o + ${j * Q4}u] = vec4<f16>(a.${cc}, b.${cc}, c.${cc}, e.${cc});`));
+  L.push('  }');
+  L.push(`  var kEnd = p.Lk; if (p.mode == 1u) { kEnd = min(p.Lk, min(q0 + ${BQ - 1}u, p.nvalid - 1u) + 1u); } if (p.mode == 2u) { kEnd = min(p.Lk, p.nvalid); }`);
+  // PV mapping
+  const PG = BQ / PQ;   // query groups in PV
+  L.push(`  let py = li / ${D / PD}u; let pxd = li % ${D / PD}u;   // PV: rows py*${PQ}.., dims pxd*${PD}..`);
+  const PC = PD / 4;   // vec4 columns per PV thread
+  for (let r = 0; r < PQ; r++) for (let cI = 0; cI < PC; cI++) L.push(`  var o${r}_${cI} = vec4<f32>(0.0);`);
+  L.push('  var m = vec4<f32>(-1.0e30); var l = vec4<f32>(0.0);');   // QK rows ty*4..+3
+  if (PQ !== 4) { for (let r = 0; r < PQ; r++) L.push(`  var lp${r} = 0.0;`); }
+  L.push('  let qi = q0 + ty * 4u + vec4<u32>(0u, 1u, 2u, 3u);');
+  L.push(`  for (var k0 = 0u; k0 < kEnd; k0 = k0 + ${BK}u) {`);
+  const TKV = TK / 4;   // score vec4s per row
+  for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`    var s${r}_${j} = vec4<f32>(0.0);`);
+  L.push(`    for (var dc = 0u; dc < ${D}u; dc = dc + 32u) {`);
+  if (c0.s16) for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`      var g${r}_${j} = vec4<f16>(0.0);`);
+  L.push('      workgroupBarrier();');
+  // K chunk [32 d][K4]: tasks = K4 key-quads x 8 d-quads
+  L.push(`      for (var t = li; t < ${K4 * 8}u; t = t + ${NT}u) { let kk4 = t / 8u; let dq = t % 8u; let d4 = dc / 4u + dq; let ka = k0 + kk4 * 4u; let lk = p.Lk - 1u;`);
+  L.push(`        let a = Kb[kb + min(ka, lk) * ${D4}u + d4]; let b = Kb[kb + min(ka + 1u, lk) * ${D4}u + d4]; let c = Kb[kb + min(ka + 2u, lk) * ${D4}u + d4]; let e = Kb[kb + min(ka + 3u, lk) * ${D4}u + d4];`);
+  L.push(`        let o = dq * ${4 * KR}u + kk4;`);
+  ['x', 'y', 'z', 'w'].forEach((cc, j) => L.push(`        kv[o + ${j * KR}u] = vec4<f16>(a.${cc}, b.${cc}, c.${cc}, e.${cc});`));
+  L.push('      }');
+  L.push('      workgroupBarrier();');
+  L.push('      for (var d = 0u; d < 32u; d = d + 1u) {');
+  if (c0.s16) {   // fp16 partial dot products over the 32-d chunk (the fp16-everywhere design)
+    L.push(`        let qv = qT[(dc + d) * ${Q4}u + ty];`);
+    for (let j = 0; j < TKV; j++) L.push(`        let k${j} = kv[d * ${KR}u + tx * ${TKV}u + ${j}u];`);
+    for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`        g${r}_${j} = fma(vec4<f16>(qv.${'xyzw'[r]}), k${j}, g${r}_${j});`);
+    L.push('      }');
+    for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`      s${r}_${j} = s${r}_${j} + vec4<f32>(g${r}_${j});`);
+  } else {
+  L.push(`        let qv = vec4<f32>(qT[(dc + d) * ${Q4}u + ty]);`);
+  for (let j = 0; j < TKV; j++) L.push(`        let k${j} = vec4<f32>(kv[d * ${KR}u + tx * ${TKV}u + ${j}u]);`);
+  for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`        s${r}_${j} = fma(vec4<f32>(qv.${'xyzw'[r]}), k${j}, s${r}_${j});`);
+  L.push('      }');
+  }
+  L.push('    }');
+  // scale / cap / mask
+  for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`    s${r}_${j} = s${r}_${j} * p.scale;`);
+  if (!e2) { L.push('    if (p.cap > 0.0) { let cp = vec4<f32>(p.cap);'); for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`      s${r}_${j} = cp * tanh(clamp(s${r}_${j} / cp, vec4<f32>(-15.0), vec4<f32>(15.0)));`); L.push('    }'); }
+  for (let j = 0; j < TKV; j++) {
+    L.push(`    { let kj = k0 + tx * ${TK}u + ${j * 4}u + vec4<u32>(0u, 1u, 2u, 3u); var ok = kj < vec4<u32>(p.Lk); if (p.mode == 2u) { ok = ok & (kj < vec4<u32>(p.nvalid)); }`);
+    for (let r = 0; r < 4; r++) L.push(`      { var mk = ok; if (p.mode == 1u) { mk = mk & (kj <= vec4<u32>(min(qi.${'xyzw'[r]}, p.nvalid - 1u))); } s${r}_${j} = select(vec4<f32>(-1.0e30), s${r}_${j}, mk); }`);
+    L.push('    }');
+  }
+  const rowmax = (r) => { let e = `s${r}_0`; for (let j = 1; j < TKV; j++) e = `max(${e}, s${r}_${j})`; return `max(max((${e}).x, (${e}).y), max((${e}).z, (${e}).w))`; };
+  L.push(`    let rb = ty * ${TX * 2}u;`);
+  L.push('    workgroupBarrier();');
+  L.push(`    wr4(rb + tx * 2u, vec4<f32>(${[0, 1, 2, 3].map(rowmax).join(', ')}));`);
+  L.push('    workgroupBarrier();');
+  L.push(`    var rm = rd4(rb); for (var j = 1u; j < ${TX}u; j = j + 1u) { rm = max(rm, rd4(rb + j * 2u)); }`);
+  L.push(`    let mn = max(m, rm); let al = ${ex('m - mn')};`);
+  for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`    let e${r}_${j} = select(${ex(`s${r}_${j} - vec4<f32>(mn.${'xyzw'[r]})`)}, vec4<f32>(0.0), s${r}_${j} <= vec4<f32>(-1.0e29));`);
+  for (let j = 0; j < TKV; j++) for (let k = 0; k < 4; k++) {
+    const cc = 'xyzw'[k];
+    L.push(`    pS[(tx * ${TK}u + ${j * 4 + k}u) * ${QR}u + ty] = vec4<f16>(vec4<f32>(e0_${j}.${cc}, e1_${j}.${cc}, e2_${j}.${cc}, e3_${j}.${cc}));`);
+  }
+  const rowsum = (r) => { let e = `e${r}_0`; for (let j = 1; j < TKV; j++) e += ` + e${r}_${j}`; return `dot(${e}, vec4<f32>(1.0))`; };
+  L.push(`    let ls = vec4<f32>(${[0, 1, 2, 3].map(rowsum).join(', ')});`);
+  L.push('    workgroupBarrier();');
+  L.push('    wr4(rb + tx * 2u, ls);');
+  L.push('    workgroupBarrier();');
+  L.push(`    var rs = rd4(rb); for (var j = 1u; j < ${TX}u; j = j + 1u) { rs = rs + rd4(rb + j * 2u); }`);
+  L.push('    l = l * al + rs; m = mn;');
+  if (PQ === 4 && D / PD === TX) {   // the PV rows are the QK rows: alpha in registers
+    for (let r = 0; r < 4; r++) for (let cI = 0; cI < PC; cI++) L.push(`    o${r}_${cI} = o${r}_${cI} * al.${'xyzw'[r]};`);
+  } else {   // PV rows differ: alpha + l per row through shared (after the sums are read)
+    L.push('    workgroupBarrier();');
+    L.push(`    if (tx == 0u) { wr4(ty * 2u, al); wr4(${BQ / 4 * 2}u + ty * 2u, l); }`);
+    L.push('    workgroupBarrier();');
+    for (let r = 0; r < PQ; r++) {
+      const row = `(py * ${PQ}u + ${r}u)`;
+      L.push(`    { let ra = rd4((${row} / 4u) * 2u)[${row} % 4u]; lp${r} = rd4(${BQ / 4 * 2}u + (${row} / 4u) * 2u)[${row} % 4u];`);
+      for (let cI = 0; cI < PC; cI++) L.push(`      o${r}_${cI} = o${r}_${cI} * ra;`);
+      L.push('    }');
+    }
+  }
+  L.push(`    for (var vc = 0u; vc < ${BK}u; vc = vc + ${VK}u) {`);
+  L.push('      workgroupBarrier();');
+  L.push(`      for (var t = li; t < ${VK * D4}u; t = t + ${NT}u) { kv[t] = Vb[kb + min(k0 + vc + t / ${D4}u, p.Lk - 1u) * ${D4}u + t % ${D4}u]; }`);
+  L.push('      workgroupBarrier();');
+  const PQ4 = PQ / 4;   // p vec4s per PV thread
+  if (pv16) for (let r = 0; r < PQ; r++) for (let cI = 0; cI < PC; cI++) L.push(`      var h${r}_${cI} = vec4<f16>(0.0);`);
+  L.push(`      for (var j = 0u; j < ${VK}u; j = j + 1u) {`);
+  L.push(`        let vb = j * ${D4}u + ${c.il ? 'pxd' : `pxd * ${PC}u`};`);
+  for (let q = 0; q < PQ4; q++) L.push(`        let pv${q} = ${pv16 ? '' : 'vec4<f32>('}pS[(vc + j) * ${QR}u + py * ${PQ4}u + ${q}u]${pv16 ? '' : ')'};`);
+  for (let cI = 0; cI < PC; cI++) L.push(`        let v${cI} = ${pv16 ? '' : 'vec4<f32>('}kv[vb + ${c.il ? cI * (D / PD) : cI}u]${pv16 ? '' : ')'};`);
+  for (let r = 0; r < PQ; r++) for (let cI = 0; cI < PC; cI++) {
+    const pr = `pv${r >> 2}.${'xyzw'[r & 3]}`;
+    if (pv16) L.push(`        h${r}_${cI} = fma(vec4<f16>(${pr}), v${cI}, h${r}_${cI});`);
+    else L.push(`        o${r}_${cI} = fma(vec4<f32>(${pr}), v${cI}, o${r}_${cI});`);
+  }
+  L.push('      }');
+  if (pv16) for (let r = 0; r < PQ; r++) for (let cI = 0; cI < PC; cI++) L.push(`      o${r}_${cI} = o${r}_${cI} + vec4<f32>(h${r}_${cI});`);
+  L.push('    }');
+  L.push('  }');
+  for (let r = 0; r < PQ; r++) {
+    const qrow = `(q0 + py * ${PQ}u + ${r}u)`, lv = (PQ === 4 && D / PD === TX) ? `l.${'xyzw'[r]}` : `lp${r}`;
+    L.push(`  { let qr = ${qrow}; if (qr < p.Lq) { let inv = 1.0 / ${lv}; let ob = (qr * p.ldo + h * ${D}u) / 4u + ${c.il ? 'pxd' : `pxd * ${PC}u`};`);
+    for (let cI = 0; cI < PC; cI++) L.push(`    Ob[ob + ${c.il ? cI * (D / PD) : cI}u] = vec4<f16>(o${r}_${cI} * inv);`);
+    L.push('  } }');
+  }
+  L.push('}');
+  return L.join('\n');
+}
+
+/** dispatch like the engine (head-major q/k/v, token-major o); flavour 'v' = attn256 params (cap, natural exp), 'p' = attention() (exp2) */
+export function attnF(gpu, a, c) {
+  const cfg = attnFCfg(c), BQ = cfg.BQ, D = cfg.D, key = 'attnF.' + JSON.stringify(c);
+  const pipe = gpu.pipeline(key, () => attnFCode(c));
+  const Hq = a.Hq, Hkv = a.Hkv || Hq, Lq = a.Lq, Lk = a.Lk || Lq, ldo = a.o.ld || Hq * D, qt = Math.ceil(Lq / BQ);
+  const rate = c.rate || 0.6e12, fWG = 4 * BQ * Lk * D, cap = rate * 0.2;
+  let qPer = qt, hPer = Math.max(1, Math.floor(cap / (fWG * qt)));
+  if (fWG * qt > cap) { hPer = 1; qPer = Math.max(1, Math.floor(cap / fWG)); }
+  const vw = (t, n) => ({ buffer: t.buf, offset: t.off || 0, size: Math.floor(n / 16) * 16 });
+  const binds = [vw(a.q, Hq * Lq * D * 2), vw(a.k, Hkv * Lk * D * 2), vw(a.v, Hkv * Lk * D * 2), { buffer: a.o.buf, offset: a.o.off || 0, size: Math.ceil(Lq * ldo * 2 / 16) * 16 }];
+  const scale = cfg.flavour === 'p' ? (a.scale != null ? a.scale : 1 / Math.sqrt(D)) * Math.LOG2E : (a.scale != null ? a.scale : 1 / Math.sqrt(D));
+  for (let h0 = 0; h0 < Hq; h0 += hPer) for (let q0 = 0; q0 < qt; q0 += qPer) {
+    const nh = Math.min(hPer, Hq - h0), nq = Math.min(qPer, qt - q0);
+    const pr = P().u32(Lq).u32(Lk).u32(ldo).u32(Hq).u32(Hkv).f32(scale).u32(a.mode || 0).u32(a.nvalid || Lk).u32(q0).u32(h0);
+    if (cfg.flavour === 'p') pr.u32(0).u32(0); else pr.f32(a.cap || 0).u32(0);
+    gpu.runner.dispatch(pipe, binds, pr.ab, [nq, nh], fWG * nq * nh / rate);
+  }
 }

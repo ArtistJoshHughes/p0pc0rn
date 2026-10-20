@@ -335,6 +335,7 @@ export class Agent {
     s = String(s || '');
     return /^network|lookup failed/.test(s) ? 'network' : /licensed/.test(s) ? 'the wiki\'s licence' : /^parked/.test(s) ? 'parked after misses'
       : /not about/.test(s) ? 'not about the subject' : /usable facts|came back empty|not usable|unusable/.test(s) ? 'nothing usable'
+      : /redirects to another address/.test(s) ? 'the wiki redirects elsewhere'   // post-launch: a Fandom redirect is never followed
       : /no page|no Wikipedia article|no usable Wikipedia article|not a wiki/.test(s) ? 'no article' : 'other';
   }
   static whyKinds(rd) { return rd && rd.why ? rd.why.slice(0, 8).map((w) => (/^about /.test(String(w.why)) ? 'about another subject' : String(w.why).slice(0, 40))) : null; }

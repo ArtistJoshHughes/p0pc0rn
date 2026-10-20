@@ -64,7 +64,9 @@ export function gemmCode(c) {
   } else if (c.x === 'conv3') {   // 3x3x3 conv over THWC, stride 1; time padding = replicate (LTX causal=False), space = zeros; p.stride = Ti
     L.push(`      let HW = p.Ho * p.Wo; let ot = row / HW; let rem = row % HW; let oy = rem / p.Wo; let ox = rem % p.Wo;`);
     L.push(`      let tap = k0 / p.Ci; let c0 = k0 % p.Ci; let kt = tap / 9u; let ky = (tap / 3u) % 3u; let kx = tap % 3u;`);
-    L.push(`      let it = u32(clamp(i32(ot + kt) - 1, 0, i32(p.stride) - 1)); let iy = i32(oy + ky) - 1; let ix = i32(ox + kx) - 1;`);
+    // p0pc0rn v029 time chunks: output frame = row frame + padT; the input frame is t - padL (a buffer that starts at frame padL) or
+    // t % ks (a ring of ks frames, ks > 1).  padT = padL = 0, ks = 1 is the whole clip, as before.
+    L.push(`      let itg = u32(clamp(i32(ot + p.padT + kt) - 1, 0, i32(p.stride) - 1)); let it = select(itg - p.padL, itg % p.ks, p.ks > 1u); let iy = i32(oy + ky) - 1; let ix = i32(ox + kx) - 1;`);
     L.push(`      let ok = iy >= 0 && ix >= 0 && iy < i32(p.Hi) && ix < i32(p.Wi);`);
     L.push(`      let vox = (it * p.Hi + u32(clamp(iy, 0, i32(p.Hi) - 1))) * p.Wi + u32(clamp(ix, 0, i32(p.Wi) - 1));`);
     L.push(`      let xv = X[vox * (p.Ci / 4u) + c0 / 4u + kq];`);
@@ -99,12 +101,37 @@ export function gemmCode(c) {
   L.push(`  let mB = (wid.y + p.mt0) * ${BM}u; let nB = (wid.x + p.nt0) * ${BN}u;`);
   L.push(`  let tx = li % ${TX}u; let ty = li / ${TX}u;`);
   for (let r = 0; r < TM; r++) for (let j = 0; j < 2; j++) L.push(`  var a${r}_${j} = vec4<f32>(0.0);`);
+  // p0pc0rn v028: conv3 hoists its voxel indices (rows once per thread, the tap once per 32-k step): bit-identical, iPhone 1.09-1.15x
+  const CV3P = c.x === 'conv3' && BM * 2 <= NT;
+  if (CV3P) {
+    L.push('  let lmP = p.M - 1u; let HWP = p.Ho * p.Wo; let rbP = mB + (li >> 3u) * 4u;');
+    L.push('  let r4 = min(vec4<u32>(rbP) + vec4<u32>(0u, 1u, 2u, 3u), vec4<u32>(lmP));');
+    L.push('  let cot = r4 / vec4<u32>(HWP); let rem4 = r4 - cot * HWP; let coy = vec4<i32>(rem4 / vec4<u32>(p.Wo)); let cox = vec4<i32>(rem4 % vec4<u32>(p.Wo));');
+  }
   L.push(`  for (var k0 = 0u; k0 < p.K; k0 = k0 + 32u) {`);
   // ---- X tile -> xs[k][m/4] (transposed through registers: 4 rows x 4 k per task, WHOLE vec4 stores only.
   //      Never write single components of a shared vec4: on Metal that is a read-modify-write of the vector and races.)
+  if (CV3P) {
+    L.push(`    if (li < ${BM * 2}u) { let t = li;`);
+    L.push('      let mq = t >> 3u; let kq = t & 7u;');
+    L.push('      let tap = k0 / p.Ci; let c0 = k0 - tap * p.Ci; let kt = tap / 9u; let r9 = tap - kt * 9u; let ky = r9 / 3u; let kx = r9 - ky * 3u;');
+    L.push('      let itg4 = vec4<u32>(clamp(vec4<i32>(cot + vec4<u32>(kt + p.padT)) - 1, vec4<i32>(0), vec4<i32>(i32(p.stride) - 1)));');
+    L.push('      let it4 = select(itg4 - vec4<u32>(p.padL), itg4 % vec4<u32>(p.ks), p.ks > 1u);');
+    L.push('      let iy4 = coy + i32(ky) - 1; let ix4 = cox + i32(kx) - 1;');
+    L.push('      let ok4 = (iy4 >= vec4<i32>(0)) & (ix4 >= vec4<i32>(0)) & (iy4 < vec4<i32>(i32(p.Hi))) & (ix4 < vec4<i32>(i32(p.Wi)));');
+    L.push('      let vox4 = (it4 * p.Hi + vec4<u32>(clamp(iy4, vec4<i32>(0), vec4<i32>(i32(p.Hi) - 1)))) * p.Wi + vec4<u32>(clamp(ix4, vec4<i32>(0), vec4<i32>(i32(p.Wi) - 1)));');
+    L.push('      let cb = p.Ci / 4u; let co = c0 / 4u + kq;');
+    for (let i = 0; i < 4; i++) {
+      const cc = 'xyzw'[i];
+      L.push(`      let xv${i} = X[vox4.${cc} * cb + co];`);
+      if (c.pn) L.push(`      let z${i} = vec4<f32>(xv${i}) * ST[vox4.${cc}]; let v${i} = select(vec4<f16>(0.0), vec4<f16>(z${i} / (vec4<f32>(1.0) + exp(-z${i}))), ok4.${cc});`);
+      else L.push(`      let v${i} = select(vec4<f16>(0.0), xv${i}, ok4.${cc});`);
+    }
+  } else {
   L.push(`    for (var t = li; t < ${BM * 2}u; t = t + ${NT}u) {`);
   L.push(`      let mq = t >> 3u; let kq = t & 7u; let r0 = mB + mq * 4u; let lm = p.M - 1u;`);
   L.push(`      let v0 = xload(min(r0, lm), k0, kq); let v1 = xload(min(r0 + 1u, lm), k0, kq); let v2 = xload(min(r0 + 2u, lm), k0, kq); let v3 = xload(min(r0 + 3u, lm), k0, kq);`);
+  }
   L.push(`      let xo = kq * 4u * ${BM / 4}u + mq;`);
   ['x', 'y', 'z', 'w'].forEach((c, j) => L.push(`      xs[xo + ${j * BM / 4}u] = vec4<f16>(v0.${c}, v1.${c}, v2.${c}, v3.${c});`));
   L.push('    }');

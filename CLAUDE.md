@@ -131,7 +131,9 @@ The models are not in the repository. The phone downloads them from Hugging Face
    - On Android, the installed app and Chrome share storage.
 3. **The rights lesson and "I agree".** The user reads and agrees themselves. Make stays disabled until they do.
 4. **Settings › Storage › Protected from iOS cleanup › Allow.** This helps iOS keep the models.
-5. **Settings › Models:** tap Download on each feature the user wants (sizes are in SETUP.md).
+5. **Downloads.** A new install opens in the Assistant chat: its first message offers the assistant + the starter knowledge (one
+   download), and the chat offers other models when they are asked for. **Settings › Models** has every model: tap Download on each
+   feature the user wants (sizes are in SETUP.md).
    - Each model shows its licence first; the user reads it and accepts.
    - Keep the app in front, the phone plugged in and on Wi-Fi.
    - If the screen locks or the app goes to the background, the download stops. Back in the app, it picks up where it stopped
@@ -159,7 +161,7 @@ The models are not in the repository. The phone downloads them from Hugging Face
 - **A clip stops while it develops.** Settings › Video decode memory › 450 MB.
 - **The phone is hot or slow.** Plug it in, take the case off, keep it out of the sun, and leave a short break between jobs.
 - **Out of space.** Settings › Models: delete the models the user doesn't need. The Library stays.
-- **Diagnostics:** Settings › About › Diagnostics › Copy. It holds the last 50 steps with memory figures. Nothing leaves the phone
+- **Diagnostics:** Settings › About › Diagnostics › Copy. It holds the last 200 steps with memory figures. Nothing leaves the phone
   unless it is copied.
 
 ## Reporting back

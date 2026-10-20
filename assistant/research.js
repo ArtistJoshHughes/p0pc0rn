@@ -375,9 +375,30 @@ export function scrub(s, maxlen = LIMITS.srcChars) {
     .replace(/https?:\/\/\S+/g, ' ')          // URLs
     .replace(/\[[0-9]+\]/g, ' ')              // ref markers
     .replace(INVISIBLE, '');
+  // v030: whitespace runs collapsed and the length bounded before tidyBrackets: its patterns backtrack over long runs (a page of
+  // em-spaces took seconds); the tail cut here lies far past the maxlen kept at the end
+  t = t.replace(/[^\S\n]+/g, ' ').slice(0, Math.max(4 * maxlen, 8000));
   t = neutralise(t);                          // the chat template's control tokens can never ride in page text
+  t = tidyBrackets(t);                        // post-launch: the "()" a dropped pronunciation leaves
   t = t.split('\n').filter((ln) => !INSTRUCTION_LINE.test(ln) && !TOOL_NAMES.test(ln)).join('\n');   // instruction-like lines: dropped (defence in depth)
   return t.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, maxlen);
+}
+/** post-launch: Wikipedia's plain-text extracts drop a lead's pronunciation (the IPA, the respelling) but keep its brackets, so a phone
+ *  quoted "<Name> () is a city in ..." (Oct 2026). This tidies what such a drop leaves: a label with nothing after it ("German: ;"),
+ *  doubled separators ("; ;"), separators and spaces at a bracket's inner edge ("( ; born 1950)", "(born 1950; )") and brackets left
+ *  empty ("()", "( )", "( ; )", "(, )", "[ ]"), with the space before them. Brackets with words in them stay, and so does a word's own
+ *  "()" with no space before it ("printf()"). Never joins lines. */
+export function tidyBrackets(s) {
+  let t = String(s == null ? '' : s), prev;
+  do {
+    prev = t;
+    t = t.replace(/([([;,][^\S\n]*)\p{Lu}[\p{L}.'’-]*(?:[^\S\n]\p{Lu}[\p{L}.'’-]*){0,2}:[^\S\n]*(?=[;,)\]])/gu, '$1')   // "German: ;" -> ";"
+      .replace(/([;,])(?:[^\S\n]*[;,])+/g, '$1')                    // "; ;" -> ";"
+      .replace(/([([])[^\S\n]*(?:[;,:][^\S\n]*)*/g, '$1')           // "( ; born 1950" -> "(born 1950"
+      .replace(/(?:[^\S\n]*[;,])*[^\S\n]*([)\]])/g, '$1')           // "born 1950; )" -> "born 1950)"
+      .replace(/(^|[^\S\n]|[([])(?:\(\)|\[\])/gm, (m, p) => (p === '(' || p === '[' ? p : ''));   // " ()", " []" go with the space before them
+  } while (t !== prev);
+  return t;
 }
 /** MediaWiki parse HTML -> text (port of fandom_client._html_to_text): infoboxes, navboxes, tables, refs, scripts dropped */
 export function htmlToText(h) {
@@ -860,8 +881,10 @@ export class Research {
   }
 
   // ---- polite fetch: one request at a time per host, a minimum gap, Retry-After honoured once, a timeout
+  // post-launch: a Fandom request never follows a redirect (a wiki that moved away sends readers to another site, which the page's
+  // Content-Security-Policy blocks): it comes back as a REDIRECT error, which the lookup turns into a plain miss
   async api(url, { signal } = {}) {
-    const host = new URL(url).host, gap = host.endsWith('fandom.com') ? this.gaps.fandom : this.gaps.wiki;
+    const host = new URL(url).host, fandom = host.endsWith('fandom.com'), gap = fandom ? this.gaps.fandom : this.gaps.wiki;
     const prev = this.hostChain.get(host) || Promise.resolve();
     let release; const mine = new Promise((r) => { release = r; });
     this.hostChain.set(host, prev.then(() => mine));
@@ -876,12 +899,13 @@ export class Research {
         const onAbort = () => ctl.abort(); if (signal) signal.addEventListener('abort', onAbort, { once: true });
         let res;
         try {
-          res = await this.fetchFn(url, { mode: 'cors', credentials: 'omit', headers: this.sendUA ? { 'Api-User-Agent': this.ua } : {}, signal: ctl.signal });
+          res = await this.fetchFn(url, Object.assign({ mode: 'cors', credentials: 'omit', headers: this.sendUA ? { 'Api-User-Agent': this.ua } : {}, signal: ctl.signal }, fandom ? { redirect: 'manual' } : {}));
         } catch (e) {
           if (timedOut && !(signal && signal.aborted)) { if (attempt === 0) continue; throw Object.assign(new Error(`${host} did not answer in ${this.timeoutMs / 1000} s`), { code: 'TIMEOUT' }); }
           throw e;
         } finally { clearTimeout(t); if (signal) signal.removeEventListener('abort', onAbort); }
         this.log.push({ url, status: res.status, at: this.now() });
+        if (fandom && (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400))) throw Object.assign(new Error(`${host} redirects to another address, not followed`), { code: 'REDIRECT' });
         if ((res.status === 429 || res.status === 503) && attempt === 0) {
           const ra = Number(res.headers.get('Retry-After')) || 5; await sleep(Math.min(30, ra) * 1000, signal); continue;
         }
@@ -1005,13 +1029,13 @@ export class Research {
     topic = safeTitle(String(topic || '').replace(/^["'“]+|["'”]+$/g, '')).slice(0, 80);
     if (!topic) return miss(topic, 'empty or unusable topic');
     const local = await this.fromLocal(topic, { context, kind });
-    if (local && local.rec) return local.rec;   // the phone's KB (or the starter pack): no network, no reader
-    if (local && local.stale && !this.online()) return local.stale;
+    if (local && local.rec) return tidyHit(local.rec);   // the phone's KB (or the starter pack): no network, no reader
+    if (local && local.stale && !this.online()) return tidyHit(local.stale);
     // a stale entry (the page changed): read again live; the 14-day cache only serves a copy of that newer revision
-    const r = await this.lookupLive(topic, { context, kind, franchise, mode, signal, liveRevid: local && local.stale ? local.stale.liveRevid || -1 : null });
+    const r = tidyHit(await this.lookupLive(topic, { context, kind, franchise, mode, signal, liveRevid: local && local.stale ? local.stale.liveRevid || -1 : null }));
     if (r.status === 'hit' && this.annotate) { try { this.annotate(r); } catch (e) { /* the likeness terms are derived again later */ } }   // v022
     if (r.status === 'hit') { if (this.kb) { try { await this.kb.put(Object.assign({}, r, { lines: renderFacts(r.facts), summary: r.summary || summaryOf(r.lead) }), topic); } catch (e) { /* the answer does not wait on the KB */ } } }
-    else if (local && local.stale) return Object.assign(local.stale, { flags: [...local.stale.flags, 'changed since'] });   // live failed: the kept facts, flagged
+    else if (local && local.stale) return tidyHit(Object.assign(local.stale, { flags: [...local.stale.flags, 'changed since'] }));   // live failed: the kept facts, flagged
     return r;
   }
   async lookupLive(topic, { context = '', kind = '', franchise = '', mode = 'auto', signal = null, liveRevid = null } = {}) {
@@ -1021,7 +1045,7 @@ export class Research {
     if (!wiki && kind === 'popculture') wiki = await this.chooseWiki(franchise || topic, signal);
     try {
       if (wiki) {
-        r = await this.fandom(stripWikiWords(topic, wiki), wiki, { signal });
+        r = await this.fandom(stripWikiWords(topic, wiki), wiki, { signal }).catch((e) => { if (e && e.code === 'REDIRECT') return miss(topic, e.message); throw e; });   // post-launch
         if (r.status !== 'hit') { const w = await this.wikipedia(topic, { mode, signal }); r = w.status === 'hit' ? w : miss(topic, `${r.reason}; Wikipedia: ${w.reason}`); }
       } else r = await this.wikipedia(topic, { mode, signal });
     } catch (e) {
@@ -1101,7 +1125,7 @@ export class Research {
       const d = await this.api(`https://${wiki}.fandom.com/api.php?action=query&format=json&formatversion=2&origin=*&meta=siteinfo&siprop=general|statistics|rightsinfo`, { signal });
       const q = (d && d.query) || {};
       v = { sitename: safeTitle((q.general || {}).sitename) || wiki, articles: (q.statistics || {}).articles || 0, rights: (q.rightsinfo || {}).text || '', rightsUrl: (q.rightsinfo || {}).url || '' };
-    } catch (e) { if (e && e.name === 'AbortError') throw e; v = null; }
+    } catch (e) { if (e && e.name === 'AbortError') throw e; v = e && e.code === 'REDIRECT' ? { moved: true, sitename: wiki, articles: 0, rights: '', rightsUrl: '' } : null; }   // post-launch: moved away
     await this.db.put('wikis', { key: k, value: v, at: this.now() });
     return v;
   }
@@ -1121,7 +1145,7 @@ export class Research {
     const ck = `f3:${wiki}:${norm(topic)}`, hit = await this.cacheGet(ck, this.liveRevid);
     if (hit) return Object.assign({}, hit, { cached: true });
     const si = await this.siteinfo(wiki, signal);
-    if (!si || si.articles < 50) return miss(topic, `${wiki}.fandom.com is not a wiki with articles`);
+    if (!si || si.articles < 50) return miss(topic, si && si.moved ? `${wiki}.fandom.com redirects to another address, not followed` : `${wiki}.fandom.com is not a wiki with articles`);
     // v026.4 (licence audit item 6): each wiki's own licence (siteinfo rightsinfo, shown on its licensing / edit pages); a wiki marked
     // non-commercial (NC) or no-derivatives (ND) is not read
     const lic = wikiLicense(si);
@@ -1202,6 +1226,13 @@ export class Research {
 }
 const enc = encodeURIComponent;
 const miss = (topic, reason) => ({ status: 'miss', topic, reason: String(reason || 'not found').slice(0, 160) });
+/** post-launch: every hit leaves lookup() with its quotes, values and lead tidied (tidyBrackets): an entry kept before the fix (the phone's
+ *  KB, the 14-day cache, a starter pack) may still hold the "()" a dropped pronunciation left. A miss passes through as it is. */
+function tidyHit(r) {
+  if (!r || r.status !== 'hit') return r;
+  const t = (o, keys) => { const x = Object.assign({}, o); for (const k of keys) if (typeof x[k] === 'string') x[k] = tidyBrackets(x[k]); return x; };
+  return Object.assign(t(r, ['lead', 'summary']), { facts: (r.facts || []).map((f) => t(f, ['value', 'quote'])) });
+}
 /** a Fandom wiki's text licence from siteinfo rightsinfo: {ok: false} when it is non-commercial or no-derivatives (CC BY-NC / BY-ND,
  *  'NonCommercial', 'NoDerivs'); unknown = Fandom's default, CC BY-SA 3.0 */
 export function wikiLicense(si) {

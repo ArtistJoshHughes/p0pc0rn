@@ -12,7 +12,7 @@ import { createGpu, toF16 } from '../core/gpu.js';
 import { WeightStore } from '../core/store.js';
 import { fetchManifest, manifestRefused } from '../core/pin.js';   // v027.3: pinned manifests
 import { gemm } from '../ops/gemm.js';
-import { attention } from '../ops/attention.js';
+import { attention, ATTNF_P } from '../ops/attention.js';
 import { buildTokenizer } from '../models/tokenizer.js';
 import { kleinDims, encodeText, ditPrepare, ditStep, ditFree, flux2Sigmas, gaussianTokens, kleinFlops } from './klein.js';
 import { Flux2VAE, vaeDecodeFlops, vaeEncodeFlops } from './vae.js';
@@ -137,7 +137,7 @@ class K9bEngine {
     const g = await createGpu({ powerPreference: 'high-performance', onLost: () => this.emit('gpu-lost', {}) });
     const c = LS(K.calib);
     if (c && c.rate) { g.rate = c.rate; g.calib = c.calib; } else { await calibrate(g); LS(K.calib, { rate: g.rate, calib: g.calib, gpu: g.describe(), t: Date.now() }); }
-    g.tune = this.opts.tune ? JSON.parse(JSON.stringify(this.opts.tune)) : { acc: this.opts.acc || 'f16', vaeAcc: 'f32', attn: { BQ: 64, sg: g.subgroups && g.sgMin >= 8, pv16: true } };   // opts.tune: a parity test runs with the 4B engine's own
+    g.tune = this.opts.tune ? JSON.parse(JSON.stringify(this.opts.tune)) : { acc: this.opts.acc || 'f16', vaeAcc: 'f32', attn: { BQ: 64, sg: g.subgroups && g.sgMin >= 8, pv16: true }, attnF: this.opts.attnF !== undefined ? this.opts.attnF : ATTNF_P };   // opts.tune: a parity test runs with the 4B engine's own
     this.store.gpu = g; this.gpu = g; return g;
   }
   _drop() {

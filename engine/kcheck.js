@@ -166,6 +166,27 @@ async function* lipsyncTests(gpu) {
     yield { name, variant, ok: c.cos > 0.9995, cos: c.cos, maxErr: c.maxErr };
   } catch (e) { yield { name, error: String(e.message || e) }; }
 }
+// ---- v028: the phone-tuned flash attention (ops/attention.js attnF) that the picture / clip / 9B engines use on 32 KB devices
+async function* attnFTests(gpu) {
+  const { attnF, attnFFits, ATTNF_P, ATTNF_V } = await import('./ops/attention.js');
+  for (const [D, F, name] of [[128, ATTNF_P, 'Attention, phone-tuned (head size 128)'], [256, ATTNF_V, 'Attention, phone-tuned (head size 256)']]) {
+    try {
+      const cfg = Object.assign({ D, flavour: D === 128 ? 'p' : 'v' }, F);
+      if (!attnFFits(gpu, cfg)) { yield { name, variant: 'not used here (needs 32 KB of workgroup memory; the engines keep the older kernel)', ok: true }; continue; }
+      const H = 2, L = 96;
+      const Q = roundF16(randn(H * L * D, 61, 0.5)), Kt = roundF16(randn(H * L * D, 62, 0.5)), V = roundF16(randn(H * L * D, 63));
+      const qb = gpu.upload(toF16(Q)), kb = gpu.upload(toF16(Kt)), vb = gpu.upload(toF16(V)), ob = gpu.buffer(L * H * D * 2);
+      attnF(gpu, { q: { buf: qb }, k: { buf: kb }, v: { buf: vb }, o: { buf: ob, ld: H * D }, Lq: L, Lk: L, Hq: H, Hkv: H, mode: 0 }, cfg);
+      const got = fromF16(new Uint16Array(await gpu.read(ob, 0, L * H * D * 2)));
+      const c = compare(got, cpuAttn(Q, Kt, V, H, L, D));
+      [qb, kb, vb, ob].forEach((b) => gpu.free(b));
+      const L2 = 1024, H2 = 4, q2 = gpu.buffer(H2 * L2 * D * 2), k2 = gpu.buffer(H2 * L2 * D * 2), v2 = gpu.buffer(H2 * L2 * D * 2), o2 = gpu.buffer(L2 * H2 * D * 2);
+      const sec = await timeIt(gpu, () => attnF(gpu, { q: { buf: q2 }, k: { buf: k2 }, v: { buf: v2 }, o: { buf: o2, ld: H2 * D }, Lq: L2, Lk: L2, Hq: H2, Hkv: H2, mode: 0 }, cfg));
+      [q2, k2, v2, o2].forEach((b) => gpu.free(b));
+      yield { name, variant: `${cfg.BQ} queries x ${cfg.BK} keys per tile, fp16 partial sums`, ok: c.cos > 0.9995, cos: c.cos, maxErr: c.maxErr, speed: (4 * L2 * L2 * D * H2 / sec / 1e9).toFixed(0) + ' GFLOP/s' };
+    } catch (e) { yield { name, error: String(e.message || e) }; }
+  }
+}
 // more kernel families register here (each engine family's own GEMV / attention / conv / face path)
-export const EXTRA = [{ label: 'pictures and clips: matrix multiply, attention', run: coreTests }, { label: 'the assistant and songs', run: songAssistTests },
-  { label: 'lip-sync', run: lipsyncTests }];
+export const EXTRA = [{ label: 'pictures and clips: matrix multiply, attention', run: coreTests }, { label: 'pictures and clips: the phone-tuned attention', run: attnFTests },
+  { label: 'the assistant and songs', run: songAssistTests }, { label: 'lip-sync', run: lipsyncTests }];

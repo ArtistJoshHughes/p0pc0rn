@@ -91,23 +91,18 @@ svg * { vector-effect: non-scaling-stroke; }
 .mark { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--hairline-2); color: var(--text-1); }
 .mark svg { width: 32px; height: 32px; }
-.gate:has(#g-done:not([hidden])) .mark { display: none; }   /* the check replaces the mark when ready */
 .card-g { display: flex; flex-direction: column; gap: var(--s-3); animation: rise var(--d-4) var(--ease-out) both; }
 .card-g .btn { margin-top: var(--s-3); }
 .card-g .btn.ghost { margin-top: 0; }
 .steps { margin: 0; padding-left: 22px; color: var(--text-2); font-size: 15px; line-height: 28px; }
 .steps b { color: var(--text-1); font-weight: 600; }
 .steps .ic { width: 16px; height: 16px; vertical-align: -3px; }
-.big { font-size: 56px; line-height: 60px; font-weight: 700; letter-spacing: -.03em; }
 .bar { height: 6px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform 300ms linear; }
 .note { display: flex; gap: var(--s-2); align-items: flex-start; font-size: 15px; line-height: 20px; color: var(--text-2); }
 .note.warn { color: var(--text-1); }   /* calm: only the icon carries the warn colour */
 .note.warn .ic { color: var(--warn); }
 .note .ic { margin-top: -1px; }
-.done-check { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent);
-  animation: pop var(--d-5) var(--ease-spring) both; }
-.done-check svg { width: 32px; height: 32px; stroke-width: 2; stroke-dasharray: 24; stroke-dashoffset: 24; animation: draw var(--d-5) var(--ease-out) 160ms forwards; }
 .details summary { font-size: 13px; color: var(--text-3); list-style: none; cursor: pointer; min-height: 32px; display: flex; align-items: center; }
 .details summary::-webkit-details-marker { display: none; }
 .details p { word-break: break-word; color: var(--text-3); }
@@ -244,7 +239,9 @@ textarea::placeholder, .input::placeholder { color: var(--text-3); }
 .masonry { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; align-items: start; }
 .col { display: flex; flex-direction: column; gap: 4px; }
 .tile { display: block; width: 100%; border-radius: var(--r-xs); overflow: hidden; background: var(--surface-1); transition: transform var(--d-4) var(--ease-spring); }
-.tile img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.tile img { width: 100%; height: auto; aspect-ratio: inherit; display: block; object-fit: cover; }   /* post-launch: the picture box takes the tile's own
+   shape from the same aspect-ratio (no percentage height to resolve inside the button), so it fills the tile on every engine; cover crops a
+   thumbnail whose shape differs; a tile without a stored size takes the thumbnail's shape */
 .empty { min-height: 50dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-3); text-align: center; color: var(--text-3); }
 .empty svg { width: 40px; height: 40px; stroke-width: 1.2; }
 
@@ -528,6 +525,9 @@ html[data-busy] .ind, html[data-busy] .tab::after, html[data-busy] .chev { trans
 .dl-btn { justify-content: flex-start; text-align: left; height: auto; padding-top: 10px; padding-bottom: 10px; }
 .dl-music { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; }
 .dl-music .bar { width: 100%; }
+/* onboarding: the chat's scripted messages (the first one offers the assistant + the starter knowledge as one download) */
+.as-parts { margin: 0; padding-left: 20px; font-size: 15px; line-height: 20px; }
+.as-offer { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-2); width: 100%; margin-top: var(--s-1); }
 .msg.typing { flex-direction: row; align-items: center; gap: var(--s-2); }
 .msg.typing .dots { letter-spacing: 2px; color: var(--text-3); animation: pulse 1.4s ease-in-out infinite; }
 .msg.streaming.planning .msg-text { color: var(--text-2); }
@@ -624,6 +624,9 @@ html[data-tab="assistant"] .toast { bottom: calc(var(--safe-b) + 56px + 80px); }
 
 /* v026.4: the licence and document sheets, link rows, quote links */
 .docsheet { max-height: 92vh; max-height: 92dvh; overflow-y: auto; }
+/* the Gemma tick on the video model's licence sheet; the sheet sits above any other sheet (a queued video job can open it) */
+#ltx { z-index: 31; }
+#ltx-gemma-box { padding-bottom: var(--s-3); }
 .doc-text { max-height: 38vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/17px var(--mono, ui-monospace, monospace);
   background: var(--surface-2, rgba(127,127,127,.08)); border-radius: 12px; padding: var(--s-3); margin: 0; }
 .doc-text.tall { max-height: 74vh; }
@@ -640,3 +643,44 @@ button.li.link { background: none; border: 0; color: var(--text-1); font: inheri
 .hq-frames img { width: 100%; border-radius: 12px; display: block; background: var(--surface-2, rgba(127,127,127,.1)); }
 .badge9 { position: absolute; left: 6px; top: 6px; font-size: 11px; line-height: 16px; padding: 0 6px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; }
 #v-end { width: 100%; }
+
+/* ---------- post-launch: styles that were inline (the Content-Security-Policy is style-src 'self': no <style>, no style attributes) ---------- */
+/* v026.1: after a planned fresh page the FIRST frame is the cover, never the start screen or the Create tab (index.html's first scripts set
+   html.pf-fresh before this render-blocking stylesheet is applied; the app takes it down once the same screen is back, 20 s fallback) */
+html.pf-fresh body > * { visibility: hidden !important; }
+html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: #000; color: #f2f2f7; font: 17px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; z-index: 2147483647; visibility: visible; }
+@media (prefers-color-scheme: light) { html.pf-fresh body::after { background: #F6F6F8; color: #1c1c1e; } }
+.sprite { position: absolute; }
+#s-diagtext { white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow: auto; }
+/* v023: the music video's storyboard board and sheets (app.js) */
+.mvb { position: fixed; inset: 0; z-index: 21; background: var(--bg); color: var(--text-1); display: flex; flex-direction: column; padding: var(--safe-t) 0 calc(var(--safe-b) + 8px); }
+.mvb-top { flex: none; display: flex; align-items: center; gap: var(--s-2); min-height: 52px; padding: 0 var(--gutter-r) 0 calc(var(--gutter-l) - 10px); }
+.mvb-top .headline { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mvb-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--gutter-r) var(--s-4) var(--gutter-l); }
+.mvb-prog { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--s-3); align-items: center; margin-bottom: var(--s-3); }
+.mvb-pop { width: 112px; height: 63px; border-radius: var(--r-sm); background: #000; display: block; }
+.mvb-st { margin: 0 0 6px; }
+.mvb-acts { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-3); }
+.mvb-strip { display: flex; gap: var(--s-3); overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: var(--s-2); }
+.mvb-shot { flex: none; width: 236px; scroll-snap-align: start; border-radius: var(--r-md); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--hairline); padding: var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
+.mvb-shot.stale { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.mvb-pair { display: grid; grid-template-columns: 1fr 16px 1fr; align-items: center; gap: 4px; }
+.mvb-frame { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mvb-img { width: 100%; aspect-ratio: var(--mv-ar, 9 / 16); border-radius: var(--r-sm); background: var(--surface-3); object-fit: cover; display: block; }
+.mvb-frame.shared .mvb-img { opacity: .6; }
+.mvb-frame.busy .mvb-img { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.mvb-arrow { color: var(--text-3); text-align: center; }
+.mvb-cap { font-size: 12px; line-height: 15px; color: var(--text-2); overflow-wrap: anywhere; }
+.mvb-motion { font-size: 13px; line-height: 17px; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.mvb-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.mvb-row .mini, .mvb-frame .mini { min-height: 36px; padding: 0 8px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-1); }
+#mvb-animate { background: var(--cta-bg); color: var(--cta-fg); box-shadow: none; }
+.mvb-player { width: 100%; max-height: 56dvh; border-radius: var(--r-md); background: #000; margin-bottom: var(--s-3); }
+.mv-sheet textarea { width: 100%; min-height: 84px; resize: vertical; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-1); border: 0; box-shadow: inset 0 0 0 1px var(--hairline); padding: 10px 12px; font: inherit; font-size: 16px; }
+.mv-sheet .mv-check { display: flex; gap: var(--s-2); align-items: flex-start; }
+.mv-sheet .mv-check input { width: 22px; height: 22px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+.mv-sheet .mv-seg { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.mv-sheet .mv-seg button[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); }
+.mv-sheet { max-height: 88dvh; overflow-y: auto; }
+.mv-sheet p { margin: 0; }

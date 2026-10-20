@@ -1,5 +1,5 @@
 // util.js - small helpers with no app state: per-viewer storage, formatting, Screen Wake Lock, sharing and saving files,
-// photo downscaling, library thumbnails and clip poster frames, the one-shot "latent plate" noise picture, and the viewer's pinch / swipe.
+// photo downscaling, library thumbnails and clip poster frames, and the viewer's pinch / swipe.
 
 export const $ = (id) => document.getElementById(id);
 
@@ -107,24 +107,6 @@ function drawTo(src, w, h, type, q) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;   // detached; zeroed right after
   const x = c.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(src, 0, 0, w, h);
   return new Promise((res, rej) => c.toBlob((b) => { c.width = c.height = 0; b ? res(b) : rej(new Error('Could not encode the picture')); }, type, q));
-}
-
-/** The latent plate: one grey-noise cell per model patch (w/16 x h/16), tinted 20% toward the accent, painted ONCE as a data URL. */
-export function noisePlate(w, h, seed) {
-  const cw = Math.max(1, Math.round(w / 16)), ch = Math.max(1, Math.round(h / 16)), c = document.createElement('canvas');
-  c.width = cw; c.height = ch;
-  const x = c.getContext('2d'), d = x.createImageData(cw, ch), light = matchMedia('(prefers-color-scheme: light)').matches;
-  const acc = light ? [91, 75, 245] : [139, 124, 255];
-  let a = (seed >>> 0) || 1;
-  const rnd = () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), a | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  for (let i = 0; i < cw * ch; i++) {
-    const g = light ? 150 + (rnd() + rnd()) * 50 : 20 + (rnd() + rnd()) * 70;   // soft, roughly bell-shaped grey
-    for (let k = 0; k < 3; k++) d.data[4 * i + k] = g * 0.8 + acc[k] * 0.2;
-    d.data[4 * i + 3] = 255;
-  }
-  x.putImageData(d, 0, 0);
-  const url = c.toDataURL('image/png'); c.width = c.height = 0;
-  return url;
 }
 
 /** Viewer gestures on `el` acting on target() (the picture or the clip): pinch to zoom (1-4x), drag to pan when zoomed, double-tap to toggle 2.5x,

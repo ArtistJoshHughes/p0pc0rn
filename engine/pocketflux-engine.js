@@ -424,7 +424,9 @@ function gemmCode(c) {
   } else if (c.x === 'conv3') {   // 3x3x3 conv over THWC, stride 1; time padding = replicate (LTX causal=False), space = zeros; p.stride = Ti
     L.push(`      let HW = p.Ho * p.Wo; let ot = row / HW; let rem = row % HW; let oy = rem / p.Wo; let ox = rem % p.Wo;`);
     L.push(`      let tap = k0 / p.Ci; let c0 = k0 % p.Ci; let kt = tap / 9u; let ky = (tap / 3u) % 3u; let kx = tap % 3u;`);
-    L.push(`      let it = u32(clamp(i32(ot + kt) - 1, 0, i32(p.stride) - 1)); let iy = i32(oy + ky) - 1; let ix = i32(ox + kx) - 1;`);
+    // p0pc0rn v029 time chunks: output frame = row frame + padT; the input frame is t - padL (a buffer that starts at frame padL) or
+    // t % ks (a ring of ks frames, ks > 1).  padT = padL = 0, ks = 1 is the whole clip, as before.
+    L.push(`      let itg = u32(clamp(i32(ot + p.padT + kt) - 1, 0, i32(p.stride) - 1)); let it = select(itg - p.padL, itg % p.ks, p.ks > 1u); let iy = i32(oy + ky) - 1; let ix = i32(ox + kx) - 1;`);
     L.push(`      let ok = iy >= 0 && ix >= 0 && iy < i32(p.Hi) && ix < i32(p.Wi);`);
     L.push(`      let vox = (it * p.Hi + u32(clamp(iy, 0, i32(p.Hi) - 1))) * p.Wi + u32(clamp(ix, 0, i32(p.Wi) - 1));`);
     L.push(`      let xv = X[vox * (p.Ci / 4u) + c0 / 4u + kq];`);
@@ -459,12 +461,37 @@ function gemmCode(c) {
   L.push(`  let mB = (wid.y + p.mt0) * ${BM}u; let nB = (wid.x + p.nt0) * ${BN}u;`);
   L.push(`  let tx = li % ${TX}u; let ty = li / ${TX}u;`);
   for (let r = 0; r < TM; r++) for (let j = 0; j < 2; j++) L.push(`  var a${r}_${j} = vec4<f32>(0.0);`);
+  // p0pc0rn v028: conv3 hoists its voxel indices (rows once per thread, the tap once per 32-k step): bit-identical, iPhone 1.09-1.15x
+  const CV3P = c.x === 'conv3' && BM * 2 <= NT;
+  if (CV3P) {
+    L.push('  let lmP = p.M - 1u; let HWP = p.Ho * p.Wo; let rbP = mB + (li >> 3u) * 4u;');
+    L.push('  let r4 = min(vec4<u32>(rbP) + vec4<u32>(0u, 1u, 2u, 3u), vec4<u32>(lmP));');
+    L.push('  let cot = r4 / vec4<u32>(HWP); let rem4 = r4 - cot * HWP; let coy = vec4<i32>(rem4 / vec4<u32>(p.Wo)); let cox = vec4<i32>(rem4 % vec4<u32>(p.Wo));');
+  }
   L.push(`  for (var k0 = 0u; k0 < p.K; k0 = k0 + 32u) {`);
   // ---- X tile -> xs[k][m/4] (transposed through registers: 4 rows x 4 k per task, WHOLE vec4 stores only.
   //      Never write single components of a shared vec4: on Metal that is a read-modify-write of the vector and races.)
+  if (CV3P) {
+    L.push(`    if (li < ${BM * 2}u) { let t = li;`);
+    L.push('      let mq = t >> 3u; let kq = t & 7u;');
+    L.push('      let tap = k0 / p.Ci; let c0 = k0 - tap * p.Ci; let kt = tap / 9u; let r9 = tap - kt * 9u; let ky = r9 / 3u; let kx = r9 - ky * 3u;');
+    L.push('      let itg4 = vec4<u32>(clamp(vec4<i32>(cot + vec4<u32>(kt + p.padT)) - 1, vec4<i32>(0), vec4<i32>(i32(p.stride) - 1)));');
+    L.push('      let it4 = select(itg4 - vec4<u32>(p.padL), itg4 % vec4<u32>(p.ks), p.ks > 1u);');
+    L.push('      let iy4 = coy + i32(ky) - 1; let ix4 = cox + i32(kx) - 1;');
+    L.push('      let ok4 = (iy4 >= vec4<i32>(0)) & (ix4 >= vec4<i32>(0)) & (iy4 < vec4<i32>(i32(p.Hi))) & (ix4 < vec4<i32>(i32(p.Wi)));');
+    L.push('      let vox4 = (it4 * p.Hi + vec4<u32>(clamp(iy4, vec4<i32>(0), vec4<i32>(i32(p.Hi) - 1)))) * p.Wi + vec4<u32>(clamp(ix4, vec4<i32>(0), vec4<i32>(i32(p.Wi) - 1)));');
+    L.push('      let cb = p.Ci / 4u; let co = c0 / 4u + kq;');
+    for (let i = 0; i < 4; i++) {
+      const cc = 'xyzw'[i];
+      L.push(`      let xv${i} = X[vox4.${cc} * cb + co];`);
+      if (c.pn) L.push(`      let z${i} = vec4<f32>(xv${i}) * ST[vox4.${cc}]; let v${i} = select(vec4<f16>(0.0), vec4<f16>(z${i} / (vec4<f32>(1.0) + exp(-z${i}))), ok4.${cc});`);
+      else L.push(`      let v${i} = select(vec4<f16>(0.0), xv${i}, ok4.${cc});`);
+    }
+  } else {
   L.push(`    for (var t = li; t < ${BM * 2}u; t = t + ${NT}u) {`);
   L.push(`      let mq = t >> 3u; let kq = t & 7u; let r0 = mB + mq * 4u; let lm = p.M - 1u;`);
   L.push(`      let v0 = xload(min(r0, lm), k0, kq); let v1 = xload(min(r0 + 1u, lm), k0, kq); let v2 = xload(min(r0 + 2u, lm), k0, kq); let v3 = xload(min(r0 + 3u, lm), k0, kq);`);
+  }
   L.push(`      let xo = kq * 4u * ${BM / 4}u + mq;`);
   ['x', 'y', 'z', 'w'].forEach((c, j) => L.push(`      xs[xo + ${j * BM / 4}u] = vec4<f16>(v0.${c}, v1.${c}, v2.${c}, v3.${c});`));
   L.push('    }');
@@ -821,6 +848,8 @@ function attnBytes(c) {
   return 128 * (BQ / 4) * 8 + 1024 * 8 + (kvs ? 0 : 1024 * 8) + 32 * BQ * (BQ === 64 ? 2 : 4) + (reg ? 0 : 3 * BQ * 4) + (reg && !c.sg ? BQ * 8 * 4 : 0);
 }
 function attention(gpu, a) {
+  const F = a.cfgF !== undefined ? a.cfgF : gpu.tune && gpu.tune.attnF;   // p0pc0rn v028: the phone-tuned kernel (attnF below)
+  if (F && attnFFits(gpu, Object.assign({ D: 128 }, F))) { attnF(gpu, a, Object.assign({ D: 128, flavour: 'p', rate: gpu.rate.attn }, F)); return 4 * a.Lq * (a.Lk || a.Lq) * 128 * a.Hq; }
   let cfg = a.cfg || gpu.tune?.attn || { BQ: gpu.subgroups && gpu.sgMin >= 8 ? 64 : 32, sg: gpu.subgroups && gpu.sgMin >= 8 };
   const wgMax = (gpu.limits && gpu.limits.maxComputeWorkgroupStorageSize) || 16384;
   if (attnBytes(cfg) > wgMax) cfg = { BQ: 16, kvs: true };   // v026.9: Android-like 16 KB of workgroup memory (14.2 KB)
@@ -845,7 +874,184 @@ function attention(gpu, a) {
   return 4 * Lq * Lk * 128 * Hq;
 }
 
-return { attnCode, attention, attnBytes };
+// ------------------------------------------------------------------ attnF: the phone-tuned flash attention (head_dim 128 and 256)
+
+// p0pc0rn v028 (phone benchmark, Oct 2026): register-tiled flash attention, tuned on an iPhone 16 Pro Max (Safari 26.6.1).
+// Q resident in workgroup memory, fp16 QK partials per 32-d chunk + fp16 PV partials flushed to fp32, exact online softmax, padded / interleaved
+// tiles. Picture attention 464 -> 749 GFLOP/s (1.61x), video anchors 145 -> 564 GFLOP/s (3.89x); every mode (causal + valid, valid length,
+// GQA, the Gemma-2 soft-cap) matches the old kernels to <= 0.15% (rel L2). Devices without 32 KB of workgroup memory keep the old kernels.
+const ATTNF_P = { BQ: 64, BK: 64, TK: 4, PQ: 4, PD: 8, pv16: true, s16: true, il: true };
+const ATTNF_V = { BQ: 32, BK: 128, TK: 8, PQ: 8, PD: 8, pv16: true, s16: true, il: true };
+function attnFFits(gpu, c) {
+  try { return attnFCfg(c).bytes <= ((gpu.limits && gpu.limits.maxComputeWorkgroupStorageSize) || 16384); } catch (e) { return false; }
+}
+function attnFCfg(c) {
+  const D = c.D, BQ = c.BQ, BK = c.BK, TK = c.TK || 4, PQ = c.PQ || 4, PD = c.PD || 16, pv16 = !!c.pv16, kpad = c.kpad || 0, ppad = c.ppad || 0, il = !!c.il;
+  const NT = (BQ / 4) * (BK / TK), NTv = (BQ / PQ) * (D / PD);
+  if (NT !== NTv) throw new Error(`attnF: QK threads ${NT} != PV threads ${NTv}`);
+  if (NT > 256 || TK % 4 || PD % 4) throw new Error('attnF: bad shape');
+  const qV = D * BQ / 4, kChunk = 32 * (BK / 4 + kpad), pV = BK * (BQ / 4 + ppad), red = Math.max((BQ / 4) * (BK / TK) * 2, BQ);   // vec4<f16> counts (+ alpha/l rows)
+  const kvBudget = 4096 - qV - pV;   // 32 KB = 4096 vec4<f16>; the KV region holds a K chunk, then the reduce, then V chunks
+  let VK = c.VK || 0;
+  if (!VK) { VK = 4; while (VK * 2 <= BK && VK * 2 * D / 4 <= Math.max(kvBudget, kChunk)) VK *= 2; }
+  const kv = Math.max(kChunk, VK * D / 4, red);
+  const bytes = (qV + kv + pV) * 8;
+  if (bytes > 32768) throw new Error(`attnF: ${bytes} bytes of workgroup memory`);
+  if (BK % VK) throw new Error('attnF: VK must divide BK');
+  return { D, BQ, BK, TK, PQ, PD, pv16, NT, VK, qV, kv, pV, bytes, kpad, ppad, il, flavour: c.flavour || (D === 256 ? 'v' : 'p') };
+}
+
+function attnFCode(c0) {
+  const c = attnFCfg(c0), { D, BQ, BK, TK, PQ, PD, pv16, NT, VK } = c, D4 = D / 4, Q4 = BQ / 4, K4 = BK / 4, TX = BK / TK, e2 = c.flavour === 'p';
+  const KR = K4 + c.kpad, QR = Q4 + c.ppad;   // padded row strides (vec4) of the K chunk and of P
+  const L = [], ex = (x) => e2 ? `exp2(${x})` : `exp(${x})`;
+  L.push('enable f16;');
+  L.push(e2 ? 'struct P { Lq: u32, Lk: u32, ldo: u32, Hq: u32, Hkv: u32, scale: f32, mode: u32, nvalid: u32, qt0: u32, h0: u32, p0: u32, p1: u32 };'
+    : 'struct P { Lq: u32, Lk: u32, ldo: u32, Hq: u32, Hkv: u32, scale: f32, mode: u32, nvalid: u32, qt0: u32, h0: u32, cap: f32, p1: u32 };');
+  L.push('@group(0) @binding(0) var<uniform> p: P;');
+  L.push('@group(0) @binding(1) var<storage, read> Qb: array<vec4<f16>>;');
+  L.push('@group(0) @binding(2) var<storage, read> Kb: array<vec4<f16>>;');
+  L.push('@group(0) @binding(3) var<storage, read> Vb: array<vec4<f16>>;');
+  L.push('@group(0) @binding(4) var<storage, read_write> Ob: array<vec4<f16>>;');
+  L.push(`var<workgroup> qT: array<vec4<f16>, ${c.qV}>;`);
+  L.push(`var<workgroup> kv: array<vec4<f16>, ${c.kv}>;`);
+  L.push(`var<workgroup> pS: array<vec4<f16>, ${c.pV}>;`);
+  L.push('fn rd4(i: u32) -> vec4<f32> { return vec4<f32>(bitcast<vec2<f32>>(kv[i]), bitcast<vec2<f32>>(kv[i + 1u])); }');
+  L.push('fn wr4(i: u32, v: vec4<f32>) { kv[i] = bitcast<vec4<f16>>(v.xy); kv[i + 1u] = bitcast<vec4<f16>>(v.zw); }');
+  L.push(`@compute @workgroup_size(${NT})`);
+  L.push('fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {');
+  L.push(`  let h = wid.y + p.h0; let hk = h / (p.Hq / p.Hkv); let q0 = (wid.x + p.qt0) * ${BQ}u;`);
+  L.push(`  let qb = h * p.Lq * ${D4}u; let kb = hk * p.Lk * ${D4}u; let ty = li / ${TX}u; let tx = li % ${TX}u;`);
+  // Q tile -> qT[d][q4], transposed through registers
+  L.push(`  for (var t = li; t < ${Q4 * D4}u; t = t + ${NT}u) { let qq4 = t / ${D4}u; let d4 = t % ${D4}u; let qa = q0 + qq4 * 4u; let lq = p.Lq - 1u;`);
+  L.push(`    let a = Qb[qb + min(qa, lq) * ${D4}u + d4]; let b = Qb[qb + min(qa + 1u, lq) * ${D4}u + d4]; let c = Qb[qb + min(qa + 2u, lq) * ${D4}u + d4]; let e = Qb[qb + min(qa + 3u, lq) * ${D4}u + d4];`);
+  L.push(`    let o = d4 * ${4 * Q4}u + qq4;`);
+  ['x', 'y', 'z', 'w'].forEach((cc, j) => L.push(`    qT[o + ${j * Q4}u] = vec4<f16>(a.${cc}, b.${cc}, c.${cc}, e.${cc});`));
+  L.push('  }');
+  L.push(`  var kEnd = p.Lk; if (p.mode == 1u) { kEnd = min(p.Lk, min(q0 + ${BQ - 1}u, p.nvalid - 1u) + 1u); } if (p.mode == 2u) { kEnd = min(p.Lk, p.nvalid); }`);
+  // PV mapping
+  const PG = BQ / PQ;   // query groups in PV
+  L.push(`  let py = li / ${D / PD}u; let pxd = li % ${D / PD}u;   // PV: rows py*${PQ}.., dims pxd*${PD}..`);
+  const PC = PD / 4;   // vec4 columns per PV thread
+  for (let r = 0; r < PQ; r++) for (let cI = 0; cI < PC; cI++) L.push(`  var o${r}_${cI} = vec4<f32>(0.0);`);
+  L.push('  var m = vec4<f32>(-1.0e30); var l = vec4<f32>(0.0);');   // QK rows ty*4..+3
+  if (PQ !== 4) { for (let r = 0; r < PQ; r++) L.push(`  var lp${r} = 0.0;`); }
+  L.push('  let qi = q0 + ty * 4u + vec4<u32>(0u, 1u, 2u, 3u);');
+  L.push(`  for (var k0 = 0u; k0 < kEnd; k0 = k0 + ${BK}u) {`);
+  const TKV = TK / 4;   // score vec4s per row
+  for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`    var s${r}_${j} = vec4<f32>(0.0);`);
+  L.push(`    for (var dc = 0u; dc < ${D}u; dc = dc + 32u) {`);
+  if (c0.s16) for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`      var g${r}_${j} = vec4<f16>(0.0);`);
+  L.push('      workgroupBarrier();');
+  // K chunk [32 d][K4]: tasks = K4 key-quads x 8 d-quads
+  L.push(`      for (var t = li; t < ${K4 * 8}u; t = t + ${NT}u) { let kk4 = t / 8u; let dq = t % 8u; let d4 = dc / 4u + dq; let ka = k0 + kk4 * 4u; let lk = p.Lk - 1u;`);
+  L.push(`        let a = Kb[kb + min(ka, lk) * ${D4}u + d4]; let b = Kb[kb + min(ka + 1u, lk) * ${D4}u + d4]; let c = Kb[kb + min(ka + 2u, lk) * ${D4}u + d4]; let e = Kb[kb + min(ka + 3u, lk) * ${D4}u + d4];`);
+  L.push(`        let o = dq * ${4 * KR}u + kk4;`);
+  ['x', 'y', 'z', 'w'].forEach((cc, j) => L.push(`        kv[o + ${j * KR}u] = vec4<f16>(a.${cc}, b.${cc}, c.${cc}, e.${cc});`));
+  L.push('      }');
+  L.push('      workgroupBarrier();');
+  L.push('      for (var d = 0u; d < 32u; d = d + 1u) {');
+  if (c0.s16) {   // fp16 partial dot products over the 32-d chunk (the fp16-everywhere design)
+    L.push(`        let qv = qT[(dc + d) * ${Q4}u + ty];`);
+    for (let j = 0; j < TKV; j++) L.push(`        let k${j} = kv[d * ${KR}u + tx * ${TKV}u + ${j}u];`);
+    for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`        g${r}_${j} = fma(vec4<f16>(qv.${'xyzw'[r]}), k${j}, g${r}_${j});`);
+    L.push('      }');
+    for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`      s${r}_${j} = s${r}_${j} + vec4<f32>(g${r}_${j});`);
+  } else {
+  L.push(`        let qv = vec4<f32>(qT[(dc + d) * ${Q4}u + ty]);`);
+  for (let j = 0; j < TKV; j++) L.push(`        let k${j} = vec4<f32>(kv[d * ${KR}u + tx * ${TKV}u + ${j}u]);`);
+  for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`        s${r}_${j} = fma(vec4<f32>(qv.${'xyzw'[r]}), k${j}, s${r}_${j});`);
+  L.push('      }');
+  }
+  L.push('    }');
+  // scale / cap / mask
+  for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`    s${r}_${j} = s${r}_${j} * p.scale;`);
+  if (!e2) { L.push('    if (p.cap > 0.0) { let cp = vec4<f32>(p.cap);'); for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`      s${r}_${j} = cp * tanh(clamp(s${r}_${j} / cp, vec4<f32>(-15.0), vec4<f32>(15.0)));`); L.push('    }'); }
+  for (let j = 0; j < TKV; j++) {
+    L.push(`    { let kj = k0 + tx * ${TK}u + ${j * 4}u + vec4<u32>(0u, 1u, 2u, 3u); var ok = kj < vec4<u32>(p.Lk); if (p.mode == 2u) { ok = ok & (kj < vec4<u32>(p.nvalid)); }`);
+    for (let r = 0; r < 4; r++) L.push(`      { var mk = ok; if (p.mode == 1u) { mk = mk & (kj <= vec4<u32>(min(qi.${'xyzw'[r]}, p.nvalid - 1u))); } s${r}_${j} = select(vec4<f32>(-1.0e30), s${r}_${j}, mk); }`);
+    L.push('    }');
+  }
+  const rowmax = (r) => { let e = `s${r}_0`; for (let j = 1; j < TKV; j++) e = `max(${e}, s${r}_${j})`; return `max(max((${e}).x, (${e}).y), max((${e}).z, (${e}).w))`; };
+  L.push(`    let rb = ty * ${TX * 2}u;`);
+  L.push('    workgroupBarrier();');
+  L.push(`    wr4(rb + tx * 2u, vec4<f32>(${[0, 1, 2, 3].map(rowmax).join(', ')}));`);
+  L.push('    workgroupBarrier();');
+  L.push(`    var rm = rd4(rb); for (var j = 1u; j < ${TX}u; j = j + 1u) { rm = max(rm, rd4(rb + j * 2u)); }`);
+  L.push(`    let mn = max(m, rm); let al = ${ex('m - mn')};`);
+  for (let r = 0; r < 4; r++) for (let j = 0; j < TKV; j++) L.push(`    let e${r}_${j} = select(${ex(`s${r}_${j} - vec4<f32>(mn.${'xyzw'[r]})`)}, vec4<f32>(0.0), s${r}_${j} <= vec4<f32>(-1.0e29));`);
+  for (let j = 0; j < TKV; j++) for (let k = 0; k < 4; k++) {
+    const cc = 'xyzw'[k];
+    L.push(`    pS[(tx * ${TK}u + ${j * 4 + k}u) * ${QR}u + ty] = vec4<f16>(vec4<f32>(e0_${j}.${cc}, e1_${j}.${cc}, e2_${j}.${cc}, e3_${j}.${cc}));`);
+  }
+  const rowsum = (r) => { let e = `e${r}_0`; for (let j = 1; j < TKV; j++) e += ` + e${r}_${j}`; return `dot(${e}, vec4<f32>(1.0))`; };
+  L.push(`    let ls = vec4<f32>(${[0, 1, 2, 3].map(rowsum).join(', ')});`);
+  L.push('    workgroupBarrier();');
+  L.push('    wr4(rb + tx * 2u, ls);');
+  L.push('    workgroupBarrier();');
+  L.push(`    var rs = rd4(rb); for (var j = 1u; j < ${TX}u; j = j + 1u) { rs = rs + rd4(rb + j * 2u); }`);
+  L.push('    l = l * al + rs; m = mn;');
+  if (PQ === 4 && D / PD === TX) {   // the PV rows are the QK rows: alpha in registers
+    for (let r = 0; r < 4; r++) for (let cI = 0; cI < PC; cI++) L.push(`    o${r}_${cI} = o${r}_${cI} * al.${'xyzw'[r]};`);
+  } else {   // PV rows differ: alpha + l per row through shared (after the sums are read)
+    L.push('    workgroupBarrier();');
+    L.push(`    if (tx == 0u) { wr4(ty * 2u, al); wr4(${BQ / 4 * 2}u + ty * 2u, l); }`);
+    L.push('    workgroupBarrier();');
+    for (let r = 0; r < PQ; r++) {
+      const row = `(py * ${PQ}u + ${r}u)`;
+      L.push(`    { let ra = rd4((${row} / 4u) * 2u)[${row} % 4u]; lp${r} = rd4(${BQ / 4 * 2}u + (${row} / 4u) * 2u)[${row} % 4u];`);
+      for (let cI = 0; cI < PC; cI++) L.push(`      o${r}_${cI} = o${r}_${cI} * ra;`);
+      L.push('    }');
+    }
+  }
+  L.push(`    for (var vc = 0u; vc < ${BK}u; vc = vc + ${VK}u) {`);
+  L.push('      workgroupBarrier();');
+  L.push(`      for (var t = li; t < ${VK * D4}u; t = t + ${NT}u) { kv[t] = Vb[kb + min(k0 + vc + t / ${D4}u, p.Lk - 1u) * ${D4}u + t % ${D4}u]; }`);
+  L.push('      workgroupBarrier();');
+  const PQ4 = PQ / 4;   // p vec4s per PV thread
+  if (pv16) for (let r = 0; r < PQ; r++) for (let cI = 0; cI < PC; cI++) L.push(`      var h${r}_${cI} = vec4<f16>(0.0);`);
+  L.push(`      for (var j = 0u; j < ${VK}u; j = j + 1u) {`);
+  L.push(`        let vb = j * ${D4}u + ${c.il ? 'pxd' : `pxd * ${PC}u`};`);
+  for (let q = 0; q < PQ4; q++) L.push(`        let pv${q} = ${pv16 ? '' : 'vec4<f32>('}pS[(vc + j) * ${QR}u + py * ${PQ4}u + ${q}u]${pv16 ? '' : ')'};`);
+  for (let cI = 0; cI < PC; cI++) L.push(`        let v${cI} = ${pv16 ? '' : 'vec4<f32>('}kv[vb + ${c.il ? cI * (D / PD) : cI}u]${pv16 ? '' : ')'};`);
+  for (let r = 0; r < PQ; r++) for (let cI = 0; cI < PC; cI++) {
+    const pr = `pv${r >> 2}.${'xyzw'[r & 3]}`;
+    if (pv16) L.push(`        h${r}_${cI} = fma(vec4<f16>(${pr}), v${cI}, h${r}_${cI});`);
+    else L.push(`        o${r}_${cI} = fma(vec4<f32>(${pr}), v${cI}, o${r}_${cI});`);
+  }
+  L.push('      }');
+  if (pv16) for (let r = 0; r < PQ; r++) for (let cI = 0; cI < PC; cI++) L.push(`      o${r}_${cI} = o${r}_${cI} + vec4<f32>(h${r}_${cI});`);
+  L.push('    }');
+  L.push('  }');
+  for (let r = 0; r < PQ; r++) {
+    const qrow = `(q0 + py * ${PQ}u + ${r}u)`, lv = (PQ === 4 && D / PD === TX) ? `l.${'xyzw'[r]}` : `lp${r}`;
+    L.push(`  { let qr = ${qrow}; if (qr < p.Lq) { let inv = 1.0 / ${lv}; let ob = (qr * p.ldo + h * ${D}u) / 4u + ${c.il ? 'pxd' : `pxd * ${PC}u`};`);
+    for (let cI = 0; cI < PC; cI++) L.push(`    Ob[ob + ${c.il ? cI * (D / PD) : cI}u] = vec4<f16>(o${r}_${cI} * inv);`);
+    L.push('  } }');
+  }
+  L.push('}');
+  return L.join('\n');
+}
+
+/** dispatch like the engine (head-major q/k/v, token-major o); flavour 'v' = attn256 params (cap, natural exp), 'p' = attention() (exp2) */
+function attnF(gpu, a, c) {
+  const cfg = attnFCfg(c), BQ = cfg.BQ, D = cfg.D, key = 'attnF.' + JSON.stringify(c);
+  const pipe = gpu.pipeline(key, () => attnFCode(c));
+  const Hq = a.Hq, Hkv = a.Hkv || Hq, Lq = a.Lq, Lk = a.Lk || Lq, ldo = a.o.ld || Hq * D, qt = Math.ceil(Lq / BQ);
+  const rate = c.rate || 0.6e12, fWG = 4 * BQ * Lk * D, cap = rate * 0.2;
+  let qPer = qt, hPer = Math.max(1, Math.floor(cap / (fWG * qt)));
+  if (fWG * qt > cap) { hPer = 1; qPer = Math.max(1, Math.floor(cap / fWG)); }
+  const vw = (t, n) => ({ buffer: t.buf, offset: t.off || 0, size: Math.floor(n / 16) * 16 });
+  const binds = [vw(a.q, Hq * Lq * D * 2), vw(a.k, Hkv * Lk * D * 2), vw(a.v, Hkv * Lk * D * 2), { buffer: a.o.buf, offset: a.o.off || 0, size: Math.ceil(Lq * ldo * 2 / 16) * 16 }];
+  const scale = cfg.flavour === 'p' ? (a.scale != null ? a.scale : 1 / Math.sqrt(D)) * Math.LOG2E : (a.scale != null ? a.scale : 1 / Math.sqrt(D));
+  for (let h0 = 0; h0 < Hq; h0 += hPer) for (let q0 = 0; q0 < qt; q0 += qPer) {
+    const nh = Math.min(hPer, Hq - h0), nq = Math.min(qPer, qt - q0);
+    const pr = P().u32(Lq).u32(Lk).u32(ldo).u32(Hq).u32(Hkv).f32(scale).u32(a.mode || 0).u32(a.nvalid || Lk).u32(q0).u32(h0);
+    if (cfg.flavour === 'p') pr.u32(0).u32(0); else pr.f32(a.cap || 0).u32(0);
+    gpu.runner.dispatch(pipe, binds, pr.ab, [nq, nh], fWG * nq * nh / rate);
+  }
+}
+return { attnCode, attention, attnBytes, attnFCfg, attnFCode, attnF, attnFFits, ATTNF_P, ATTNF_V };
 })();
 // ---- ops/misc.js
 __M["ops/misc.js"] = (() => {
@@ -1151,6 +1357,7 @@ __M["ops/video.js"] = (() => {
 // Rule (Metal): never store a single component of a shared-memory vector; transpose in registers.
 'use strict';
 const { P } = __M["core/gpu.js"];
+const { attnF, attnFFits } = __M["ops/attention.js"];   // p0pc0rn v028
 const bw = (b, off = 0, size = null) => ({ buffer: b, offset: off, size: Math.floor((size == null ? b._pf - off : size) / 16) * 16 });
 
 // ------------------------------------------------------------------ laprep
@@ -1377,17 +1584,19 @@ function attn256SplitCode() {
 }
 /** q:[Hq][Lq][256], k/v:[Hkv][Lk][256] f16 head-major; o: [Lq][ldo] token-major at h*256.  mode 0 none, 1 causal+valid, 2 valid-length; cap: soft-cap */
 function attn256(gpu, a) {
+  const F = gpu.tune && gpu.tune.attnF256;   // p0pc0rn v028: the phone-tuned kernel (ops/attention.js attnF), every mode
+  if (F && attnFFits(gpu, Object.assign({ D: 256 }, F))) { attnF(gpu, a, Object.assign({ D: 256, flavour: 'v', rate: gpu.rate.attn }, F)); return 4 * a.Lq * (a.Lk || a.Lq) * 256 * a.Hq * (a.mode === 1 ? 0.5 : 1); }
   const small = ((gpu.limits && gpu.limits.maxComputeWorkgroupStorageSize) || 16384) < 25792;   // v026.9: 25.2 KB -> the 9.2 KB variant
   const pipe = small ? gpu.pipeline('attn256s', attn256SplitCode) : gpu.pipeline('attn256', attn256Code);
   const Hq = a.Hq, Hkv = a.Hkv || Hq, Lq = a.Lq, Lk = a.Lk || Lq, ldo = a.o.ld || Hq * 256, qt = Math.ceil(Lq / 16);
-  const fWG = 4 * 16 * Lk * 256, cap = gpu.cap('attn');
+  const r256 = gpu.rate.attn / 3, fWG = 4 * 16 * Lk * 256, cap = r256 * gpu.opts.maxDispatchSeconds;   // v028: this kernel runs at ~1/3 of the 128-d attention rate; full-size dispatches (0.6 s) reset the iPhone's GPU at 720p
   let qPer = qt, hPer = Math.max(1, Math.floor(cap / (fWG * qt)));
   if (fWG * qt > cap) { hPer = 1; qPer = Math.max(1, Math.floor(cap / fWG)); }
   const binds = [bw(a.q.buf, a.q.off || 0, Hq * Lq * 512), bw(a.k.buf, a.k.off || 0, Hkv * Lk * 512), bw(a.v.buf, a.v.off || 0, Hkv * Lk * 512), bw(a.o.buf, a.o.off || 0)];
   for (let h0 = 0; h0 < Hq; h0 += hPer) for (let q0 = 0; q0 < qt; q0 += qPer) {
     const nh = Math.min(hPer, Hq - h0), nq = Math.min(qPer, qt - q0);
     gpu.runner.dispatch(pipe, binds, P().u32(Lq).u32(Lk).u32(ldo).u32(Hq).u32(Hkv).f32(a.scale != null ? a.scale : 1 / 16).u32(a.mode || 0).u32(a.nvalid || Lk).u32(q0).u32(h0).f32(a.cap || 0).u32(0).ab,
-      [nq, nh], fWG * nq * nh / gpu.rate.attn);
+      [nq, nh], fWG * nq * nh / r256);
   }
   return 4 * Lq * Lk * 256 * Hq * (a.mode === 1 ? 0.5 : 1);
 }
@@ -1433,7 +1642,7 @@ function attnres(gpu, a) {
 // ------------------------------------------------------------------ pixstats: rstd per voxel over C channels (LTX PixelNorm, eps 1e-8)
 const PIXSTATS = `
 enable f16;
-struct P { V: u32, C: u32, eps: f32, pad: u32 };
+struct P { V: u32, C: u32, eps: f32, ro: u32 };
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> X: array<vec4<f16>>;
 @group(0) @binding(2) var<storage, read_write> R: array<f32>;
@@ -1442,18 +1651,18 @@ fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw
   let v = g.x + g.y * nw.x * 64u; if (v >= p.V) { return; }
   let c4 = p.C / 4u; var s = 0.0;
   for (var c = 0u; c < c4; c = c + 1u) { let x = vec4<f32>(X[v * c4 + c]); s = s + dot(x, x); }
-  R[v] = inverseSqrt(s / f32(p.C) + p.eps);
+  R[v + p.ro] = inverseSqrt(s / f32(p.C) + p.eps);
 }`;
 function pixstats(gpu, a) {
   const pipe = gpu.pipeline('pixstats', () => PIXSTATS), wgs = Math.ceil(a.V / 64);
-  gpu.runner.dispatch(pipe, [bw(a.x.buf, a.x.off || 0), bw(a.r.buf)], P().u32(a.V).u32(a.C).f32(a.eps || 1e-8).u32(0).ab,
+  gpu.runner.dispatch(pipe, [bw(a.x.buf, a.x.off || 0), bw(a.r.buf)], P().u32(a.V).u32(a.C).f32(a.eps || 1e-8).u32(a.ro || 0).ab,
     [Math.min(wgs, 65535), Math.ceil(wgs / 65535)], a.V * a.C * 2 / gpu.rate.mem);
 }
 
 // ------------------------------------------------------------------ d2s: [T][H][W][C*p1*p2*p3] -> [T*p1-(p1-1)][H*p2][W*p3][C]
 const D2S = `
 enable f16;
-struct P { T: u32, H: u32, W: u32, C: u32, p1: u32, p2: u32, p3: u32, To: u32 };
+struct P { T: u32, H: u32, W: u32, C: u32, p1: u32, p2: u32, p3: u32, To: u32, sk: u32, q0: u32, q1: u32, q2: u32 };
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> X: array<f16>;
 @group(0) @binding(2) var<storage, read_write> Y: array<u32>;
@@ -1461,15 +1670,17 @@ struct P { T: u32, H: u32, W: u32, C: u32, p1: u32, p2: u32, p3: u32, To: u32 };
 fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
   let i = g.x + g.y * nw.x * 256u; let C2 = p.C / 2u; let Ho = p.H * p.p2; let Wo = p.W * p.p3;
   if (i >= p.To * Ho * Wo * C2) { return; }
-  let c = (i % C2) * 2u; let vox = i / C2; let ox = vox % Wo; let oy = (vox / Wo) % Ho; let ot = vox / (Wo * Ho) + p.p1 - 1u;
+  let c = (i % C2) * 2u; let vox = i / C2; let ox = vox % Wo; let oy = (vox / Wo) % Ho; let ot = vox / (Wo * Ho) + p.sk;
   let it = ot / p.p1; let i1 = ot % p.p1; let iy = oy / p.p2; let i2 = oy % p.p2; let ix = ox / p.p3; let i3 = ox % p.p3;
   let PP = p.p1 * p.p2 * p.p3; let r = (i1 * p.p2 + i2) * p.p3 + i3;
   let src = ((it * p.H + iy) * p.W + ix) * p.C * PP;
   Y[i] = pack2x16float(vec2<f32>(f32(X[src + c * PP + r]), f32(X[src + (c + 1u) * PP + r])));
 }`;
 function d2s(gpu, a) {
-  const pipe = gpu.pipeline('d2s', () => D2S), To = a.T * a.p1 - (a.p1 - 1), n = To * a.H * a.p2 * a.W * a.p3 * a.C / 2, wgs = Math.ceil(n / 256);
-  gpu.runner.dispatch(pipe, [bw(a.x.buf, a.x.off || 0), bw(a.y.buf, a.y.off || 0)], P().u32(a.T).u32(a.H).u32(a.W).u32(a.C).u32(a.p1).u32(a.p2).u32(a.p3).u32(To).ab,
+  // p0pc0rn v029 time chunks: sk = leading (t p1) frames of this input to skip (p1 - 1 for the clip's first chunk, else 0), To = frames out
+  const sk = a.sk != null ? a.sk : a.p1 - 1, To = a.To != null ? a.To : a.T * a.p1 - sk;
+  const pipe = gpu.pipeline('d2s', () => D2S), n = To * a.H * a.p2 * a.W * a.p3 * a.C / 2, wgs = Math.ceil(n / 256);
+  gpu.runner.dispatch(pipe, [bw(a.x.buf, a.x.off || 0), bw(a.y.buf, a.y.off || 0)], P().u32(a.T).u32(a.H).u32(a.W).u32(a.C).u32(a.p1).u32(a.p2).u32(a.p3).u32(To).u32(sk).u32(0).u32(0).u32(0).ab,
     [Math.min(wgs, 65535), Math.ceil(wgs / 65535)], n * 8 / gpu.rate.mem);
   return To;
 }
@@ -2346,6 +2557,7 @@ class Flux2VAE {
   constructor(gpu, opts = {}) {
     this.g = gpu; this.bandRows = opts.bandRows || 64; this.bandAboveMB = opts.bandAboveMB != null ? opts.bandAboveMB : 200;
     this.qChunk = opts.qChunk || 1024; this.acc = 'f32';
+    this.picAcc = opts.picAcc || null;   // v029: the DECODER accumulates like g.tune.vaeAcc (fp16 partials per 32-k: -11% decode, 62-64 dB vs fp32); picAcc overrides; the encoder stays fp32
   }
   drop(...bs) { this.g.runner.flush(); for (const b of bs) this.g.free(b); }
 
@@ -2440,6 +2652,7 @@ class Flux2VAE {
     const c = { sh, ab: g.buffer(4 * 1024 * 4, 'vae.ab'), part: g.buffer(gnPartBytes(H * W), 'vae.gnpart') };
     const banded = opts.forceBand != null ? opts.forceBand : H * W * 256 * 2 > this.bandAboveMB * 1e6;
     const tick = async (i) => { await g.done(); if (opts.check) opts.check(); if (opts.onBlock) opts.onBlock(i); };
+    this.acc = this.picAcc || (g.tune && g.tune.vaeAcc) || 'f32';
     try {
       const z = g.buffer(H8 * W8 * 32 * 2, 'vae.z');
       layout(g, { op: 'vaeIn', n: H8 * W8 * 32, xf: { buf: latent }, v: { buf: sh.buf }, yh: { buf: z }, a: w, c: t('bn.running_mean').off / 4, d: t('bn.running_var').off / 4 });
@@ -2472,7 +2685,7 @@ class Flux2VAE {
       if (opts.rgbFloat) out.rgb = new Float32Array(await g.read(rgb, 0, H * W * 12));
       this.drop(rgb, px);
       return out;
-    } finally { this.drop(c.ab, c.part); }
+    } finally { this.drop(c.ab, c.part); this.acc = 'f32'; }
   }
 
   /** image f16 HWC [H][W][3] in [-1, 1] (GPUBuffer) -> tokens f32 [(H/16)(W/16)][128] (BN-normalised posterior mean).
@@ -2845,10 +3058,14 @@ class LTX2Decoder {
   constructor(gpu, store, opts = {}) {
     this.g = gpu; this.store = store; this.cfg = store.m.model.vae; this.budget = opts.budgetBytes || 1.2e9; this.acc = opts.acc || null;
     this.sliceBytes = opts.sliceBytes || 4e6; this.jsBytes = 0;
+    this.chunk = opts.chunk != null ? opts.chunk : 1;   // p0pc0rn v029: frames per time chunk (0 = the v028 decoder: two whole tensors per stage)
+    this.forcePlan = opts.plan || null;                 // test tools: {maxBig, maxSub4} instead of the budget's plan
   }
   frames(T) { return (T - 1) * this.cfg.t_compress + 1; }
   /** big tiles (latent px) + the up_blocks.3 sub-tile size limit (4x-latent px^2) from the budget */
   plan(T, h, w) {
+    if (this.forcePlan) { const big = planTiles(h, w, this.forcePlan.maxBig); if (big) big.maxSub4 = this.forcePlan.maxSub4; return big; }
+    if (this.chunk) return this._planC(T, h, w);
     const B = this.budget, wts = 120e6, misc = 25e6;   // wts: the up_blocks.1 shard, alive at the big-tile peak
     const maxBig = Math.max(16, Math.floor((B - wts - misc) / (131072 * T * 1.1)));
     const big = planTiles(h, w, maxBig);
@@ -2890,13 +3107,131 @@ class LTX2Decoder {
     return { buf: y, T: To, H: Ho, W: Wo, C: ch };
   }
 
+  // ---- p0pc0rn v029: the TIME-CHUNKED decoder (this.chunk frames per chunk).  The same convolutions on the same inputs (bit-identical for
+  // the same tiles) with about half the memory per latent px, so a budget holds ~1.7x bigger tiles (less overlap work):
+  //  - ResBlocks: conv1 writes a ring of 3 chunks of h; conv2 reads the ring and writes x IN PLACE one chunk behind (conv1 of chunk k+1
+  //    has read x[k] before conv2 overwrites it); PixelNorm stats of x once per block, of h per chunk;
+  //  - upsamplers: the conv runs one input chunk at a time into a small temp and depth-to-space writes y; the time-only 2x upsampler
+  //    (up_blocks.2) writes y INTO x's buffer one chunk behind (y frames 2t-1, 2t overwrite only x frames no later chunk reads);
+  //  - up_blocks.3 crops each input chunk (+1 frame each side) from the big tile, so its input is never whole.
+  /** activation per stage: frames, px per latent px, channels */
+  _dims(T) {
+    const S = this.cfg.stages, d = [{ t: T, px: 1, C: S[0].ch }];
+    for (let i = 1; i < S.length; i++) { const [p1, p2, p3] = S[i].up, q = d[i - 1]; d.push({ t: q.t * p1 - (p1 - 1), px: q.px * p2 * p3, C: S[i].ch }); }
+    return d;
+  }
+  _inPlace(s, q) { const [p1, p2, p3] = s.up; return p1 === 2 && p2 === 1 && p3 === 1 && s.ch * 2 === q.C; }
+  _shardBytes(name) { const s = this.store && this.store.shards && this.store.shards.get && this.store.shards.get(name); return (s && s.bytes) || 150e6; }
+  /** conv FLOP per latent px of a big tile (conv_in .. up_blocks.2) and per px of an up_blocks.3 region (its input, the up_blocks.2 output) */
+  _flops(T) {
+    const S = this.cfg.stages, d = this._dims(T), L = S.length - 1, cv = (ci, co, vox) => 2 * 27 * ci * co * vox;
+    let big = cv(128, S[0].ch, T) + 2 * S[0].res * cv(S[0].ch, S[0].ch, T);
+    for (let s = 1; s < L; s++) { const q = d[s - 1], a = d[s], PP = S[s].up[0] * S[s].up[1] * S[s].up[2]; big += cv(q.C, a.C * PP, q.t * q.px) + 2 * S[s].res * cv(a.C, a.C, a.t * a.px); }
+    const q = d[L - 1], a = d[L], pp = a.px / q.px, PP = S[L].up[0] * S[L].up[1] * S[L].up[2];
+    return { big, up3: cv(q.C, a.C * PP, q.t) + 2 * S[L].res * cv(a.C, a.C, a.t * pp) + cv(a.C, 48, a.t * pp) };
+  }
+  /** chunked plan: the exact peak bytes of every stage (its shard + tensors per px), then the tile size with the least conv work */
+  _planC(T, h, w) {
+    const S = this.cfg.stages, L = S.length - 1, d = this._dims(T), cf = this.chunk, B = this.budget, misc = 25e6, mg = 1.08;
+    let maxBig = Infinity;
+    for (let s = 0; s < L; s++) {
+      const a = d[s], A = a.t * a.px * a.C * 2, res = A + 3 * cf * a.px * a.C * 2 + (a.t + 3 * cf) * a.px * 4;
+      let up = T * 128 * 2 + A;
+      if (s > 0) {
+        const q = d[s - 1], Q = q.t * q.px * q.C * 2, PP = S[s].up[0] * S[s].up[1] * S[s].up[2];
+        up = this._inPlace(S[s], q) ? Math.max(Q, A) + 2 * cf * q.px * q.C * 2 : Q + A + cf * q.px * a.C * PP * 2;
+      }
+      maxBig = Math.min(maxBig, Math.floor((B - misc - this._shardBytes(S[s].shard)) / (Math.max(res, up) * mg)));
+    }
+    if (!(maxBig >= 16)) return null;
+    // up_blocks.3, per px of its input: crop + conv temp + y | y + ring | y + conv_out temp; the big tile's up_blocks.2 output stays alive
+    const q = d[L - 1], a = d[L], pp = a.px / q.px, keep = q.t * q.px * q.C * 2 * mg, y3 = a.t * pp * a.C * 2, r3 = (a.t + 3 * cf) * pp * 4;
+    const per4 = Math.max((cf + 2) * q.C * 2 + cf * pp * a.C * 2 + y3, y3 + 3 * cf * pp * a.C * 2 + r3, y3 + r3 + Math.max(cf, 8) * pp * 48 * 2) * mg;
+    const fix3 = this._shardBytes(S[L].shard) + misc + 2 * this.sliceBytes, F = this._flops(T);
+    let best = null;
+    for (let cap = maxBig; cap >= Math.max(16, maxBig / 4); cap = Math.floor(cap * 0.92)) {
+      const big = planTiles(h, w, cap);
+      if (!big) break;
+      const maxSub4 = Math.floor((B - keep * big.maxA - fix3) / per4);
+      if (maxSub4 < (2 * HALO3 + 4) ** 2) continue;
+      let work = big.tot * F.big, ok = true;
+      for (const t of big.tiles) {
+        const H4 = (t.y1 - t.y0) * 4, W4 = (t.x1 - t.x0) * 4, c0y = (t.cy0 - t.y0) * 4, c0x = (t.cx0 - t.x0) * 4;
+        const sub = planSub((t.cy1 - t.cy0) * 4, (t.cx1 - t.cx0) * 4, maxSub4, HALO3);
+        if (!sub) { ok = false; break; }
+        for (const u of sub.tiles) work += (Math.min(H4, c0y + u.cy1 + HALO3) - Math.max(0, c0y + u.cy0 - HALO3)) * (Math.min(W4, c0x + u.cx1 + HALO3) - Math.max(0, c0x + u.cx0 - HALO3)) * F.up3;
+      }
+      if (ok && (!best || work < best.work * 0.999)) { best = big; big.maxSub4 = maxSub4; big.work = work; }
+    }
+    return best;
+  }
+  /** a 3x3x3 conv over output frames [t0, t0 + nt) of a stage of x.T frames; x.buf holds frames from x.t0 on, or a ring of x.ring frames */
+  convT(sh, name, x, Cout, o) {
+    const w = sh.t(name + '.weight'), b = { buf: sh.buf, off: sh.t(name + '.bias').off / 4 };
+    gemm(this.g, { acc: this.acc || (this.g.tune && this.g.tune.vaeAcc) || 'f32', w, x: { buf: x.buf }, M: o.nt * x.H * x.W, N: Cout, K: 27 * x.C,
+      epi: 'bias', ev: b, res: !!o.res, stats: o.pn ? { buf: o.pn } : undefined, y: { buf: o.y, off: o.yOff || 0 },
+      conv: { kind: 'conv3', Hi: x.H, Wi: x.W, Ci: x.C, Ho: x.H, Wo: x.W, stride: x.T, padT: o.t0, padL: x.ring ? 0 : (x.t0 || 0), ks: x.ring || 1, pn: !!o.pn } });
+  }
+  /** n ResBlocks on x {buf, T, H, W, C} in place; h lives in a ring of 3 chunks */
+  async resC(sh, pre, x, n, opts) {
+    const g = this.g, cf = this.chunk, HW = x.H * x.W, F = HW * x.C * 2, R = 3 * cf, Rf = Math.min(R, x.T), nk = Math.ceil(x.T / cf);
+    const Rx = g.buffer(x.T * HW * 4, 'vae.rstd'), hb = g.buffer(Rf * F, 'vae.h'), Rh = g.buffer(Rf * HW * 4, 'vae.rstd');
+    const hr = { buf: hb, T: x.T, H: x.H, W: x.W, C: x.C, ring: R };
+    try {
+      for (let r = 0; r < n; r++) {
+        const n1 = `${pre}.resnets.${r}.conv1.conv`, n2 = `${pre}.resnets.${r}.conv2.conv`;
+        pixstats(g, { x: { buf: x.buf }, r: { buf: Rx }, V: x.T * HW, C: x.C });
+        const c1 = (k) => { const t0 = k * cf, nt = Math.min(cf, x.T - t0), sl = (k % 3) * cf;
+          this.convT(sh, n1, x, x.C, { pn: Rx, y: hb, yOff: sl * F, t0, nt });
+          pixstats(g, { x: { buf: hb, off: sl * F }, r: { buf: Rh }, ro: sl * HW, V: nt * HW, C: x.C }); };
+        c1(0);
+        for (let k = 0; k < nk; k++) {
+          if (k + 1 < nk) c1(k + 1);
+          const t0 = k * cf;
+          this.convT(sh, n2, hr, x.C, { pn: Rh, y: x.buf, yOff: t0 * F, t0, nt: Math.min(cf, x.T - t0), res: true });
+        }
+        await this.tick(opts);
+      }
+    } finally { this.drop(Rx, hb, Rh); }
+  }
+  /** upsampler, one input chunk at a time: conv -> temp -> depth-to-space into a new y; frees x */
+  upC(sh, name, x, ch, up) {
+    const g = this.g, [p1, p2, p3] = up, PP = p1 * p2 * p3, cf = this.chunk, nk = Math.ceil(x.T / cf);
+    const To = x.T * p1 - (p1 - 1), Ho = x.H * p2, Wo = x.W * p3, Fy = Ho * Wo * ch * 2;
+    const y = g.buffer(To * Fy, 'vae.x'), c = g.buffer(Math.min(cf, x.T) * x.H * x.W * ch * PP * 2, 'vae.upconv');
+    try {
+      for (let k = 0; k < nk; k++) {
+        const t0 = k * cf, nt = Math.min(cf, x.T - t0), sk = k === 0 ? p1 - 1 : 0;
+        this.convT(sh, name, x, ch * PP, { y: c, t0, nt });
+        d2s(g, { x: { buf: c }, y: { buf: y, off: (t0 * p1 + sk - (p1 - 1)) * Fy }, T: nt, H: x.H, W: x.W, C: ch, p1, p2, p3, sk, To: nt * p1 - sk });
+      }
+    } catch (e) { this.drop(y); throw e; } finally { this.drop(c); }
+    this.drop(x.buf);
+    return { buf: y, T: To, H: Ho, W: Wo, C: ch };
+  }
+  /** the time-only 2x upsampler (C -> C/2 channels): y goes INTO x's buffer one chunk behind; returns y in x.buf */
+  upInPlace(sh, name, x, ch) {
+    const g = this.g, cf = this.chunk, nk = Math.ceil(x.T / cf), Fy = x.H * x.W * ch * 2, cb = Math.min(cf, x.T) * x.H * x.W * x.C * 2;
+    const cs = [g.buffer(cb, 'vae.upconv'), g.buffer(cb, 'vae.upconv')];
+    const emit = (k) => { const t0 = k * cf, nt = Math.min(cf, x.T - t0), sk = k === 0 ? 1 : 0;
+      d2s(g, { x: { buf: cs[k % 2] }, y: { buf: x.buf, off: (2 * t0 + sk - 1) * Fy }, T: nt, H: x.H, W: x.W, C: ch, p1: 2, p2: 1, p3: 1, sk, To: 2 * nt - sk }); };
+    try {
+      for (let k = 0; k < nk; k++) {
+        this.convT(sh, name, x, 2 * ch, { y: cs[k % 2], t0: k * cf, nt: Math.min(cf, x.T - k * cf) });   // reads x[t0 - 1 .. t0 + nt]: not overwritten yet
+        if (k > 0) emit(k - 1);   // writes x up to the middle of frame t0 - 1, which no later chunk reads
+      }
+      emit(nk - 1);
+    } finally { this.drop(...cs); }
+    return { buf: x.buf, T: 2 * x.T - 1, H: x.H, W: x.W, C: ch };
+  }
+
   /** latent: GPUBuffer f32 tokens [T*h*w][128].  sink(rgba Uint8Array [nf][ch][cw], x0, y0, cw, ch, nf, f0) receives every finished core,
    *  a few frames at a time (sliceBytes, default 4 MB), and is awaited before the next slice is read.
    *  opts {check(), onStage({tile, tiles, sub, subs, aliveMB, peakMB})} */
   async decode(latent, T, h, w, sink, opts = {}) {
     const plan = this.plan(T, h, w);
     if (!plan) throw Object.assign(new Error('video too large for the GPU budget'), { code: 'OUT_OF_MEMORY' });
-    for (let i = 0; i < plan.tiles.length; i++) await this._tile(latent, T, h, w, plan.tiles[i], plan, sink, opts, i);
+    for (let i = 0; i < plan.tiles.length; i++) await (this.chunk ? this._tileC : this._tile).call(this, latent, T, h, w, plan.tiles[i], plan, sink, opts, i);
     return { F: this.frames(T), H: 32 * h, W: 32 * w, tiles: plan.tiles.length, grid: [plan.ny, plan.nx], maxTileArea: plan.maxA, maxSub4: plan.maxSub4 };
   }
 
@@ -2973,6 +3308,84 @@ class LTX2Decoder {
       }
       st.release(sh); sh = null;
     } finally { if (sh) st.release(sh); this.drop(x && x.buf, R); await g.done(); }
+  }
+
+  /** v029: one big tile with the time-chunked stages (see _planC) */
+  async _tileC(latent, T, h, w, t, plan, sink, opts, ti) {
+    const g = this.g, st = this.store, th = t.y1 - t.y0, tw = t.x1 - t.x0, S = this.cfg.stages, L = S.length - 1, cf = this.chunk;
+    const report = (sub, subs) => { if (opts.onStage) opts.onStage({ tile: ti, tiles: plan.tiles.length, sub, subs, aliveMB: Math.round(g.alive / 1e6), peakMB: Math.round(g.peak / 1e6), jsMB: +(this.jsBytes / 1e6).toFixed(1), pool: g.poolStats() }); };
+    let x = null, sh = null;
+    try {
+      // ---- big tile: conv_in, mid block, up_blocks.0 .. 2
+      for (let si = 0; si < L; si++) {
+        const s = S[si];
+        sh = await st.upload(s.shard);
+        if (si === 0) {
+          const z = g.buffer(T * th * tw * 128 * 2, 'vae.z');
+          vop(g, { op: 'ltxin', n: T * th * tw * 64, af: { buf: latent }, bf: { buf: sh.buf }, yu: { buf: z }, a: w, b: h, c: t.x0 | (t.y0 << 16),
+            d: sh.t('latents_mean').off / 4, e: sh.t('latents_std').off / 4, f: tw | (th << 16) });
+          const y = g.buffer(T * th * tw * s.ch * 2, 'vae.x');
+          this.conv(sh, 'decoder.conv_in.conv', { buf: z, T, H: th, W: tw, C: 128 }, s.ch, { y });
+          this.drop(z); x = { buf: y, T, H: th, W: tw, C: s.ch };
+          await this.resC(sh, 'decoder.mid_block', x, s.res, opts);
+        } else {
+          const name = `decoder.up_blocks.${si - 1}.upsamplers.0.conv.conv`;
+          x = this._inPlace(s, x) ? this.upInPlace(sh, name, x, s.ch) : this.upC(sh, name, x, s.ch, s.up);
+          await this.tick(opts);
+          await this.resC(sh, `decoder.up_blocks.${si - 1}`, x, s.res, opts);
+        }
+        g.runner.flush(); st.release(sh); sh = null;
+        await g.done(); if (opts.check) opts.check(); report(0, 0);
+      }
+      // ---- up_blocks.3 + conv_out on exact sub-tiles of the big tile's core (x: [F][4th][4tw][256]); the input is cropped one chunk at a time
+      const s = S[L], up = `decoder.up_blocks.${L - 1}`, [p1, p2, p3] = s.up, PP = p1 * p2 * p3, Fx = x.H * x.W * x.C * 2;
+      sh = await st.upload(s.shard);
+      const c0y = (t.cy0 - t.y0) * 4, c1y = (t.cy1 - t.y0) * 4, c0x = (t.cx0 - t.x0) * 4, c1x = (t.cx1 - t.x0) * 4;
+      const sub = planSub(c1y - c0y, c1x - c0x, plan.maxSub4, HALO3);
+      if (!sub) throw Object.assign(new Error('decoder sub-tile does not fit the budget'), { code: 'OUT_OF_MEMORY' });
+      for (let k = 0; k < sub.tiles.length; k++) {
+        const q = sub.tiles[k], sy0 = c0y + q.cy0, sy1 = c0y + q.cy1, sx0 = c0x + q.cx0, sx1 = c0x + q.cx1;   // sub core (4x px, tile coords)
+        const ry0 = Math.max(0, sy0 - HALO3), ry1 = Math.min(x.H, sy1 + HALO3), rx0 = Math.max(0, sx0 - HALO3), rx1 = Math.min(x.W, sx1 + HALO3);
+        const rh = ry1 - ry0, rw = rx1 - rx0, nk = Math.ceil(x.T / cf), Ho = rh * p2, Wo = rw * p3, Fy = Ho * Wo * s.ch * 2, To = x.T * p1 - (p1 - 1);
+        const yb = g.buffer(To * Fy, 'vae.x'), G = g.buffer(Math.min(cf + 2, x.T) * rh * rw * x.C * 2, 'vae.sub'), c = g.buffer(Math.min(cf, x.T) * rh * rw * s.ch * PP * 2, 'vae.upconv');
+        try {
+          for (let j = 0; j < nk; j++) {
+            const t0 = j * cf, nt = Math.min(cf, x.T - t0), g0 = Math.max(0, t0 - 1), g1 = Math.min(x.T, t0 + nt + 1), sk = j === 0 ? p1 - 1 : 0;
+            vop(g, { op: 'crop', n: (g1 - g0) * rh * rw * x.C / 2, ah: { buf: x.buf, off: g0 * Fx }, yu: { buf: G }, a: x.C / 2, b: x.W, c: x.H, d: rx0 | (ry0 << 16), e: rw | (rh << 16) });
+            this.convT(sh, `${up}.upsamplers.0.conv.conv`, { buf: G, T: x.T, H: rh, W: rw, C: x.C, t0: g0 }, s.ch * PP, { y: c, t0, nt });
+            d2s(g, { x: { buf: c }, y: { buf: yb, off: (t0 * p1 + sk - (p1 - 1)) * Fy }, T: nt, H: rh, W: rw, C: s.ch, p1, p2, p3, sk, To: nt * p1 - sk });
+          }
+        } catch (e) { this.drop(yb); throw e; } finally { this.drop(G, c); }
+        const y = { buf: yb, T: To, H: Ho, W: Wo, C: s.ch };
+        try { await this.tick(opts); await this.resC(sh, up, y, s.res, opts); } catch (e) { this.drop(yb); throw e; }
+        const HW = y.H * y.W, og = Math.min(y.T, Math.max(cf, 8)), R3 = g.buffer(y.T * HW * 4, 'vae.rstd'), o = g.buffer(og * HW * 48 * 2, 'vae.out16');
+        pixstats(g, { x: { buf: y.buf }, r: { buf: R3 }, V: y.T * HW, C: y.C });
+        const bx = (sx0 - rx0) * 8, cx = (sx1 - rx0) * 8, by = (sy0 - ry0) * 8, cy = (sy1 - ry0) * 8, cw = cx - bx, chh = cy - by;   // pixels (8 per 4x px)
+        const fb = cw * chh * 4, nfs = Math.max(1, Math.min(og, Math.floor(this.sliceBytes / fb))), sb = nfs * fb;
+        if (!this._stg || this._stg.size < sb || this._stgDev !== g.device) { if (this._stg && this._stgDev === g.device) this._stg.destroy(); this._stg = g.device.createBuffer({ size: sb, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST, label: 'vae.staging' }); this._stgDev = g.device; }
+        const px = g.buffer(sb, 'vae.rgba.slice'), stg = this._stg;
+        try {
+          for (let t0 = 0; t0 < y.T; t0 += og) {   // conv_out <= 8 frames at a time, read back in slices of <= sliceBytes
+            const nt = Math.min(og, y.T - t0);
+            this.convT(sh, 'decoder.conv_out.conv', y, 48, { pn: R3, y: o, t0, nt });           // f16 (values in [-1, 1]: < 0.07 LSB)
+            for (let f0 = 0; f0 < nt; f0 += nfs) {
+              const nf = Math.min(nfs, nt - f0), bytes = nf * fb;
+              vop(g, { op: 'ltxrgba16', n: nf * cw * chh, ah: { buf: o }, yu: { buf: px }, a: f0, b: bx, c: cx, d: by, e: cy, f: (y.W << 16) | y.H });
+              g.runner.flush();
+              const enc = g.device.createCommandEncoder(); enc.copyBufferToBuffer(px, 0, stg, 0, bytes); g.device.queue.submit([enc.finish()]);
+              await stg.mapAsync(GPUMapMode.READ, 0, bytes);
+              const data = stg.getMappedRange(0, bytes).slice(0); stg.unmap();
+              this.jsBytes = bytes * 2 + sb;
+              await sink(new Uint8Array(data), t.x0 * 32 + sx0 * 8, t.y0 * 32 + sy0 * 8, cw, chh, nf, t0 + f0);
+              if (opts.check) opts.check();
+            }
+          }
+        } finally { this.drop(o, px, R3, y.buf); }
+        if (opts.check) opts.check();
+        report(k + 1, sub.tiles.length);
+      }
+      st.release(sh); sh = null;
+    } finally { if (sh) st.release(sh); this.drop(x && x.buf); await g.done(); }
   }
 }
 
@@ -3314,6 +3727,7 @@ return { VIDEO_CKPT, encodeMp4, SanaVideoPipeline };
 })();
 // ---- engine.js
 __M["engine.js"] = (() => {
+const { ATTNF_P, ATTNF_V } = __M["ops/attention.js"];   // p0pc0rn v028
 // Pocket Flux engine: FLUX.2 [klein] 4B text-to-image / image-to-image on WebGPU, pure JS + WGSL.  Public API = docs/ENGINE_API.md
 // (engine_mock.js implements the same calls).  createEngine({model, packUrl, source: 'opfs'|'http', powerPreference, acc, attn}).
 'use strict';
@@ -3473,7 +3887,8 @@ class Engine {
 
   async _gpu() {
     const g = await createGpu({ powerPreference: this.opts.powerPreference || 'high-performance', onLost: () => this.emit('gpu-lost', {}) });
-    g.tune = { acc: this.opts.acc || 'f16', vaeAcc: this.opts.vaeAcc || 'f16', attn: this.opts.attn || { BQ: 64, sg: g.subgroups && g.sgMin >= 8, pv16: true } };
+    g.tune = { acc: this.opts.acc || 'f16', vaeAcc: this.opts.vaeAcc || 'f16', attn: this.opts.attn || { BQ: 64, sg: g.subgroups && g.sgMin >= 8, pv16: true },
+      attnF: this.opts.attnF !== undefined ? this.opts.attnF : ATTNF_P, attnF256: this.opts.attnF256 !== undefined ? this.opts.attnF256 : ATTNF_V };   // v028: the phone-tuned attention
     return g;
   }
   async _load() {
@@ -3490,7 +3905,8 @@ class Engine {
       const arch = this.store.m.model && this.store.m.model.arch;
       if (arch !== this.reg.arch) throw err('UNSUPPORTED', `pack is ${arch}, engine model ${this.opts.model} needs ${this.reg.arch}`);
       const ctx = { gpu: this.gpu, store: this.store, emit: (p) => this.emit('progress', p), warn: (code, message) => this.emit('warning', { code, message }),
-        vaeOpts: this.opts.decodeBudgetMB ? { budgetBytes: this.opts.decodeBudgetMB * 1e6 } : {} };
+        vaeOpts: Object.assign(this.opts.decodeBudgetMB ? { budgetBytes: this.opts.decodeBudgetMB * 1e6 } : {}, this.opts.vaeChunk != null ? { chunk: this.opts.vaeChunk } : {},
+          this.opts.vaePlan ? { plan: this.opts.vaePlan } : {}, this.opts.picAcc ? { picAcc: this.opts.picAcc } : {}) };   // v029 test tools: vaeChunk 0 = the v028 clip decoder, vaePlan = forced tiles
       this.pipe = arch === 'sana-video2' ? new SanaVideoPipeline(ctx) : new KleinPipeline(ctx);
     }
     return this.pipe;
@@ -4073,7 +4489,7 @@ async function prepareStill(image, w, h) {
 
 async function createI2VEngine(opts = {}) {
   const base = opts.base || await createCoreEngine({ model: 'sanavideo2-5b', packUrl: opts.videoPackUrl || ((globalThis.P0_CONFIG && globalThis.P0_CONFIG.packs['sanavideo2-5b']) || './pack/'), source: opts.source, powerPreference: opts.powerPreference,
-    decodeBudgetMB: opts.decodeBudgetMB, acc: opts.acc });
+    decodeBudgetMB: opts.decodeBudgetMB, acc: opts.acc, vaeChunk: opts.vaeChunk });
   return new I2VEngine(base, opts);
 }
 

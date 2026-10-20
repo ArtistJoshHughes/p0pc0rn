@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!-- v027.3 (security review M2): what this page may load and talk to: its own files, the model packs on Hugging Face (and its CDN), and the lookups on Wikipedia, Wikimedia and Fandom; inline scripts by hash (csp_hashes.py). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-qqCPNeJmDeaW59jeNXVjC8rP+xmqGR62X5rLL9FTqn4='; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-qqCPNeJmDeaW59jeNXVjC8rP+xmqGR62X5rLL9FTqn4='; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
@@ -16,11 +16,8 @@
      In light mode the Home Screen app asks for the opaque default bar (dark text) instead; iOS reads this when the app opens. -->
 <script>try { if (matchMedia('(prefers-color-scheme: light)').matches) document.getElementById('sb-style').content = 'default'; } catch (e) {}</script>
 <!-- v026.1: after a planned fresh page the FIRST frame is the cover, never the start screen or the Create tab; the app takes it down
-     once the same screen is back (20 s fallback). The marker is the app's own ('p0pc0rn:planned', read-only here); v026.7: only once the old page stamped it as it left. -->
-<style>html.pf-fresh body > * { visibility: hidden !important; }
-html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: #000; color: #f2f2f7; font: 17px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; z-index: 2147483647; visibility: visible; }
-@media (prefers-color-scheme: light) { html.pf-fresh body::after { background: #F6F6F8; color: #1c1c1e; } }</style>
+     once the same screen is back (20 s fallback). The marker is the app's own ('p0pc0rn:planned', read-only here); v026.7: only once the old page stamped it as it left.
+     post-launch: the cover's style is in app.css (html.pf-fresh), a render-blocking stylesheet: the CSP allows no inline styles. -->
 <script>try { var pfp = JSON.parse(localStorage.getItem('p0pc0rn:planned') || 'null'); if (pfp && pfp.left && Date.now() - pfp.t < 600000) { document.documentElement.classList.add('pf-fresh');
   setTimeout(function () { document.documentElement.classList.remove('pf-fresh'); }, 20000); } } catch (e) {}</script>
 <meta name="apple-mobile-web-app-title" content="p0pc0rn">
@@ -30,17 +27,17 @@ html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position
 <link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
 <title>p0pc0rn</title>
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="app.css?v=030">
 <link rel="stylesheet" href="cast/cast.css">
 <!-- Engine bridge (classic script, exposes window.PF). Then the app (ES module, runs after parsing). -->
 <script src="gpuclamp.js"></script>
 <script src="config.js"></script>
 <script src="pocketflux.js"></script>
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=030"></script>
 </head>
 <body>
 <!-- Icon sprite: 24-unit grid, 1.5 stroke, round caps. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<svg class="sprite" width="0" height="0" aria-hidden="true">
   <defs>
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3.5c.6 4.3 2.2 5.9 6.5 6.5-4.3.6-5.9 2.2-6.5 6.5-.6-4.3-2.2-5.9-6.5-6.5 4.3-.6 5.9-2.2 6.5-6.5Z"/><path d="M18.5 15.5c.2 1.6.9 2.3 2.5 2.5-1.6.2-2.3.9-2.5 2.5-.2-1.6-.9-2.3-2.5-2.5 1.6-.2 2.3-.9 2.5-2.5Z"/></symbol>
     <symbol id="i-photo-plus" viewBox="0 0 24 24"><path d="M20 12.5V17a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h5.5"/><path d="m4.5 16 4-4 3 3 2-2 5 5"/><path d="M18 3v6M15 6h6"/></symbol>
@@ -74,7 +71,8 @@ html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position
   </defs>
 </svg>
 
-<!-- GATE: boot, unsupported, setup (no tabs until the engines have answered and one model is installed). One card at a time. -->
+<!-- GATE: boot, unsupported, and on iPhone "Add to Home Screen first" (a Safari tab with nothing downloaded yet). One card at a time.
+     The models download from the app itself: a new install opens in the Assistant chat, whose first message offers the assistant. -->
 <section id="gate" class="gate">
   <div class="mark logo" aria-hidden="true"><img src="icon-180.png" alt="" width="64" height="64"></div>
   <div id="g-boot" class="card-g"><p class="title">p0pc0rn</p><p class="callout dim">Checking this phone…</p></div>
@@ -89,28 +87,6 @@ html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position
     <ol class="steps"><li>Tap <b>Share</b> <svg class="ic"><use href="#i-share"/></svg></li><li>Choose <b>Add to Home Screen</b></li><li>Open p0pc0rn from the new icon</li></ol>
     <button class="btn ghost" id="g-in-safari" type="button">Download in Safari instead</button>
     <p class="footnote dim">Already downloaded somewhere else? Open p0pc0rn from that place.</p>
-  </div>
-  <div id="g-dl" class="card-g" hidden>
-    <p class="title" id="dl-title">Get the picture model</p>
-    <div id="dl-intro">
-      <p class="body" id="dl-body">One-time download · 4.6 GB · works offline after.</p>
-      <p class="callout dim">Wi-Fi + charger recommended. Keep this screen open.</p>
-      <p class="footnote dim" id="dl-free"></p>
-      <p class="footnote dim" id="dl-sep" hidden>Already downloaded it in Safari? iPhone keeps Home Screen apps' storage separate, so this icon needs its own copy. You can also keep using p0pc0rn in Safari.</p>
-    </div>
-    <div id="dl-live" hidden>
-      <p class="big num" id="dl-pct">0%</p>
-      <div class="bar"><i id="dl-fill"></i></div>
-      <p class="footnote dim num" id="dl-line">&nbsp;</p>
-    </div>
-    <p class="note warn" id="dl-note" hidden></p>
-    <button class="btn cta" id="dl-go" type="button"><svg class="ic"><use href="#i-download"/></svg><span>Download 4.6 GB</span></button>
-    <button class="btn ghost" id="dl-other" type="button" hidden>Start with videos instead · 5.7 GB</button>
-  </div>
-  <div id="g-done" class="card-g" hidden>
-    <div class="done-check" aria-hidden="true"><svg><use href="#i-check"/></svg></div>
-    <p class="title">Ready</p><p class="body dim">Everything now runs on this phone.</p>
-    <button class="btn cta" id="g-start" type="button"><svg class="ic"><use href="#i-sparkle"/></svg><span>Start making</span></button>
   </div>
 </section>
 
@@ -310,7 +286,7 @@ html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position
         <button type="button" role="radio" data-v="450"><b>450 MB</b><span>safest</span></button>
         <button type="button" role="radio" data-v="560"><b>560 MB</b><span>faster</span></button>
         <button type="button" role="radio" data-v="700"><b>700 MB</b><span>fastest</span></button></div>
-      <p class="footnote dim pad">How much graphics memory a clip may use while it develops. 560 MB is faster on a cool phone; 700 MB may stop the clip. If a clip stops while developing, go back to 450 MB.</p>
+      <p class="footnote dim pad">How much graphics memory a clip may use while it develops. 700 MB is the fastest; if a clip stops while developing, choose 450 MB.</p>
       <p class="label" id="l-assistant">Assistant</p>
       <div class="list" id="s-assistant">
         <label class="li sw-row" for="s-research"><span><span class="sw-name">Look things up on Wikipedia &amp; Fandom</span><span class="footnote dim">Answers and songs about real things, characters and franchises are written from what the assistant looks up, with the sources shown. The words of a lookup are sent to Wikipedia or Fandom. Nothing else leaves the phone.</span></span><input type="checkbox" class="sw" id="s-research"></label>
@@ -356,7 +332,7 @@ html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position
         <div class="li"><span>Phones</span><span class="dim" id="s-platforms">iPhone (Safari) · Android (Chrome): experimental</span></div>
         <a class="li link" href="devcheck.html" target="_blank" rel="noopener"><span>Device check</span><svg class="ic"><use href="#i-chevron"/></svg></a>
         <div class="li" id="s-clamp" hidden><span>Test mode</span><span class="li-end"><span class="dim" id="s-clamp-mode">–</span><button class="btn sm" id="s-clamp-off" type="button">Turn off</button></span></div>
-        <details class="li ref" id="s-diag"><summary><span>Diagnostics</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body"><p class="footnote dim">The last 50 steps on this phone with a memory estimate. Nothing leaves the phone unless you copy it.</p><pre class="mono footnote" id="s-diagtext" style="white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto"></pre><button class="btn sm" type="button" id="s-diagcopy">Copy</button></div></details>
+        <details class="li ref" id="s-diag"><summary><span>Diagnostics</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body"><p class="footnote dim">The last 200 steps on this phone: what ran, its memory and any errors. Copy adds the app version, the browser's own description and, where the browser reports it, the phone's memory. Research and Cast steps keep kinds and counts, never a topic, title, quote or name. Nothing leaves the phone unless you copy it.</p><pre class="mono footnote" id="s-diagtext"></pre><button class="btn sm" type="button" id="s-diagcopy">Copy</button></div></details>
         <div class="li"><span>Built by</span><span class="dim">Josh Hughes</span></div>
         <p class="li footnote dim">FLUX.2 [klein] 4B and FLUX.2 autoencoder © Black Forest Labs, Apache-2.0 · Qwen3-4B text encoder © 2024 Alibaba Cloud, Apache-2.0 · SANA-Video 2.0 5B © NVIDIA, Apache-2.0 · LTX-2.3 video decoder and picture reader (VAE decoder and encoder) © Lightricks, LTX-2 Community License Agreement · tokenizers.js © Hugging Face, Apache-2.0. The model files are modified (re-quantised) copies. The popcorn progress animation was generated with LTX-2.3 (Lightricks) from FLUX.2 [klein] stills.</p>
         <p class="li footnote dim">The assistant: Gemma 4 E2B-it © Google, Apache-2.0 (not the Gemma Terms of Use). Songs: ACE-Step 1.5 turbo, its 5 Hz lyrics planner and its audio decoder © ACE Studio and StepFun, MIT; the Qwen3-Embedding-0.6B text encoder inside it © Alibaba Cloud, Apache-2.0. These model files are modified (re-quantised) copies too. Lookups use Wikipedia (CC BY-SA 4.0) and Fandom wikis (CC BY-SA, as each wiki states): the assistant cites the pages it used.</p>
@@ -482,16 +458,20 @@ html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position
   </div>
 </div>
 
-<!-- v026.4: the LTX-2 licence, accepted before the video model or the picture reader downloads -->
+<!-- v026.4: the LTX-2 licence, accepted before the video model or the picture reader downloads; + the Gemma tick (its own unticked box),
+     also asked before a video job when it is missing -->
 <div id="ltx" class="sheet-wrap" hidden>
   <div class="scrim" data-close></div>
   <div class="sheet docsheet" role="dialog" aria-modal="true" aria-labelledby="ltx-title">
     <div class="pk-top"><p class="title" id="ltx-title">The video model’s licence</p><button class="mini" type="button" data-close>Not now</button></div>
+    <p class="callout" id="ltx-have" hidden></p>
     <p class="callout">Clips are decoded with the LTX-2.3 video autoencoder by Lightricks (the video model and the picture reader). It comes under the <b>LTX-2 Community License Agreement</b> (January 5, 2026). Read it and accept it before p0pc0rn downloads it. In short:</p>
     <ul class="footnote ltx-points" id="ltx-points"></ul>
     <p class="footnote dim">The video model also reads your words with Gemma 2 by Google. Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms. Its <a href="licenses/GEMMA_PROHIBITED_USE_POLICY.txt" target="_blank" rel="noopener noreferrer">Prohibited Use Policy</a> applies too.</p>
     <p class="label">The full licence, with Attachment A</p>
     <pre class="doc-text" id="ltx-text" tabindex="0"></pre>
+    <div class="attest" id="ltx-gemma-box"><label class="attest-row" for="ltx-gemma"><input type="checkbox" id="ltx-gemma"><span>I agree to Google’s <a href="licenses/GEMMA_PROHIBITED_USE_POLICY.txt" target="_blank" rel="noopener noreferrer">Gemma Prohibited Use Policy</a> (the video model reads prompts with Gemma 2).</span></label>
+      <p class="footnote dim" id="ltx-gemma-when" hidden></p></div>
     <button class="btn" id="ltx-ok" type="button">I accept</button>
   </div>
 </div>

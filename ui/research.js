@@ -7,6 +7,7 @@
 //   "research found nothing · N missed" / "no research: <why>" that opens to the same list. lyricMarks(lyrics, rows) -> per line, the
 //   looked-up fact it uses (or ''). Pure DOM; rows are data the agent wrote (rendered as text, links only http(s)).
 'use strict';
+import { tidyBrackets } from '../assistant/research.js';   // post-launch: a quote kept before the fix may hold a "()"
 
 const ICON = { queued: ['·', 'queued'], searching: ['⏳', 'searching'], found: ['✓', 'found'], miss: ['✗', 'not found'], skipped: ['–', 'skipped'] };
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -42,7 +43,7 @@ function rowEl(r) {
       const ul = el('ul', 'rl-quotes');
       if (uq.used) ul.append(el('li', 'rl-qhead', `The lyrics use: ${(r.used || []).join(', ')}`));
       for (const q of uq.quotes) {   // v026.4: every quote keeps its article link (CC BY-SA attribution)
-        const li = el('li', 'rl-q', `According to ${r.site || 'the source'}: “${String(q).slice(0, 240)}” `);
+        const li = el('li', 'rl-q', `According to ${r.site || 'the source'}: “${tidyBrackets(String(q)).slice(0, 240)}” `);
         if (r.url && /^https?:\/\//i.test(r.url)) { const a = el('a', 'rl-qsrc', r.title || 'the article'); a.href = r.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; li.append(a); }
         ul.append(li);
       }

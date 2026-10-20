@@ -7,6 +7,12 @@
 //   - the queue sheet: every job in the order it will run, progress, Cancel, move up / down, pause the queue, the finished ones
 //   - v023: a landed song's bubble offers Animate (a music video, end-capped first/last frame: assistant/mvflf.js; the app opens its
 //     sheet). There is no chat command for it. The music video's card and queue row open its storyboard; a cut's bubble offers Edit video.
+//   - onboarding (Josh: "like Ollama does"): a new install opens here. Until the assistant is on the phone the chat runs on a script, in
+//     code (no model, nothing is made): its first message ('welcome') offers the assistant + the starter knowledge as ONE download, with
+//     the sizes the packs report; a typed message gets a scripted answer ('setup') that offers what it needs; 'ready' says when the
+//     assistant has landed. With the assistant on the phone, a request for a model it has no tool for (lip-sync, Klein 9B) or a plain
+//     "download the … model" is answered the same way while that model is missing; everything else goes to the assistant as before.
+//     These messages stay in the chat but never reach the model (history: false).
 import * as store from '../store.js';
 import { $, ls, clock, about, reducedMotion, isAbort } from '../util.js';
 import { researchList, lyricsEl } from './research.js';   // v026.2: the research list
@@ -16,6 +22,43 @@ const SUGGEST = [
   'A picture of a red fox in fresh snow at sunrise',
   'A 5-second clip of waves rolling onto a black sand beach at dusk',
 ];
+// ---- onboarding: what a message asks for (model keys of the app's MODELS; 'assist' = the assistant + the starter knowledge)
+const SETUP = new Set(['welcome', 'ready', 'setup']);
+const WANTS = [
+  ['image', /\b(?:pictures?|photos?|images?|draw(?:ing)?|paint(?:ing)?|illustrations?|portraits?|posters?|wallpapers?)\b/i],
+  ['music', /\b(?:songs?|music|sing(?:ing)?|lyrics|melody|tune)\b/i],
+  ['video', /\b(?:clips?|videos?|animat(?:e|ion)|film|movie)\b/i],
+  ['voice', /\b(?:voices?|clone)\b/i],
+  ['lipsync', /\blip[\s-]?(?:sync|synch|dub)/i],
+  ['k9b', /\b(?:klein[\s-]*)?9\s?b\b/i],
+];
+/** the models a message asks for (a music video needs pictures, clips and the song; lip-sync needs a Cast voice, not the video model) */
+export function wants(text) {
+  const t = String(text || '');
+  let out = WANTS.filter(([, re]) => re.test(t)).map(([k]) => k);
+  if (/\bmusic videos?\b/i.test(t)) for (const k of ['image', 'video']) if (!out.includes(k)) out.push(k);
+  if (out.includes('lipsync')) { out = out.filter((k) => k !== 'video'); if (!out.includes('voice')) out.push('voice'); }   // "lip-sync my clip"
+  return out;
+}
+const NAMED = [['assist', /\b(?:assistant|gemma)\b/i], ['starter', /\b(?:starter|knowledge)\b/i], ['k9b', /\b9\s?b\b/i], ['lipsync', /\blip[\s-]?sync/i], ['voice', /\bvoice\b/i],
+  ['planner', /\blyrics planner\b/i], ['reader', /\bpicture reader\b/i], ['music', /\b(?:music|songs?)\b/i], ['video', /\b(?:videos?|clips?)\b/i], ['image', /\b(?:pictures?|images?|photos?)\b/i]];
+/** a plain "download / get / install the … model" (or the assistant, the starter knowledge, the 9B) -> those keys, else []. Only a message
+ *  that starts with the ask and makes nothing ("get the music model", not "get the assistant to write a song") */
+export function explicitAsk(text) {
+  const t = String(text || '');
+  if (!/^\s*(?:please\s+|can you\s+|could you\s+|i want to\s+|i'd like to\s+)*(?:download|get|install)\b/i.test(t) || /\b(?:make|draw|paint|write|create|sing|compose|animate)\b/i.test(t)
+    || !/\b(?:models?|assistant|starter|lyrics planner|picture reader|9\s?b)\b/i.test(t)) return [];
+  let out = NAMED.filter(([, re]) => re.test(t)).map(([k]) => k).filter((k, i, a) => a.indexOf(k) === i);
+  if (out.includes('reader')) out = out.filter((k) => k !== 'image');   // "the picture reader" is not the picture model
+  if (out.includes('planner')) out = out.filter((k) => k !== 'music');
+  if (out.includes('assist')) out = out.filter((k) => k !== 'starter');   // the assistant's download brings the starter knowledge too
+  return out;
+}
+/** a request as a prompt for Create ("make me a picture of a red fox" -> "A red fox") */
+export function promptOf(text) {
+  const t = String(text || '').trim(), p = t.replace(/^(?:please\s+|can you\s+|could you\s+)*(?:make|draw|paint|create|generate|show|give)\s+(?:me\s+)?(?:(?:an?\s+|the\s+|some\s+)?(?:\d+[\s-]*seconds?\s+|short\s+)?(?:pictures?|photos?|images?|paintings?|drawings?|illustrations?|clips?|videos?|animations?)\s+(?:of\s+|showing\s+|with\s+)?)?/i, '').trim();
+  return p ? p.charAt(0).toUpperCase() + p.slice(1) : t;
+}
 const SPECIAL = /<\|?(?:turn|tool_call|tool_response|"|channel|image|audio)\|?>|<eos>|<bos>|<turn\|>|<tool_call\|>|<\|turn>/g;
 const nth = (n) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
 const TERMINAL = new Set(['done', 'failed', 'cancelled']);
@@ -25,7 +68,8 @@ const btn = (label, cls = 'btn sm', icon = null) => { const b = mk('button', cls
 
 export function createChat(api) {
   const C = { sid: ls.get('pf.app.chatSession', null), shown: false, urls: new Set(), cards: new Map(), stream: null, photo: null, typing: null,
-    pop: null, popCanvas: null, popJob: null, unread: false, armed: new Map(), qopen: false, loadTok: 0 };
+    pop: null, popCanvas: null, popJob: null, unread: false, armed: new Map(), qopen: false, loadTok: 0,
+    declined: false, lastUser: '', setupBusy: null, brainWas: null };   // onboarding: "Not now" was tapped; the last thing the person asked
   const Q = () => api.Q, AG = () => api.AG;
 
   // ---------------------------------------------------------------------------------------------- the session
@@ -42,15 +86,17 @@ export function createChat(api) {
 
   // ---------------------------------------------------------------------------------------------- the top cards + the composer
   function render() {
-    if (!C.shown) { renderDot(); return; }
+    const brain = api.done('brain'), arrived = C.brainWas === false && brain; C.brainWas = brain;
+    if (!C.shown) { if (arrived && AG() && C.sid) ensureSetup(false).catch(() => {}); renderDot(); return; }   // onboarding: "I'm ready" waits in the chat (the tab's dot)
     renderNeed(); renderComposer(); renderPending(); renderDot();
     for (const b of document.querySelectorAll('#v-assistant .dl-btn')) paintDl(b);
+    for (const e of document.querySelectorAll('#as-log .as-free')) e.textContent = freeLine();
     if (!$('as-hello').hidden) renderMusicHint();
-    if (api.done('brain') && AG() && !C.built) { C.built = true; ensureSession().then(rebuild); }   // the assistant just arrived: say hello
+    if (brain && AG() && !C.built) { C.built = true; ensureSession().then(rebuild); }   // the assistant just arrived: say hello
   }
   function renderNeed() {
     const k = 'brain', m = api.MODELS[k], u = api.S.dl[k], ready = api.done(k), st = api.S.st[k] || {};
-    const card = $('as-need'); card.hidden = ready;
+    const card = $('as-need'); card.hidden = ready || !!AG();   // onboarding: with the chat working, its first message offers the assistant
     const ag = !api.consented() && ready; $('as-agree').hidden = !ag;
     const err = api.agentError(), ro = api.readOnly();
     $('as-note').hidden = !(err || ro);
@@ -68,10 +114,11 @@ export function createChat(api) {
     b.querySelector('use').setAttribute('href', dl ? '#i-pause' : u.have > 0 ? '#i-play' : '#i-download');
     b.querySelector('span').textContent = api.dlLabel(u);
   }
-  function canSend() { return !!AG() && api.done('brain') && !api.readOnly() && !api.agentError(); }
+  function canSend() { return !!AG() && !api.readOnly() && !api.agentError(); }   // onboarding: without the assistant, the script answers
   function renderComposer() {
     const ok = canSend();
-    $('as-in').disabled = !api.done('brain') || !AG();
+    $('as-in').disabled = !AG();
+    $('as-add').hidden = !api.done('brain');   // a photo is for the assistant: no photo button before it is on the phone
     $('as-send').setAttribute('aria-disabled', String(!ok || !$('as-in').value.trim() || (C.photo && !C.photo.attest)));
     $('as-photo').hidden = !C.photo;
   }
@@ -110,15 +157,121 @@ export function createChat(api) {
   async function rebuild() {
     const tok = ++C.loadTok, ag = AG(), log = $('as-log');
     for (const u of C.urls) URL.revokeObjectURL(u); C.urls.clear(); C.cards.clear(); C.stream = null; C.typing = null;
+    if (ag && C.sid) await ensureSetup(true).catch(() => {});   // onboarding: the first message (no assistant yet), or "I'm ready"
     const s = ag && C.sid ? await ag.session(C.sid) : null;
     if (tok !== C.loadTok) return;
     log.textContent = '';
-    const msgs = (s && s.messages) || [];
-    $('as-hello').hidden = msgs.length > 0 || !api.done('brain'); $('as-new').hidden = !msgs.length;
+    const msgs = (s && s.messages) || [], brain = api.done('brain');
+    $('as-hello').hidden = msgs.length > 0 || !brain; $('as-new').hidden = !msgs.length || !brain;   // no New chat before the assistant
     if (!$('as-hello').hidden) renderHello();
-    for (const m of msgs.slice(-60)) log.append(bubble(m));
+    const w = msgs.map((m) => m.kind).lastIndexOf('welcome');
+    C.declined = w >= 0 && msgs.slice(w + 1).some((m) => m.later);
+    C.lastUser = '';
+    for (const m of msgs.slice(-60)) { log.append(bubble(m)); if (m.role === 'user') C.lastUser = m.text; }
     renderPending(); syncPop(); scrollDown(true);
   }
+  // ---------------------------------------------------------------------------------------------- onboarding: the scripted messages
+  /** the chat's first message while the assistant is not on the phone ('welcome'), and 'ready' once it is; each at most once per stretch,
+   *  so a chat whose assistant was deleted gets a new welcome, and its download a new 'ready'. welcome = false: only 'ready' (in the background) */
+  async function ensureSetup(welcome = true) {
+    if (C.setupBusy) return C.setupBusy;
+    const ag = AG(); if (!ag || !C.sid) return;
+    C.setupBusy = (async () => {
+      const s = await ag.session(C.sid); if (!s) return;
+      const kinds = s.messages.map((m) => m.kind), w = kinds.lastIndexOf('welcome'), r = kinds.lastIndexOf('ready');
+      if (!api.done('brain')) { if (welcome && (w < 0 || r > w)) await ag.say(C.sid, { kind: 'welcome', text: WELCOME, history: false }); }
+      else if (w >= 0 && r < w) await ag.say(C.sid, { kind: 'ready', text: READY, history: false });
+    })();
+    try { await C.setupBusy; } finally { C.setupBusy = null; }
+  }
+  const WELCOME = "Hi, I'm the p0pc0rn assistant. I write the prompts for you, and a song's style and lyrics, then make them with the picture, video and music models, here on this phone. First I need a one-time download: the assistant and the starter knowledge.";
+  const READY = "I'm ready. Ask me for a song, a picture or a clip.";
+  const has = (k) => (k === 'assist' ? api.done('brain') : k === 'music' ? api.musicDl().ready : api.done(k));
+  const offerable = (k) => k === 'assist' || k === 'music' || !!(api.E && api.E[k]);   // the models this phone's app can download
+  const nameOf = (k) => (k === 'assist' || k === 'brain' ? 'the assistant' : k === 'music' ? 'music' : ['planner', 'reader', 'starter'].includes(k) ? `the ${api.MODELS[k].noun}` : `the ${api.MODELS[k].noun} model`);
+  const listOf = (ks) => ks.map(nameOf).join(' and ');
+  const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const freeLine = () => { const p = api.phone ? api.phone() : {}; return `Wi-Fi and a charger recommended; keep this screen open.${p.free != null ? ` ${api.fmtSize(Math.max(0, p.free))} free for p0pc0rn on this phone.` : ''}`; };
+  const NEEDS = { image: 'Pictures also need the picture model.', video: 'Clips also need the video model.', music: 'Songs also need the music model and its lyrics planner.',
+    voice: 'Cast voices need the voice model, and the person added in Settings › Cast.', lipsync: 'Lip-sync (experimental) needs the lip-sync model.',
+    k9b: 'Better pictures come from Klein 9B: once it is here, pick Better (9B) in Create › Picture.' };
+  /** a message answered here, in code: {text, offer: [model keys], create?} | null (the assistant answers it, or the Cast's say does) */
+  function localAnswer(text) {
+    const brain = api.done('brain');
+    if (C.photo && brain) return null;   // a photo goes to the assistant
+    const named = explicitAsk(text).filter(offerable);
+    if (named.length) {   // "download the music model": the button, with or without the assistant
+      const miss = named.filter((k) => !has(k)), got = named.filter(has), out = [];
+      if (got.length) out.push(`${cap1(listOf(got))} ${got.length > 1 ? 'are' : 'is'} already on this phone.`);
+      if (miss.length) out.push(miss.length > 1 ? 'Here they are:' : 'Here it is:');
+      return { text: out.join(' '), offer: miss };
+    }
+    const w = wants(text);
+    if (brain) {   // the assistant answers everything else; it has no tool for lip-sync or Klein 9B, so their downloads are offered here
+      if (w.includes('lipsync') && !has('lipsync')) { const miss = ['lipsync', 'voice'].filter((k) => !has(k)); return { text: `Lip-sync (experimental) needs ${listOf(miss)}. Then ask me to make someone in your Cast say a line, and tap Lip-sync · experimental on it.`, offer: miss }; }
+      if (w.includes('k9b') && !has('k9b')) return { text: 'Klein 9B makes better, slower pictures. Download it, then pick Better (9B) in Create › Picture; I make my pictures with the 4B.', offer: ['k9b'] };
+      return null;
+    }
+    if (api.isSayAsk && api.isSayAsk(text)) return null;   // "make <name> say …" is answered in code by the Cast, no assistant needed
+    const mode = w.includes('music') ? null : w.includes('video') ? 'video' : w.includes('image') ? 'image' : null;   // Create makes pictures and clips without me
+    const create = mode && has(mode) && api.toCreate ? { mode, prompt: promptOf(text) } : null, miss = w.filter((k) => !has(k) && offerable(k));
+    const out = [`I'm not on this phone yet, so I can't answer that. Download me first (one time), then ask again${create ? ', or let Create make it without me' : ''}.`];
+    for (const k of miss) out.push(NEEDS[k]);
+    return { text: out.join(' '), offer: ['assist', ...miss], create };
+  }
+  /** the person's message and the scripted answer, kept in the chat (never in the model's history) */
+  async function localTurn(text, ans, typed) {
+    if (typed) { $('as-in').value = ''; grow(); }
+    renderComposer();
+    try {
+      await ensureSession();
+      await AG().say(C.sid, { role: 'user', text: text.slice(0, 4000) });
+      await AG().say(C.sid, Object.assign({ kind: 'setup', history: false }, ans));
+    } catch (e) { api.toast("Couldn't send that. Try again."); if (typed) { $('as-in').value = text; grow(); renderComposer(); } }
+  }
+  /** "Not now" on the first message: the offer stays (that button, Settings › Models); Create works without the assistant */
+  async function notNow() {
+    C.declined = true; for (const x of document.querySelectorAll('#as-log .as-later')) x.hidden = true;
+    try {
+      await ensureSession();
+      const pic = has('image');
+      await AG().say(C.sid, { kind: 'setup', later: true, history: false, offer: pic ? [] : ['image'],
+        text: `OK. Download me any time, here or in Settings › Models. Create makes pictures without me${pic ? '.' : ' once the picture model is on the phone:'}` });
+    } catch (e) { /* the button above still works */ }
+  }
+  /** the first message: what I do, the two parts with the sizes the packs report, the phone's notes, one button for both, Not now */
+  function welcomeBody(b) {
+    const M = api.MODELS, sz = (k) => api.fmtSize(api.S.dl[k].total || M[k].total), p = api.phone ? api.phone() : {};
+    b.append(mk('p', 'msg-text', "Hi, I'm the p0pc0rn assistant. I write the prompts for you, and a song's style and lyrics, then make them with the picture, video and music models, here on this phone."),
+      mk('p', 'msg-text', 'First I need a one-time download:'));
+    const ul = mk('ul', 'as-parts'); ul.append(mk('li', null, `The assistant (${M.brain.what}) · ${sz('brain')}`));
+    if (api.E && api.E.starter) ul.append(mk('li', null, `Starter knowledge (${M.starter.what}) · ${sz('starter')}${api.done('starter') ? ' · on this phone' : ''}`));
+    b.append(ul, mk('p', 'footnote dim as-free', freeLine()));
+    if (p.homeApp && !p.android) b.append(mk('p', 'footnote dim', "Already downloaded it in Safari? iPhone keeps the Home Screen app's storage separate, so this icon needs its own copy."));
+    if (p.android) b.append(mk('p', 'footnote dim', 'Android (Chrome): experimental. Settings › About › Device check shows what this phone can run.'));
+    const col = mk('div', 'as-offer'), later = btn('Not now', 'btn sm ghost as-later');
+    later.onclick = () => notNow(); col.append(dlButton('assist'), later); b.append(col);
+    paintDl(col.querySelector('.dl-btn'));
+  }
+  /** "I'm ready": the person's own last request first, the suggestions, and the models still to get (each offered once more when asked) */
+  function readyBody(b) {
+    b.append(mk('p', 'msg-text', READY));
+    const row = mk('div', 'as-opts');
+    const mine = C.lastUser && !explicitAsk(C.lastUser).length ? C.lastUser : '';   // what they asked before the assistant was here, one tap away
+    for (const t of [mine, ...SUGGEST].filter((x, i, a) => x && a.indexOf(x) === i).slice(0, 4)) { const c = mk('button', 'as-chip', t); c.type = 'button'; c.onclick = () => fill(t); row.append(c); }
+    b.append(row);
+    const miss = ['image', 'music', 'video'].filter((k) => !has(k) && offerable(k));
+    if (miss.length) { const col = mk('div', 'as-offer'); col.append(mk('p', 'footnote dim', 'Pictures, songs and clips each need their own model, once. I offer it when you ask, or get it now:'), ...miss.map(dlButton)); b.append(col); }
+  }
+  /** a scripted answer: its words, the downloads it offers, and Create when Create can make it without the assistant */
+  function setupBody(b, m) {
+    b.append(textBlock(m.text));
+    const col = mk('div', 'as-offer');
+    for (const k of m.offer || []) if (offerable(k)) col.append(dlButton(k));
+    if (m.create && api.toCreate) { const c = btn('Open Create with this prompt', 'btn sm ghost', 'i-sparkle'); c.classList.add('as-create'); c.onclick = () => api.toCreate(m.create.prompt, m.create.mode); col.append(c); }
+    if (col.childElementCount) b.append(col);
+  }
+  const fill = (t) => { $('as-in').value = t; grow(); renderComposer(); $('as-in').focus(); };
   function renderHello() {
     const box = $('as-try'); if (box.childElementCount) return renderMusicHint();
     for (const t of SUGGEST) { const b = mk('button', 'as-chip', t); b.type = 'button'; b.onclick = () => { $('as-in').value = t; grow(); renderComposer(); $('as-in').focus(); }; box.append(b); }
@@ -172,6 +325,9 @@ export function createChat(api) {
       if (m.jobId) { const c = card(m.jobId); if (c) b.append(c); }
       return b;
     }
+    if (kind === 'welcome') { welcomeBody(b); return b; }   // onboarding: drawn from the app's state, so the sizes and buttons stay current
+    if (kind === 'ready') { readyBody(b); return b; }
+    if (kind === 'setup') { setupBody(b, m); return b; }
     if (kind === 'error' || kind === 'refusal') b.prepend(svg(kind === 'error' ? 'i-alert' : 'i-shield', 'ic msg-ic'));
     b.append(textBlock(m.text));
     if (kind === 'question' && Array.isArray(m.options) && m.options.length) {
@@ -180,9 +336,9 @@ export function createChat(api) {
       b.append(row);
     }
     if (kind === 'refusal') { const r = btn('Rights & Copyright', 'btn sm', 'i-shield'); r.onclick = () => api.openSettings('rights'); b.append(r); }
-    if (kind === 'needs-download' && m.model) {
-      const k = { 'gemma4-e2b': 'brain', 'acestep15-turbo': 'music', 'flux2-klein-4b': 'image', 'sanavideo2-5b': 'video' }[m.model];
-      if (k) { const row = mk('div', 'row-btns'); row.append(dlButton(k)); b.append(row); }   // music = ONE button for the model + the lyrics planner (v021)
+    if (kind === 'needs-download' && m.model) {   // onboarding: + the Cast's voice, lip-sync, Klein 9B and the picture reader (the say path asks for Voice)
+      const k = { 'gemma4-e2b': 'assist', 'acestep15-turbo': 'music', 'flux2-klein-4b': 'image', 'sanavideo2-5b': 'video', 'qwen3-tts-0.6b': 'voice', 'musetalk-1.5': 'lipsync', 'flux2-klein-9b': 'k9b', 'ltx23-still-enc': 'reader' }[m.model];
+      if (k && offerable(k)) { const row = mk('div', 'row-btns'); row.append(dlButton(k)); b.append(row); }   // music = ONE button for the model + the lyrics planner (v021)
     }
     if (kind === 'result' && m.media) b.append(result(m));
     if (Array.isArray(m.research) && m.research.length) { const rl = researchList(m.research); if (rl) b.append(rl); }   // v026.2: what was looked up, collapsed
@@ -191,13 +347,29 @@ export function createChat(api) {
   /** a Download button for a model (live: progress, Pause, then "Ready") */
   function dlButton(k) {
     const b = mk('button', 'btn sm dl-btn'); b.type = 'button'; b.dataset.k = k;
-    b.append(svg('i-download'), mk('span')); b.onclick = () => { if (k === 'music') api.musicTap(); else if (!api.done(k)) api.dlTap(k); };
-    if (k !== 'music') { paintDl(b); return b; }
+    let at = 0;   // a double tap on Download never flips straight into Pause (as in Settings)
+    b.append(svg('i-download'), mk('span')); b.onclick = () => { const now = Date.now(); if (now - at < 300) return; at = now; if (k === 'music') api.musicTap(); else if (k === 'assist') api.assistTap(); else if (!api.done(k)) api.dlTap(k); };
+    if (k !== 'music' && k !== 'assist') { paintDl(b); return b; }
     const box = mk('div', 'dl-music'), bar = mk('div', 'bar'); bar.append(mk('i'));   // one bar for the pair, both parts listed underneath
     box.append(b, bar, mk('p', 'footnote dim num dl-parts')); paintDl(b); return box;
   }
   function paintDl(b) {
     const k = b.dataset.k;
+    if (k === 'assist') {   // onboarding: the assistant + the starter knowledge, one button (app.js assistDl)
+      const a = api.assistDl(), box = b.parentElement;
+      b.disabled = a.ready || a.pausing;
+      b.querySelector('use').setAttribute('href', a.ready ? '#i-check' : a.running ? '#i-pause' : a.partial && !a.addStarter ? '#i-play' : '#i-download');
+      b.querySelector('span').textContent = a.label;
+      if (box && box.classList.contains('dl-music')) {
+        const live = (a.partial || !!a.running || a.addStarter) && !a.ready;
+        box.querySelector('.bar').hidden = !live; box.querySelector('.bar i').style.transform = `scaleX(${a.pct.toFixed(4)})`;
+        const pr = box.querySelector('.dl-parts'); pr.hidden = !live && !a.running;
+        pr.textContent = a.parts + (a.failed ? ' · stopped: tap to resume' : '') + (a.low ? ' · this phone may be short on space' : '');
+      }
+      const later = b.closest('.msg') && b.closest('.msg').querySelector('.as-later');
+      if (later) later.hidden = C.declined || a.ready || a.partial || !!a.running || api.done('brain');   // "Not now" until it is answered or the download starts
+      return;
+    }
     if (k === 'music') {
       const md = api.musicDl(), box = b.parentElement;
       b.disabled = md.ready || md.pausing;
@@ -210,8 +382,7 @@ export function createChat(api) {
       }
       return;
     }
-    const u = api.S.dl[k], m = api.MODELS[k], ready = api.done(k);
-    const name = k === 'brain' ? 'the assistant' : k === 'planner' ? 'the lyrics planner' : `the ${m.noun} model`;
+    const u = api.S.dl[k], ready = api.done(k), name = nameOf(k);   // "the picture model", "the lyrics planner", "the starter knowledge"
     b.disabled = ready || u.sub === 'pausing';
     b.querySelector('use').setAttribute('href', ready ? '#i-check' : u.sub === 'downloading' ? '#i-pause' : u.have > 0 ? '#i-play' : '#i-download');
     b.querySelector('span').textContent = ready ? `${name[0].toUpperCase()}${name.slice(1)} is ready` : u.sub === 'downloading' ? `Pause · ${Math.floor(api.dlPct(u) * 100)}%`
@@ -384,10 +555,11 @@ export function createChat(api) {
   function onMessage(sid, m) {
     if (sid !== C.sid) return;
     if (!C.shown) { if (m.role === 'assistant') { C.unread = true; renderDot(); } return; }
-    if (m.role === 'assistant') { C.activity = ''; if (C.stream) { C.stream.el.remove(); C.stream = null; } if (C.typing) { C.typing.remove(); C.typing = null; } }
-    $('as-hello').hidden = true; $('as-new').hidden = false;
+    if (m.role === 'assistant' && !SETUP.has(m.kind)) { C.activity = ''; if (C.stream) { C.stream.el.remove(); C.stream = null; } if (C.typing) { C.typing.remove(); C.typing = null; } }   // a scripted answer is not the end of a running turn
+    $('as-hello').hidden = true; $('as-new').hidden = !api.done('brain');
     const stick = nearBottom() || m.role === 'user';
     $('as-log').append(bubble(m)); syncPop(); renderPending();
+    if (m.role === 'user') C.lastUser = m.text;
     if (stick) scrollDown();
   }
   /** the assistant's words as they come (agent.js's planning call); a tool call shows as "Planning…" */
@@ -412,8 +584,9 @@ export function createChat(api) {
     const inp = $('as-in'), text = String(textArg != null ? textArg : inp.value).trim();
     if (!text) return;
     if (!AG()) return api.toast(api.agentError() ? "The assistant couldn't start. Reload p0pc0rn." : 'The assistant is still starting.');
-    if (!api.done('brain')) { api.toast('Get the assistant first.'); $('as-need').scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' }); return; }
-    if (!api.consented()) return api.openLesson();
+    const local = localAnswer(text);   // onboarding: answered here, in code (no model; nothing is made)
+    if (local) return localTurn(text, local, textArg == null);
+    if (!api.consented()) return api.openLesson();   // anything that can make something waits for the agreement
     if (api.readOnly()) return api.toast('p0pc0rn is open in another tab.');
     if (C.photo && !C.photo.attest) { api.toast('Tick the box about your photo first.'); const b = $('as-attest-box'); b.classList.add('need'); setTimeout(() => b.classList.remove('need'), 2400); return; }
     const photo = C.photo;

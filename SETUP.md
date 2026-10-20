@@ -47,13 +47,17 @@ Running your own copy instead is optional, and it has its own rules (the end of 
 2. **iPhone: add it to your Home Screen first.**
    - Tap Share › Add to Home Screen, then open p0pc0rn from the new icon and do everything else there.
    - iOS keeps the Home Screen app apart from Safari: models and your agreement in one aren't in the other.
-3. **Agree.** Read the rights lesson and tap **I agree**. Nothing can be made before that.
+3. **Agree.** p0pc0rn opens in the Assistant chat with the rights lesson on top. Read it and tap **I agree**. Nothing can be made
+   before that.
 4. **Settings › Storage › Protected from iOS cleanup › Allow.**
-5. **Settings › Models:** tap **Download** for what you want.
+5. **Download what you want.** The chat's first message offers the assistant and the starter knowledge as one download (3.3 GB).
+   Ask it for a picture, a song or a clip, and it offers that model if it isn't on the phone yet. **Settings › Models** has every
+   model: tap **Download** there.
    - Each model shows its licence first. Read it and accept.
    - Keep the app in front, the phone plugged in and on Wi-Fi.
    - If the download stops (screen lock, app in the background), it picks up where it left off when you're back.
-6. **Create:** describe a picture and tap **Make**. A picture takes about 2 to 3 minutes; a 5-second clip about 6.
+6. **Make something:** ask the assistant, or on **Create** describe a picture and tap **Make**. A picture takes about 2 to 3 minutes;
+   a 5-second clip about 6.
 
 ## Storage tips
 
