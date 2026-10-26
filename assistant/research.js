@@ -443,8 +443,8 @@ function nameToks(...texts) {
   return out;
 }
 const nameHits = (qw, toks) => new Set([...qw].filter((w) => wv(w).some((x) => toks.has(x))));
-/** a multi-word proper name must match on ALL its words (2-word names both; longer names all but one) - 'Sage Cortez' is never
- *  'Sage (Fear)'. name= the original topic when `query` rephrases it. Queries that are not proper names pass. */
+/** a multi-word proper name must match on ALL its words (2-word names both; longer names all but one) - 'Grace Hopper' is never
+ *  'Grace (film)'. name= the original topic when `query` rephrases it. Queries that are not proper names pass. */
 export function nameOk(query, texts, name = null) {
   let qw = nameWords(name || query);
   if (qw.size < 2) return true;
@@ -951,7 +951,7 @@ export class Research {
     const q = e.site === 'fandom' && e.wiki ? stripWikiWords(topic, e.wiki) || topic : topic;
     if (!modelOk(q, [e.title]) || !nameOk(q, [e.title])) return false;
     // the title only sits INSIDE the query (never asked as such): no live search ranked it, so every word must be covered - all the
-    // name words by the title ("Hells Canyon Dam" is never "Hells Canyon"), every other significant word by the title or summary
+    // name words by the title ("Eiffel Tower" is never "Eiffel"), every other significant word by the title or summary
     if (kbMatch(q, e) === 1) {
       const nw = nameWords(q), qw = sigWords(q);
       if (nw.size && nameHits(nw, nameToks(e.title)).size < nw.size) return false;
@@ -1198,7 +1198,7 @@ export class Research {
     const sys = quoteSys(), parts = [];
     for (const p of portions(scrubbed)) {
       const raw = await this.reader([{ role: 'system', content: sys }, { role: 'user', content: `ARTICLE: ${title}\nSECTION: ${p.heading}\nTEXT:\n${p.text}` }],
-        { maxTokens: QUOTE_MAX_TOKENS, temperature: 0.1, prefix: QUOTE_PREFIX, signal });
+        { maxTokens: QUOTE_MAX_TOKENS, prefix: QUOTE_PREFIX, signal });   // 3.8: exact (quotes are copied text)
       parts.push({ text: p.text, raw });
     }
     this.lastParts = parts;   // the bench saves the raw answers (revalidated offline with frozen rules)

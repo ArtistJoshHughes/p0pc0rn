@@ -58,7 +58,7 @@ export const DECLS = {
     shape: S('tall (default, vertical) or wide', { enum: ['tall', 'wide'] }),
     song: S('new (default) or last_song', { enum: ['new', 'last_song'] }) }, required: ['idea'] } },
   research: { description: 'Look up facts on Wikipedia, or a fan wiki for films, games, comics and shows, before drawing or describing a real or fictional subject.', parameters: { type: 'object', properties: {
-    topic: S('The exact name, e.g. "Hells Canyon".'),
+    topic: S('The exact name, e.g. "Eiffel Tower".'),
     kind: S('real or popculture', { enum: ['real', 'popculture'] }),
     franchise: S('For popculture: the franchise, e.g. "zelda".') }, required: ['topic', 'kind'] } },
   look_at_result: { description: 'Give your verdict on the result you were shown.', parameters: { type: 'object', properties: {

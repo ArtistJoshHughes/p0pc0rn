@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- The sandbox every app made in p0pc0rn runs in (iframe sandbox="allow-scripts", an opaque origin): no network of its own
+     (connect-src 'none', WebRTC removed by the boot script, the page's frame-src keeps it from navigating away), no storage, no
+     access to the page. The host sends p5, the p0pc0rn Kit and the app's code; the app reaches the host only through window.p0
+     (postMessage), which checks the app's permissions. The code starts as blob: scripts made by the boot script below, which does
+     nothing at all unless this page really is that sandbox (a frame with an opaque origin, under a page of this site). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-MMwnnV9OMiihjrTxQtKqCIkdH0thzz+HOq9FK+PYLtM=' blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>app</title>
+<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent;touch-action:none;-webkit-user-select:none;user-select:none}</style>
+</head>
+<body>
+<script>(function () {
+  'use strict';
+  // only inside p0pc0rn's sandbox. Opened on its own, or put in a normal (unsandboxed) frame by another site, this page would have the
+  // site's own origin: then it does nothing, so no one can run code here as the site.
+  if (self.origin !== 'null' || window.parent === window) return;
+  var ao = location.ancestorOrigins;   // the page that framed this one must be this site (the origin of this page's own address)
+  if (ao && ao.length && ao[0] !== new URL(location.href).origin) return;
+  // WebRTC is a way out that connect-src does not cover: gone before any app code runs (frame-src and worker-src 'none' and no
+  // popups: the app can't make a fresh window or worker to get it back)
+  ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCSessionDescription', 'RTCIceCandidate', 'RTCRtpSender', 'RTCRtpReceiver',
+    'RTCRtpTransceiver', 'RTCDtlsTransport', 'RTCIceTransport', 'RTCSctpTransport', 'RTCCertificate'].forEach(function (n) {
+    try { Object.defineProperty(window, n, { value: undefined, writable: false, configurable: false, enumerable: false }); } catch (e) { /* not in this browser */ }
+  });
+  // ...and a frame inside the app would be a fresh window with its own copy: no frame, link, meta or base tag can get into this page.
+  // Every way to put a node in the page checks it first; every way to write HTML reads it in an inert template first; shadow roots,
+  // document.write and the HTML parsers that make shadow roots are off. The originals stay in here, out of the app's reach.
+  var R = Reflect.apply, Str = String, DE = DOMException, gd = Object.getOwnPropertyDescriptor, dp = Object.defineProperty, FR = 'iframe,frame,object,embed,portal,fencedframe',
+    BAD = FR + ',link,meta,base', qE = Element.prototype.querySelectorAll, qF = DocumentFragment.prototype.querySelectorAll, qD = Document.prototype.querySelectorAll,
+    mt = Element.prototype.matches, rm = Element.prototype.remove, it = NodeList.prototype.item, nl = gd(NodeList.prototype, 'length').get, nt = gd(Node.prototype, 'nodeType').get,
+    tpl = document.createElement('template'), tset = gd(Element.prototype, 'innerHTML').set, tcon = gd(HTMLTemplateElement.prototype, 'content').get, out = false;
+  var stop = function () {
+    if (!out) { out = true; try { window.parent.postMessage({ t: 'breach', message: 'the app tried to add a frame, link or meta tag to its page' }, '*'); } catch (e) { /* */ } }
+    throw new DE('not allowed in a p0pc0rn app', 'SecurityError');
+  };
+  var badNode = function (n) {
+    if (n === null || typeof n !== 'object') return false;
+    var t; try { t = R(nt, n, []); } catch (e) { return false; }   // not a node: it becomes text
+    if (t === 1) return R(mt, n, [BAD]) || R(nl, R(qE, n, [BAD]), []) > 0;
+    if (t === 11) return R(nl, R(qF, n, [BAD]), []) > 0;
+    return false;
+  };
+  var badHTML = function (s) { R(tset, tpl, [s]); var b = R(nl, R(qF, R(tcon, tpl, []), [BAD]), []) > 0; R(tset, tpl, ['']); return b; };
+  var lock = function (proto, name, make) {
+    var d = proto && gd(proto, name); if (!d) return;
+    if (d.set) dp(proto, name, { get: d.get, set: make(d.set), enumerable: d.enumerable, configurable: false });
+    else if (typeof d.value === 'function') dp(proto, name, { value: make(d.value), writable: false, enumerable: d.enumerable, configurable: false });
+  };
+  var nodes = function (f) { return function () { for (var i = 0; i < arguments.length; i++) if (badNode(arguments[i])) stop(); return R(f, this, arguments); }; };
+  var html = function (at) { return function (f) { return function () { var a = [], i; for (i = 0; i < arguments.length; i++) a[i] = arguments[i]; a[at] = Str(a[at]); if (badHTML(a[at])) stop(); return R(f, this, a); }; }; };
+  var off = function () { return function () { stop(); }; }, nil = function () { return function () { return null; }; };
+  var P = [Node.prototype, ['appendChild', 'insertBefore', 'replaceChild'], Element.prototype, ['append', 'prepend', 'before', 'after', 'replaceWith', 'replaceChildren', 'insertAdjacentElement', 'moveBefore'],
+    Document.prototype, ['append', 'prepend', 'replaceChildren', 'moveBefore'], DocumentFragment.prototype, ['append', 'prepend', 'replaceChildren', 'moveBefore'],
+    CharacterData.prototype, ['before', 'after', 'replaceWith'], DocumentType.prototype, ['before', 'after', 'replaceWith'], Range.prototype, ['insertNode', 'surroundContents']];
+  for (var pi = 0; pi < P.length; pi += 2) for (var ni = 0; ni < P[pi + 1].length; ni++) lock(P[pi], P[pi + 1][ni], nodes);
+  lock(Document.prototype, 'body', nodes);
+  [Element.prototype, window.ShadowRoot && ShadowRoot.prototype].forEach(function (p) { lock(p, 'innerHTML', html(0)); lock(p, 'setHTML', html(0)); lock(p, 'setHTMLUnsafe', off); });
+  lock(Element.prototype, 'outerHTML', html(0)); lock(Element.prototype, 'insertAdjacentHTML', html(1)); lock(Element.prototype, 'attachShadow', off);
+  ['open', 'write', 'writeln'].forEach(function (n) { lock(Document.prototype, n, off); });
+  lock(Document, 'parseHTMLUnsafe', off); lock(Document.prototype, 'execCommand', function () { return function () { return false; }; });
+  ['caption', 'tHead', 'tFoot'].forEach(function (n) { lock(HTMLTableElement.prototype, n, nodes); });
+  lock(HTMLSelectElement.prototype, 'add', nodes); lock(window.HTMLOptionsCollection && HTMLOptionsCollection.prototype, 'add', nodes);
+  // the parsers that build a tree without the checks above: a tree with a frame in it is refused as it is made
+  var made = function (q) { return function (f) { return function () { var r = R(f, this, arguments); if (r && R(nl, R(q, r, [FR]), []) > 0) stop(); return r; }; }; };
+  lock(window.DOMParser && DOMParser.prototype, 'parseFromString', made(qD)); lock(Range.prototype, 'createContextualFragment', made(qF));
+  if (window.XSLTProcessor) { lock(XSLTProcessor.prototype, 'transformToFragment', made(qF)); lock(XSLTProcessor.prototype, 'transformToDocument', made(qD)); }
+  ['HTMLIFrameElement', 'HTMLFrameElement', 'HTMLObjectElement', 'HTMLEmbedElement'].forEach(function (c) {
+    var p = window[c] && window[c].prototype; if (!p) return;
+    ['contentWindow', 'contentDocument'].forEach(function (n) { var d = gd(p, n); if (d) dp(p, n, { get: function () { return null; }, enumerable: d.enumerable, configurable: false }); });
+    lock(p, 'getSVGDocument', nil);
+  });
+  // a backstop: a frame that got in anyway is taken out at once, and the app is stopped
+  new MutationObserver(function () {
+    var l = R(qD, document, [FR]), n = R(nl, l, []); if (!n) return;
+    for (var i = n - 1; i >= 0; i--) try { R(rm, R(it, l, [i]), []); } catch (e) { /* */ }
+    try { stop(); } catch (e) { /* stop() throws for the app's own calls */ }
+  }).observe(document, { childList: true, subtree: true });
+  var host = window.parent, MODE = 'run', NAME = '', booted = false, seq = 0, pend = {}, checkFn = null, store = {}, used = 0;
+  function send(m) { try { host.postMessage(m, '*'); } catch (e) { /* the host is gone */ } }
+  function call(fn, args) {
+    return new Promise(function (res, rej) { var id = ++seq; pend[id] = { res: res, rej: rej }; send({ t: 'call', id: id, fn: fn, args: args === undefined ? null : JSON.parse(JSON.stringify(args)) }); });
+  }
+  window.__p0store = {
+    get: function (k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+    set: function (k, v) {
+      k = String(k).slice(0, 120); if (v == null) { delete store[k]; send({ t: 'save', k: k, v: null }); return true; }
+      v = String(v); if (v.length > 200000) return false;
+      store[k] = v; send({ t: 'save', k: k, v: v }); return true;
+    }
+  };
+  var p0 = {
+    version: 1, get mode() { return MODE; },
+    fetch: function (source, params) { return call('fetch', [String(source), params || {}]); },
+    juli: { ask: function (prompt, o) { return call('juli.ask', [String(prompt).slice(0, 4000), { json: !!(o && o.json) }]); } },
+    chat: { post: function (n) { n = n || {}; return call('chat.post', [{ title: String(n.title || '').slice(0, 80), severity: String(n.severity || 'info'), text: String(n.text || '').slice(0, 500) }]); } },
+    location: { get: function () { return call('location.get', []); } },
+    app: Object.freeze({ badge: function (n) { return call('app.badge', [Math.max(0, Math.min(99, n | 0))]); }, get name() { return NAME; } }),
+    onCheck: function (fn) { if (typeof fn === 'function') checkFn = fn; }
+  };
+  Object.defineProperty(window, 'p0', { value: Object.freeze(p0), writable: false, configurable: false });
+  window.addEventListener('error', function (e) { send({ t: 'error', message: String((e && e.message) || e).slice(0, 300) }); });
+  window.addEventListener('unhandledrejection', function (e) { send({ t: 'error', message: String((e && e.reason && (e.reason.message || e.reason)) || e).slice(0, 300) }); });
+  window.addEventListener('message', function (ev) {
+    if (ev.source !== host) return;
+    var m = ev.data || {};
+    if (m.t === 'reply' && pend[m.id]) { var p = pend[m.id]; delete pend[m.id]; if (m.ok) p.res(m.value); else p.rej(Object.assign(new Error(m.error || 'failed'), { code: m.code || null })); return; }
+    if (m.t === 'boot' && !booted) {
+      booted = true;
+      store = m.store || {}; MODE = m.mode === 'check' ? 'check' : 'run'; NAME = String(m.name || '');
+      window.SLOTS = m.slots || {};
+      // memory (the phone's page cap): canvases at most 2x, and a CHECK runs without p5 at all (no canvas: only the app's onCheck runs)
+      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      try { Object.defineProperty(window, 'devicePixelRatio', { get: function () { return dpr; }, configurable: true }); } catch (e) { /* p5's own default then */ }
+      var fatal = function (msg) { send({ t: 'error', fatal: true, message: String(msg).slice(0, 300) }); };
+      // each part runs as a blob: script (the frame's CSP allows only this boot script and blob: scripts; no eval)
+      var run = function (code, next) {
+        var u = URL.createObjectURL(new Blob([code], { type: 'text/javascript' })), s = document.createElement('script');
+        s.onload = function () { URL.revokeObjectURL(u); next(); };
+        s.onerror = function () { URL.revokeObjectURL(u); fatal('the app could not start (its script was blocked)'); };
+        s.src = u; document.head.appendChild(s);
+      };
+      var start = function () {
+        run(String(m.kit) + '\n;\n' + String(m.code) + '\n//# sourceURL=sketch.js', function () {   // one script: the kit's const K is visible to the sketch
+          try { if (MODE !== 'check') new window.p5(); send({ t: 'booted', check: !!checkFn }); } catch (e) { fatal((e && e.message) || e); }
+        });
+      };
+      if (MODE === 'check') { window.p5 = function () {}; window.p5.prototype = { registerMethod: function () {} }; start(); }
+      else run(String(m.p5), start);
+      return;
+    }
+    if (m.t === 'check') {
+      var waited = 0;
+      var go = function () {
+        if (!checkFn && waited < 5000) { waited += 100; setTimeout(go, 100); return; }
+        if (!checkFn) { send({ t: 'checked', id: m.id, ok: false, error: 'this app has no p0.onCheck' }); return; }
+        run();
+      };
+      var run = function () { Promise.resolve().then(function () { return checkFn(); }).then(function (r) { send({ t: 'checked', id: m.id, ok: true, value: r == null ? null : JSON.parse(JSON.stringify(r)) }); },
+        function (e) { send({ t: 'checked', id: m.id, ok: false, error: String((e && e.message) || e).slice(0, 300) }); }); };
+      go();
+    }
+  });
+  send({ t: 'ready' });
+})();</script>
+</body>
+</html>

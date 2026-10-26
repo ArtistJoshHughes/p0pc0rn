@@ -207,6 +207,107 @@ const brain = await PF.createEngine({ model: 'gemma4-e2b' });   // packUrl + OPF
   maxTokens 400), `NO_CONSENT` (chat needs the p0pc0rn agreement too).
 - **Memory fallback (app):** the assistant loads resident; an `OUT_OF_MEMORY` on load retries `'lean'` at once, and a page that dies WHILE
   loading (the app keeps `pf.app.brainLoading` set during `load()`) loads lean from then on, with a note. Settings › Assistant memory can switch back.
+- **3.8 (engine 0.2): faster decoding and read-in, and the drafter add-on.** The decode loop records each token while the GPU runs the one
+  before it; the prompt read-in runs its attention as GEMMs and reads the next chunk's per-layer rows ahead. The words do not change.
+  The add-on is Google's Gemma 4 E2B MTP drafter (`google/gemma-4-E2B-it-assistant`, Apache-2.0), its own 54 MB pack (8-bit layers
+  and a 4-bit head, as fast as the 81 MB 8-bit-head pack on an iPhone; `PF.drafterPack` = `{url, dir}` from config.js, which also names
+  its OPFS folder):
+
+  | call | what it does |
+  |---|---|
+  | `hasDrafter()` | true when the engine has a drafter address and was not made with `drafter: false` (the app passes `false` on Android for now) |
+  | `drafterStatus()` / `downloadDrafter({onProgress, signal})` / `deleteDrafter()` | as `status` / `download` / `deleteModel`, for the drafter's pack |
+  | `load()` | also loads the drafter when it is on the phone and the weights are fully resident; returns `drafter` (true / false), `drafterMB`, and `drafterError` if it could not be used (then decoding is plain, with no error) |
+
+  With the drafter, greedy `chat()` drafts 0 to 4 tokens per pass (chosen from the costs measured on an iPhone and the running acceptance)
+  and the assistant checks them in one pass over its weights; every token is still the assistant's own choice, so the text is the same.
+
+  A sampled `chat()` (`temperature` / `topP` / `topK` from 1 to 64, `seed`; the app's adapter does not pass them) uses the drafter too:
+  speculative sampling (`engine/llm/lops_samp.js`). The drafts are sampled from the drafter's own distribution; each is kept with
+  probability min(1, p / q), and the first one not kept is replaced by a token drawn from max(0, p - q). The answers follow the same
+  distribution as plain sampling, but not with the same words: the random numbers are not the CPU sampler's, and they also depend on how
+  many drafts each pass made. On an iPhone 16 Pro Max at temperature 0.3, top-p 0.95, top-k 64 this ran 2.4x the plain sampled loop.
+  Without the drafter (or with another `topK`) the CPU sampler picks as before, now keeping the top K by insertion instead of sorting
+  every logit (the same tokens for the same seed). If the sampling kernels cannot run on a GPU, the answer goes on with the CPU sampler
+  from its last good token and the result carries `samplingError` (and a `drafter` event).
+- **3.8: the Bigger brain (`model: 'bolt-e4b'`) and the split.** The same engine runs a second model, NVIDIA Nemotron 3.5 Bolt E4B
+  (OpenMDW-1.1; a post-train of Gemma 4 E4B-it: 42 layers, hidden 2,560, 2 KV heads, KV sharing from the manifest's `kv_source`; text
+  only), with Google's Gemma 4 E4B MTP drafter (`google/gemma-4-E4B-it-assistant`, Apache-2.0) as its add-on. Its packs come from
+  config.js (`packs['bolt-e4b']`, `packs['bolt-e4b-drafter']`; `PF.e4bPack` / `PF.e4bDrafterPack` = `{url, dir}`; OPFS folders
+  `pocketllm/e4b` and `pocketllm/e4b_drafter`):
+
+  ```js
+  const big = await PF.createEngine({ model: 'bolt-e4b', split: 'required' });   // iOS 27 (a desktop browser: split false = one process)
+  // the same calls as 'gemma4-e2b': status / download / drafterStatus / downloadDrafter / deleteDrafter / load / chat / unload
+  ```
+
+  `LLM_MODELS` (engine/llm/llm_engine.js) holds, per model: `split` (the first layer of the page's part: E2B 13, E4B 23), `vision`
+  (E2B true, E4B false), `spec` (the drafter's settings: E4B `{ specK: 2 }`, two drafts a pass, the iPhone's best for it; E2B
+  chooses per pass from the measured costs) and, where a model loads with its own, `ctxCap` / `chunk` (E4B: 2,048 tokens of context,
+  128-token read-in chunks; the app passes 64 on WebKit). The kernels take any number of KV heads, hidden sizes above 2,048 and a range
+  of layers; with one KV head, hidden <= 2,048 and every layer in one process (E2B as before) each kernel runs the same arithmetic in
+  the same order, so the words are the same.
+
+  | option / call | what it does |
+  |---|---|
+  | `split` (createEngine): `false` (default), `true` or `'required'` | `true` / `'required'`: `load()` runs layers [0, split) in a second process: a module SharedWorker (`engine/llm/lworker.js`) that the app's service worker (`sw.js`, at the app's root) serves as `engine/llm/lworker_coep.js` with `Cross-Origin-Embedder-Policy: require-corp`. On iOS 27 that gives it a process, and a memory budget, of its own. The page keeps the embedding, layers [split, end), the head and the drafter (which reads the page's KV caches). The worker's part loads before the page's, so a split that can't start costs the page nothing. The worker reads the pack from this device's storage, so a pack read over HTTP (`source: 'http'`) can't split |
+  | `splitFallback` (createEngine; the app sets it for Juli) | when the split can't start, or its second process failed twice in a row (it ended, or stopped answering), the engine goes on in one process by itself: no drafter, `oneProcessOpts` merged into `modelOpts` (the app: 128-token read-in chunks on WebKit), and a `split` event `{ off: true, why }` |
+  | `splitAt` (createEngine; tests) | overrides the registry's `split` |
+  | `reloadSettleMs` (createEngine) | a `load()` right after an `unload()` first waits until that long has passed since the unload (the app: 8 s on WebKit) |
+  | `load()` result | + `split: { at, mirror, pageMB, workerMB, coep, isolated, workerS }` when the load split: `at` = the first layer of the page's part as loaded, `mirror` = the layers whose keys and values come back from the worker (below). No `split` field when it didn't split |
+  | `countTokens(messages, { tools, prefix, thinking })` | a prompt's length in tokens with the pack's own tokenizer, without loading the model or the GPU (the router fits the Bigger brain's 2,048-token prompts with it); a picture counts as its placeholder only |
+  | `splitAvailable()` (module export) | `{ ok, why, coep, isolated }`: registers `sw.js`, starts a worker part and checks it came from the service worker's copy (`coep: 'require-corp'`); once per page |
+  | `chat()` | split answers are greedy, with the drafter; the app's calls are greedy already |
+
+  - How it works, in plain words: [docs/TWO-PROCESSES.md](docs/TWO-PROCESSES.md).
+  - The KV mirror: a layer in the page that reads the keys and values of a layer in the worker gets them back with every hop
+    (`Gemma4.mirrorKV()` lists those layers; lworker.js `kvRows`, split.js `_mirrorIn`). Bolt E4B splits at 23: layers 0-22 run in the
+    second process, and layer 22's keys and values come back for the page's layers that share them and for the drafter. E2B, split
+    at 13, needs no mirror.
+  - The page and the worker speak one version of their messages (split.js `SPLIT_PROTO` = 3, lworker.js `PROTO`); the page refuses a
+    worker part of another version.
+  - Each token or verify pass sends the hidden rows and the per-layer inputs to the worker and takes the rows back: 1-3% of the time
+    per token on an iPhone. The two processes take turns: GPU work never runs in both at once.
+  - A worker call's time limit doesn't count time while the page is hidden (iOS stops a hidden page's timers and GPU work), Stop (the
+    job's signal) reaches a worker call, and the second process is always told to free its memory, also after a timeout.
+  - The worker reads its layers from the pack the page downloaded (this origin's OPFS, read only); it never fetches weights.
+  - The service worker answers only that one file and stores nothing; every other request goes to the network untouched.
+  - `unload()` frees the worker's part too.
+  - The worker part sends a heartbeat every second. A call that waited while the page was hidden (a phone call, another app) gives up
+    on a silent worker part 4 s after the page is back, not after its whole limit. Limits: starting the worker part 30 s; a read-in
+    call 45 s for its first chunk and 30 s for the others; a token or verify pass 30 s.
+  - Loading waits for the GPU after every 64 MB of weights it writes (`engine/core/store.js`, for every model; lworker.js `UPCAP`),
+    so Safari's GPU process never holds a second copy of a model while it loads (on iOS 27 that left the phone without memory).
+  - Errors:
+    - `SPLIT_FAILED`: `split: true` without `splitFallback`, and no second process here. Nothing stays loaded.
+    - `SPLIT_UNAVAILABLE`: the same for `split: 'required'` (the Bigger brain on WebKit), which never loads in one process there.
+    - `SPLIT_RETRY`: the second process failed during a call: it ended, or its work stalled (no answer within the call's limit). The
+      engine unloads; run the job again and it loads with a fresh worker part (the app's queue does this by itself).
+    - `SPLIT_GONE`: the second such failure in a row (a good answer resets the count). With `splitFallback` the engine goes on in one
+      process from then on; without it (the Bigger brain) it also emits `split` `{ off: true, down: true, why }`. A `GPU_LOST` while
+      split unloads the same way.
+    - `NO_VISION`: pictures sent to a model without `vision` (the Bigger brain).
+  - The app (`app.js`):
+    - The split is on where `SPLIT_HERE` (WebKit, Safari's `Version/` 27 or later, service workers and SharedWorker) and this phone
+      hasn't given it up: on a phone where it has never worked (`pf.app.splitWorked` unset), three one-process fallbacks in a row
+      while online set `pf.app.splitOff`, which expires after 3 days; Settings › Juli has "Try the second process again". Where it
+      has worked, a failure only costs a fresh worker part, then one process for the rest of that page.
+    - A Bigger-brain job whose second process failed twice in a row goes to Juli, and so does the Bigger brain's work for the rest of
+      the page (`E4B_DOWN`), without a note. The diagnostics log each failure ('second process failed').
+    - The page keeps its GPU device from model to model: destroying it after every unload ended with "The GPU was reset" after a
+      dozen loads on iOS 27.
+    - Juli: `split: true` with `splitFallback`; the read-in goes in 256-token chunks split, 128 in one process on WebKit
+      (`oneProcessOpts`). Faster replies on iOS 27 only with the split; iOS 26 keeps them as before; Chrome on an iPhone (no Safari
+      version) has them off. A stop the safety net recorded in one process (`pf.app.fasterOff` without `split`) doesn't count on an
+      iPhone where the split works; without the split they stay off.
+    - The Bigger brain: `split: 'required'` on WebKit (one process on a desktop browser), its drafter on, 64-token read-in chunks on
+      WebKit. It is offered where `E4B_HERE()` (the split works here, or a desktop browser; not Android) and loads in a fresh page on
+      WebKit. If the page ends while it is loaded it turns itself off on that device (`pf.app.brain4Off`), but only for that set-up
+      (its `cfg`, drafter + chunk, against `E4B_CFG()`): a changed set-up gets a fresh try. Settings › Juli has "Turn the Bigger brain
+      back on".
+  - On an iPhone 16 Pro Max (iOS 27.0.1), Bolt E4B split at 23 with its drafter holds about 1.6 GB in the page and about 1.44 GB in the
+    second process (whose own ceiling is about 1.6 GB); E2B split at 13 about 1.27 GB and 0.44 GB. On a desktop browser, where both
+    ways run, the split gives the same words as one process.
 
 ## 10. Songs (`model: 'acestep15-turbo'`, p0pc0rn v019)
 
@@ -246,6 +347,10 @@ const r = await music.textToMusic({ tags, lyrics, seconds: 30 | 60, seed, bpm, k
 - `GPU_LOST` / `BUSY` are retried by the queue twice by itself (same seed = resume); other errors fail the job (Create shows v018's error card).
 - `NO_CONSENT` / `NOT_DOWNLOADED` block a job until the agreement / the download (then `queue.recheck()`); the picture reader downloads by
   itself when an assistant clip needs it.
+- **3.8, the hold (`createQueue({ holdMs })`):** a model can stay loaded for `holdMs(modelId)` after its job (the app: 5 s for Juli's
+  models) so a follow-up job doesn't unload and load it again. The hold ends at once when another model's job is added, when a job
+  becomes runnable without an `added` event (checked every 250 ms), on `endHold()` (an app opens) and when the page is hidden.
+  `Q.holding` counts as busy.
 
 ## 12. Looking things up: grounded chat, grounded songs and the phone's KB (p0pc0rn v021)
 
@@ -280,8 +385,8 @@ the wiki's own licence on Fandom, usually CC BY-SA 3.0). Page text is never kept
   - the title sits inside the query. Then every name word must be in the title and every other significant word in the title
     or the summary.
 
-  On top of that, the same name, model and relevance guards apply, plus the biography guard. "Hells Canyon Dam" is never
-  answered with "Hells Canyon". The facts are validated again on every use.
+  On top of that, the same name, model and relevance guards apply, plus the biography guard. "Eiffel Tower" is never
+  answered with "Eiffel". The facts are validated again on every use.
 - **Stale check:** an entry whose revision is older than 180 days, and was not checked in the last 7 days, gets ONE revision
   query after the reply (`research.afterAnswer()`, which the agent calls after it speaks; a 45 s timer is the fallback). It runs
   only online and never blocks. Same revision: `checkedAt` is updated. A newer revision: the entry is marked `stale`. The next ask

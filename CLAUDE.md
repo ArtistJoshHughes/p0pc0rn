@@ -122,7 +122,8 @@ The models are not in the repository. The phone downloads them from Hugging Face
 
 ## Open it on the phone and download models
 
-1. **iPhone.** Use Safari, iOS 26 or later. Android (Chrome): experimental — prepared on desktop with Android-like limits; first device test pending (Pixel 10): run Settings › About › Device check first; the user may share the report in a GitHub issue or a DM to @p0pc0rnapp.
+1. **iPhone.** Use Safari, iOS 26 or later (iOS 27 for Juli's Bigger brain; on iOS 27 Juli also runs in two parts by herself, see
+   the engine notes at the end). Android (Chrome): experimental — prepared on desktop with Android-like limits; first device test pending (Pixel 10): run Settings › About › Device check first; the user may share the report in a GitHub issue or a DM to @p0pc0rnapp.
    - Tailscale must be on, on the phone. Then open the `https://…ts.net` address. It won't work over `http://` or a LAN address,
      because WebGPU needs HTTPS.
 2. **iPhone: choose Safari or the Home Screen icon first, and stick to it.**
@@ -131,8 +132,8 @@ The models are not in the repository. The phone downloads them from Hugging Face
    - On Android, the installed app and Chrome share storage.
 3. **The rights lesson and "I agree".** The user reads and agrees themselves. Make stays disabled until they do.
 4. **Settings › Storage › Protected from iOS cleanup › Allow.** This helps iOS keep the models.
-5. **Downloads.** A new install opens in the Assistant chat: its first message offers the assistant + the starter knowledge (one
-   download), and the chat offers other models when they are asked for. **Settings › Models** has every model: tap Download on each
+5. **Downloads.** A new install opens in the Assistant chat: its first message offers the assistant + the starter knowledge + faster
+   replies (one download), and the chat offers other models when they are asked for. **Settings › Models** has every model: tap Download on each
    feature the user wants (sizes are in SETUP.md).
    - Each model shows its licence first; the user reads it and accepts.
    - Keep the app in front, the phone plugged in and on Wi-Fi.
@@ -140,6 +141,10 @@ The models are not in the repository. The phone downloads them from Hugging Face
      (tap Download if it doesn't).
    - Music videos need Assistant, Songs, Pictures, Videos and the picture reader.
    - Lip-sync needs Voice.
+   - Juli's Bigger brain (NVIDIA Nemotron 3.5 Bolt E4B, 4.7 GB, optional) plans and writes when the user asks Juli to write
+     something or to make a picture, clip, song or app; chat and looking at pictures stay on Juli's own model (Settings › Juli ›
+     "Bigger brain for writing and making"). It is offered on iOS 27 and desktop browsers, not on Android yet. Its licence (OpenMDW-1.1) shows once first:
+     keep a copy of the agreement and NVIDIA's notices with any copy of the model; no limits on what you make with it.
 6. **First result:** Create › type a description › Make. A picture takes about 2 to 3 minutes.
 
 ## Troubleshooting
@@ -158,6 +163,16 @@ The models are not in the repository. The phone downloads them from Hugging Face
   4. `tailscale serve status` shows the port.
 - **Old screens after `git pull`.** Close the tab or app and reopen it. serve.py sends `no-cache`, so a reload fetches the new
   files.
+- **No Bigger brain in Settings › Models.** It needs iOS 27 in Safari on an iPhone (or a desktop browser) and isn't offered on
+  Android yet.
+- **The Bigger brain stopped being used.** If the page ended while it was loaded, it turns itself off on that phone (for that
+  set-up) and Juli's own model does its work: Settings › Juli › "Turn the Bigger brain back on". On an iPhone it also needs Juli's
+  two-part mode: if p0pc0rn's service worker can't start its helper, Juli runs in one part without faster replies, and on a phone
+  where the helper has never worked, after three such loads in a row (online) she stops trying there for 3 days. Settings › Juli ›
+  "Try the second process again" tries at once. If the helper fails while p0pc0rn is open (for example during a phone call), a fresh
+  one starts by itself; after two failures in a row that model stops using the helper until p0pc0rn is reopened: Juli runs in one
+  part, and the Bigger brain's work goes to Juli.
+  How the two parts work: [docs/TWO-PROCESSES.md](docs/TWO-PROCESSES.md).
 - **A clip stops while it develops.** Settings › Video decode memory › 450 MB.
 - **The phone is hot or slow.** Plug it in, take the case off, keep it out of the sun, and leave a short break between jobs.
 - **Out of space.** Settings › Models: delete the models the user doesn't need. The Library stays.
@@ -182,3 +197,55 @@ The models are not in the repository. The phone downloads them from Hugging Face
 - That's allowed, for themselves, within the hard rules. Keep changes small.
 - Explain what you changed, and run `python3 tools/scan_secrets.py` before any commit.
 - Contributions to Josh go by pull request, and only when the user asks. LICENSE.md section 6 covers them.
+
+### Engine notes (3.8): read these before changing the assistant's engine or the queue
+
+Each one came from a real page end on an iPhone with iOS 27.
+
+- **iOS 27 gives destroyed GPU memory back late.** Freeing and making buffers per answer piled up until the page ended. So the
+  assistant keeps its read-in buffers, KV caches and verify-pass buffers from answer to answer, and makes them again only when a
+  size changes (`engine/llm/gemma4.js` `_keptPrefillBufs`, `engine/llm/spec.js` `specKept`). Two of the verify pass's buffers are
+  lent from the read-in's, which is never running at the same time. Don't add a per-answer free or a new per-answer buffer.
+- **The queue's hold** (`assistant/queue.js`, `holdMs`): Juli's models stay loaded 5 s after a job, for a follow-up, instead of
+  unloading and loading again. The hold ends at once when another model's job is added, when a job becomes runnable, on
+  `endHold()` (an app opens) and when the page is hidden. `Q.holding` counts as busy.
+- **`settle()` after an unload** (`app.js`, WebKit): loading a model or opening an app right after a model unloaded first waits
+  until 8 s have passed since the unload, so WebKit has the memory back (the LLM engine's own reload waits too: `reloadSettleMs`).
+- **The faster-replies safety net** (`app.js`): if the page ended while Juli answered with faster replies loaded, they stay off on
+  that phone; a toast and Settings › Juli turn them back on. A stop recorded in one process (`pf.app.fasterOff` without `split`)
+  doesn't count on an iPhone where the split works; an iPhone without the split keeps them off.
+- **The split** (`engine/llm/split.js`, `engine/llm/lworker.js`, `sw.js`; ENGINE_API.md section 9): on iOS 27 Juli's first layers
+  (E2B: 0-12; the Bigger brain: 0-22) run in a module SharedWorker that the app's service worker serves with COEP require-corp,
+  which gives it a process, and a memory budget, of its own. The worker's part loads first, so a split that can't start costs the
+  page nothing. In plain words, with the measured memory: [docs/TWO-PROCESSES.md](docs/TWO-PROCESSES.md).
+  - The KV mirror: page layers that read a worker layer's keys and values get them back with every hop (`Gemma4.mirrorKV()`; the
+    Bigger brain's layer 22, which its shared layers and its drafter read). The page and the worker share one message version
+    (`SPLIT_PROTO` = 3); bump both together.
+  - The two processes take turns: never run GPU work in both at once (a busy second process slowed the other about 13 times on
+    an iPhone). One hop per token or verify pass costs 1-3% of the time.
+  - The worker never fetches weights: it reads the pack the page downloaded, from OPFS, read only.
+  - The service worker answers only the worker's file and stores nothing; every other request goes to the network untouched. Keep
+    it that way: no cache, no other routes.
+  - Where it splits: `SPLIT_HERE` in `app.js` (WebKit, Safari's `Version/` 27 or later, service workers, SharedWorker). Faster
+    replies on iOS 27 only with the split (one process there has no room for a long prompt beside them); iOS 26 keeps them as
+    before; Chrome on an iPhone has them off.
+  - When it can't split: Juli's engine goes on in one process by itself (`splitFallback`), without faster replies and with
+    128-token read-in chunks (256 when split). On a phone where the split has never worked (`pf.app.splitWorked` unset), three such
+    loads in a row while online stop the tries there (`pf.app.splitOff`) for 3 days, or until Settings › Juli › "Try the second
+    process again".
+  - When the second process fails during a call (it ended, or its work stalled: on an iPhone a fresh one loaded at once after a
+    stall): the first failure is `SPLIT_RETRY` (the engine unloads and the queue runs the job again with a fresh worker part); a
+    second in a row is `SPLIT_GONE` (Juli: one process for the rest of the page; the Bigger brain: off for the page, `E4B_DOWN`, its
+    jobs go to Juli). No notes: the diagnostics log it. The worker part sends a heartbeat every second, so after the page was hidden
+    (a phone call, another app) a silent one is caught 4 s after the page is back. Limits: worker start 30 s, read-in calls 45 s for
+    the first chunk and 30 s after, a token or verify pass 30 s. A call's limit skips time while the page is hidden, Stop reaches
+    it, and the second process is always told to free its memory, also after a timeout.
+  - Loading writes at most 64 MB of weights before it waits for the GPU (`engine/core/store.js`, lworker.js `UPCAP`): without
+    that, Safari's GPU process held a second copy of a model while it loaded. Keep the page's GPU device between models (destroying
+    it after every unload ended with "The GPU was reset" after a dozen loads).
+  - The Bigger brain never loads in one process on WebKit (`split: 'required'`, `SPLIT_UNAVAILABLE`), reads prompts in 64-token
+    chunks there, loads in a fresh page, and turns itself off if the page ends while it is loaded (`pf.app.brain4Off`), for that
+    set-up only (`E4B_CFG()`: drafter + chunk), so a changed set-up gets a fresh try. `countTokens()` (no GPU) is how the router
+    fits its 2,048-token prompts.
+  - With one KV head and every layer in one process the kernels run the same arithmetic in the same order as before. A kernel
+    change must keep the words the same, split or not: check on a desktop browser first.

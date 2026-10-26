@@ -1,0 +1,93 @@
+{
+ "p0skel": 1,
+ "manifest": {
+  "id": "daily-counter",
+  "name": "Daily Counter",
+  "description": "Counts something toward a daily goal with a big progress ring, a +step button, undo and the last 7 days. Fits: water, pages read, push-ups, breaks, cups of tea, any daily count.",
+  "category": "non-agentic",
+  "version": "1.0",
+  "author": "p0pc0rn",
+  "runtime": "p5-kit@1",
+  "entry": "sketch.js",
+  "permissions": {
+   "storage": true,
+   "chat.post": true,
+   "location": "none"
+  },
+  "triggers": [
+   {
+    "type": "manual"
+   }
+  ],
+  "slots": {
+   "title": {
+    "type": "string",
+    "max": 22,
+    "required": true,
+    "desc": "large title, e.g. Water"
+   },
+   "accent": {
+    "type": "color",
+    "required": true,
+    "desc": "#rrggbb"
+   },
+   "goal": {
+    "type": "int",
+    "min": 1,
+    "max": 100,
+    "required": true,
+    "desc": "the daily goal"
+   },
+   "step": {
+    "type": "int",
+    "min": 1,
+    "max": 20,
+    "required": true,
+    "desc": "how much one tap adds"
+   },
+   "unit": {
+    "type": "string",
+    "max": 14,
+    "required": true,
+    "desc": "plural unit, e.g. glasses"
+   },
+   "icon": {
+    "type": "icon",
+    "required": true
+   },
+   "cheers": {
+    "type": "array",
+    "min": 2,
+    "max": 5,
+    "required": true,
+    "item": "string:40",
+    "desc": "short encouragements"
+   },
+   "done_text": {
+    "type": "string",
+    "max": 40,
+    "required": true,
+    "desc": "posted to the chat when the goal is reached"
+   }
+  }
+ },
+ "slots_default": {
+  "title": "Water",
+  "accent": "#32ade6",
+  "goal": 8,
+  "step": 1,
+  "unit": "glasses",
+  "icon": "drop",
+  "cheers": [
+   "Nice!",
+   "Keep going",
+   "Halfway there",
+   "Almost!"
+  ],
+  "done_text": "Goal reached for today"
+ },
+ "notes_for_juli": "Pick a short title (1-2 words) and a plural unit that matches the thing being counted. goal = a realistic daily number for that thing (water 8 glasses, pages 20, push-ups 50 with step 10). step = how many one tap adds (1 unless the person counts in sets). Choose one icon that shows the thing (drop for water, book for pages, flame for workouts, timer for breaks). cheers = 3-4 short, friendly lines, no emoji. done_text = one short sentence for the moment the goal is reached.\n",
+ "files": {
+  "sketch.js": "/* DAILY COUNTER - count something toward a daily goal (water, pages, push-ups, breaks). p0pc0rn example skeleton (p0pc0rn Kit).\n   Slots come from window.SLOTS (the host writes them); every slot has a default, so the app also runs with no slots at all.\n   Host features (window.p0) are optional: without them the app still works (it just skips posting to the chat). */\n\n// ===== SLOTS =====\nconst SL = window.SLOTS || {};\nconst TITLE = String(SL.title || 'Water').slice(0, 22);\nconst ACCENT = /^#[0-9a-fA-F]{6}$/.test(SL.accent || '') ? SL.accent : '#32ade6';\nconst GOAL = Math.max(1, Math.min(100, Math.round(+SL.goal || 8)));\nconst STEP = Math.max(1, Math.min(GOAL, Math.round(+SL.step || 1)));\nconst UNIT = String(SL.unit || 'glasses').slice(0, 14);\nconst ICON = typeof SL.icon === 'string' && SL.icon ? SL.icon : 'drop';\nconst CHEERS = Array.isArray(SL.cheers) && SL.cheers.length ? SL.cheers.slice(0, 5).map((s) => String(s).slice(0, 40)) : ['Nice!', 'Keep going', 'Halfway there', 'Almost!'];\nconst DONE_TEXT = String(SL.done_text || 'Goal reached for today').slice(0, 40);\n\n// ===== STATE (per day, saved) =====\nconst dayKey = () => new Date().toISOString().slice(0, 10);\nlet st = { day: dayKey(), count: 0, history: [] };   // history = the last 7 finished days' counts\n\nfunction setup() {\n  K.setup({ mode: 'light', accent: ACCENT });\n  const saved = K.load('counter.v1', null);\n  if (saved && saved.day) st = saved;\n  rollover();\n  K.scene('main', drawMain);\n}\n\nfunction rollover() {\n  if (st.day === dayKey()) return;\n  st.history = st.history.concat([st.count]).slice(-7);\n  st.day = dayKey(); st.count = 0; K.save('counter.v1', st);\n}\n\nfunction add(n) {\n  const before = st.count;\n  st.count = Math.max(0, st.count + n);\n  K.save('counter.v1', st);\n  if (n > 0) {\n    K.sfx(st.count >= GOAL && before < GOAL ? 'win' : 'pop');\n    if (st.count >= GOAL && before < GOAL) {\n      K.burst(K.W / 2, K.H * 0.36, { n: 40, colors: [ACCENT, K.C.good], shape: 'confetti' });\n      if (window.p0 && window.p0.chat) window.p0.chat.post({ title: TITLE, severity: 'info', text: DONE_TEXT + ' (' + st.count + ' ' + UNIT + ').' });\n    } else K.toast(CHEERS[st.count % CHEERS.length], { tone: 'good', icon: ICON, ms: 1200 });\n  }\n}\n\nfunction drawMain() {\n  K.backdrop({ top: K.C.bg, bottom: K.lighten(ACCENT, 0.85) });\n  K.navBar(TITLE, 0, { sub: K.fmt.date(Date.now()) });\n  const cx = K.W / 2, cy = K.H * 0.36, r = Math.min(K.W * 0.32, 130);\n  const t = Math.min(1, K.count('ring', st.count, 500) / GOAL);\n  K.progressRing(cx, cy, r, t, { width: 18, color: [ACCENT, K.lighten(ACCENT, 0.3)], glow: st.count >= GOAL });\n  K.icon(ICON, cx, cy - 34, 34, ACCENT, { fill: true });\n  K.num(String(st.count), cx, cy + 18, 'display', K.C.text, { align: 'center' });\n  K.text('of ' + GOAL + ' ' + UNIT, cx, cy + 46, 'subhead', K.C.text2, { align: 'center' });\n  const bw = K.W - 2 * K.S.l, by = cy + r + 40;\n  if (K.button('add', K.S.l, by, bw, 56, '+' + STEP + ' ' + UNIT, { style: 'primary', icon: 'plus', alpha: K.stagger(1) })) add(STEP);\n  if (K.button('undo', K.S.l, by + 68, bw, 48, 'Undo', { style: 'secondary', icon: 'undo', alpha: K.stagger(2), disabled: st.count === 0 })) add(-STEP);\n  const hist = st.history.length ? st.history : [0];\n  K.text('LAST 7 DAYS', K.S.l, by + 150, 'label', K.C.text2);\n  K.bars(hist.concat([st.count]), K.S.l, by + 162, bw, 80, { color: ACCENT, highlight: hist.length, max: Math.max(GOAL, ...hist, st.count), gap: 8, r: 4 });\n}\n\nfunction draw() { rollover(); K.render(); }\n"
+ }
+}

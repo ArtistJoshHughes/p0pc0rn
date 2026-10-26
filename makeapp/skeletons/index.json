@@ -1,0 +1,52 @@
+{
+ "skeletons": [
+  {
+   "id": "list-tasks",
+   "file": "list-tasks.p0skel.json",
+   "name": "Tasks & habits",
+   "category": "non-agentic"
+  },
+  {
+   "id": "flashcards-learn",
+   "file": "flashcards-learn.p0skel.json",
+   "name": "Flashcards",
+   "category": "non-agentic"
+  },
+  {
+   "id": "dashboard-live",
+   "file": "dashboard-live.p0skel.json",
+   "name": "Price dashboard",
+   "category": "non-agentic"
+  },
+  {
+   "id": "daily-counter",
+   "file": "daily-counter.p0skel.json",
+   "name": "Daily Counter",
+   "category": "non-agentic"
+  },
+  {
+   "id": "tiles-log",
+   "file": "tiles-log.p0skel.json",
+   "name": "Tiles log",
+   "category": "non-agentic"
+  },
+  {
+   "id": "weather-alerts",
+   "file": "weather-alerts.p0skel.json",
+   "name": "Weather Alerts",
+   "category": "non-agentic"
+  },
+  {
+   "id": "wildfire-watch",
+   "file": "wildfire-watch.p0skel.json",
+   "name": "Wildfire Watch",
+   "category": "non-agentic"
+  },
+  {
+   "id": "trip-watch",
+   "file": "trip-watch.p0skel.json",
+   "name": "Trip Watch",
+   "category": "agentic"
+  }
+ ]
+}

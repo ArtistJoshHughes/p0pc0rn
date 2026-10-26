@@ -25,6 +25,7 @@ export const RENDER_KINDS = new Set(['picture', 'edit', 'clip', 'animate', 'betw
 export const SEEDED_KINDS = new Set(['picture', 'edit', 'clip', 'animate', 'between', 'foley', 'song', 'say']);
 export const PRIORITY_KINDS = new Set(['chat']);
 const TERMINAL = new Set(['done', 'failed', 'cancelled']);
+const FALLBACK_CODES = new Set(['OUT_OF_MEMORY', 'GPU_LOST', 'SPLIT_UNAVAILABLE', 'NOT_DOWNLOADED', 'TOO_LONG', 'NO_VISION', 'SPLIT_GONE']);   // 3.8 (v040): runner.fallback; 3.8 port: + the Bigger brain's second process ended -> Juli
 export const isTerminal = (j) => TERMINAL.has(j.status);
 const isAbort = (e) => !!e && (e.name === 'AbortError' || e.code === 'ABORTED');
 const newSeed = () => (typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 2 ** 32)) % 2147483648;
@@ -69,8 +70,9 @@ export class EngineHost {
 export async function createQueue(opts) { const q = new JobQueue(opts); await q.init(); return q; }
 
 export class JobQueue {
-  constructor({ name = 'p0pc0rn-queue', runners = {}, host, consent = () => true, maxKills = 2, autoStart = true, lock = true, planned = null } = {}) {
-    Object.assign(this, { name, runners, host, consent, maxKills, autoStart, useLock: lock, planned });   // v024.2: planned(job) -> the app reloaded on purpose
+  constructor({ name = 'p0pc0rn-queue', runners = {}, host, consent = () => true, maxKills = 2, autoStart = true, lock = true, planned = null, holdMs = null } = {}) {
+    Object.assign(this, { name, runners, host, consent, maxKills, autoStart, useLock: lock, planned, holdMs });   // v024.2: planned(job) -> the app reloaded on purpose
+    this.holding = false; this._holdEnd = null;   // 3.8: holdMs(modelId) -> ms the model stays loaded after a job, for a follow-up job (see runJob)
     this.jobs = new Map(); this.listeners = new Map(); this.active = null; this.paused = false; this.pumping = false;
     this.lastSave = new Map(); this.readOnly = false;
   }
@@ -138,7 +140,10 @@ export class JobQueue {
     if (this.paused) return null;
     return this.runOrder()[0] || null;
   }
-  modelOf(j) { const r = this.runners[j.kind]; return r && r.model ? (r.model(j) || null) : null; }
+  modelOf(j) {
+    const r = this.runners[j.kind], m = r && r.model ? (r.model(j) || null) : null;
+    return m && j.fellBack && j.fellBack.from === m ? j.fellBack.to : m;   // 3.8 (v040): a model that could not do this job -> its fallback (runner.fallback)
+  }
 
   // ---- writing
   async save(j) { this.lastSave.set(j.id, Date.now()); await this.db.put('jobs', j); this.emit('change', j); }
@@ -249,7 +254,14 @@ export class JobQueue {
     this.active = { job: j, ctl, engine: null };
     let out = null, err = null;
     try {
-      const engine = model ? await this.host.acquire(model) : null;
+      let engine = null;
+      try { engine = model ? await this.host.acquire(model) : null; }
+      catch (e) {   // 3.8 (v040): a model that could not load (the Bigger brain: no second process, out of memory, a GPU reset) -> the runner's other model, once
+        const fb = !isAbort(e) && !j.fellBack && runner.fallback ? runner.fallback(j, model, e) : null;
+        if (!fb) throw e;
+        j.fellBack = { from: model, to: fb, code: (e && e.code) || null }; await this.save(j); this.emit('fallback', j, j.fellBack);
+        engine = await this.host.acquire(fb);
+      }
       this.active.engine = engine;
       if (ctl.signal.aborted) throw Object.assign(new Error('cancelled'), { name: 'AbortError' });
       out = await runner.run(this.ctx(j, engine, ctl.signal));
@@ -266,11 +278,26 @@ export class JobQueue {
       if (storeErr) await this.fail(j, Object.assign(new Error('could not save the result: ' + (storeErr.message || storeErr.name)), { code: storeErr.name === 'QuotaExceededError' ? 'STORAGE_FULL' : 'STORAGE' }));
       else { Object.assign(j, { status: 'done', endedAt: Date.now(), result, progress: Object.assign({}, j.progress || {}, { frac: 1 }) }); await this.save(j); this.emit('done', j); }
     }
-    // the engine stays only if the very next job needs the same model
-    const nx = this.next();
+    // the engine stays only if the very next job needs the same model.  3.8: a model with a hold (Juli) first waits that long for one:
+    // the next benchmark test or an app check's next question lands right after an answer, and iOS 27 ended the page when 1.7 GB
+    // loaded again within a second of its unload (WebKit gives destroyed GPU memory back late)
+    if (isTerminal(j) && j.parent) await this.wakeParent(j);   // 3.8: first, so a parent that wakes is the next job (no hold, no reload)
+    let nx = this.next();
+    const hold = !nx && this.host && this.host.currentId && this.holdMs ? this.holdMs(this.host.currentId) : 0;
+    if (hold > 0) { this.holding = true; try { await this._holdWait(hold); } finally { this.holding = false; } nx = this.next(); }
     if (this.host && (!nx || this.modelOf(nx) !== this.host.currentId)) await this.host.release();
-    if (isTerminal(j) && j.parent) await this.wakeParent(j);
   }
+  /** 3.8: the hold's wait: resolves when a job is added or becomes runnable (a resume, a retry, a woken parent), when endHold() is called
+   *  (an app opens, the page is hidden), or after ms */
+  _holdWait(ms) {
+    return new Promise((r) => {
+      let done = false, off = null, iv = null, t = null;
+      const end = () => { if (done) return; done = true; clearTimeout(t); clearInterval(iv); if (off) off(); this._holdEnd = null; r(); };
+      t = setTimeout(end, ms); off = this.on('added', end); iv = setInterval(() => { if (this.next()) end(); }, 250); this._holdEnd = end;
+    });
+  }
+  /** 3.8: end a hold now: the held model is released as when the hold runs out */
+  endHold() { if (this._holdEnd) this._holdEnd(); }
   async fail(j, e) {
     const code = e && e.code;
     if (isAbort(e) || j.cancelRequested) {
@@ -279,8 +306,12 @@ export class JobQueue {
       return;
     }
     if (code === 'NO_CONSENT') return this.block(j, code, e.message);
+    // 3.8 (v040): the job's model ran out of memory, lost its GPU, is not on the phone or got a prompt too long for it (the Bigger brain:
+    // 2,048 tokens) -> its runner's other model (runner.fallback), once; the job goes on from its saved state
+    const fr = this.runners[j.kind], from = FALLBACK_CODES.has(code) && !j.fellBack && fr && fr.fallback ? this.modelOf(j) : null, fb = from ? fr.fallback(j, from, e) : null;
+    if (fb) { j.fellBack = { from, to: fb, code }; j.status = 'queued'; j.interrupted = true; await this.save(j); this.emit('fallback', j, j.fellBack); return; }
     if (code === 'NOT_DOWNLOADED') return this.block(j, code, e.message);
-    if ((code === 'GPU_LOST' || code === 'BUSY') && (j.softRetries || 0) < 2) {   // the engine recovers by itself; same params = resume
+    if ((code === 'GPU_LOST' || code === 'BUSY' || code === 'SPLIT_GONE' || code === 'SPLIT_RETRY') && (j.softRetries || 0) < 2) {   // the engine recovers by itself; same params = resume (3.8 port: + a failed second process: a fresh worker part once; Juli after her second one failed twice: one process)
       j.softRetries = (j.softRetries || 0) + 1; j.status = 'queued'; j.interrupted = true; await this.save(j);
       if (code === 'BUSY') await new Promise((r) => setTimeout(r, 1000));
       return;

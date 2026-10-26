@@ -4,6 +4,10 @@
 'use strict';
 import { h2f } from './gpu.js';
 import { fetchManifest, manifestRefused } from './pin.js';   // v027.3: pinned manifests
+// 3.8 port (bench v047): a load waits for the GPU after every UPCAP bytes it writes. queue.writeBuffer copies into Safari's GPU
+// process, which held a whole model's worth (3.1 GB for the Bigger brain) until the copies ran: with the page and the second process
+// loaded, the phone had 46 MB free (iPhone memory report, 10-25). Bounded, the GPU process holds ~64 MB of weights in flight.
+const UPCAP = 64 * 1024 * 1024;
 
 export class Storage {
   constructor(url) { this.url = url || new URL('./opfs_worker.js', import.meta.url); this.id = 0; this.pend = new Map(); }
@@ -171,14 +175,16 @@ export class WeightStore {
     const res = await fetch(this.base + s.file);
     if (!res.ok) throw new Error(`fetch ${s.file}: HTTP ${res.status}`);
     const rd = res.body.getReader(), CH = 16 * 1024 * 1024; let st = new Uint8Array(CH), fill = 0, off = 0;
-    const put = (n) => { this.gpu.device.queue.writeBuffer(buf, off, st.buffer, 0, Math.ceil(n / 4) * 4); off += n; fill = 0; };
+    const put = async (n) => { this.gpu.device.queue.writeBuffer(buf, off, st.buffer, 0, Math.ceil(n / 4) * 4); off += n; fill = 0;
+      if ((this.inflight = (this.inflight || 0) + n) >= UPCAP) { this.inflight = 0; try { await this.gpu.device.queue.onSubmittedWorkDone(); } catch (e) { /* */ } }   // 3.8 port: at most ~64 MB of weights in flight
+    };
     for (;;) {
       const { value, done } = await rd.read();
       if (done) break;
       let v = value;
-      while (v.length) { const k = Math.min(v.length, CH - fill); st.set(v.subarray(0, k), fill); fill += k; v = v.subarray(k); if (fill === CH) put(CH); }
+      while (v.length) { const k = Math.min(v.length, CH - fill); st.set(v.subarray(0, k), fill); fill += k; v = v.subarray(k); if (fill === CH) await put(CH); }
     }
-    if (fill) put(fill);
+    if (fill) await put(fill);
   }
   /** a whole pack file as an ArrayBuffer (tokenizer files, small tables) */
   async readFile(shardName) {
@@ -223,6 +229,7 @@ export class WeightStore {
       if (nOff < s.bytes) next = read(nOff, Math.min(CH, s.bytes - nOff));   // read-ahead (I/O only)
       g.device.queue.writeBuffer(buf, off, r.buf, 0, r.len);
       if (this.pool.length < 3) this.pool.push(r.buf);
+      if ((this.inflight = (this.inflight || 0) + r.len) >= UPCAP) { this.inflight = 0; try { await g.device.queue.onSubmittedWorkDone(); } catch (e) { /* */ } }   // 3.8 port: at most ~64 MB of weights in flight
     }
     this.stats.uploadBytes += s.bytes; this.stats.uploadMs += performance.now() - t0;
     return this._handle(shardName, buf, s.bytes);

@@ -15,3 +15,6 @@
   muxer; same authors), with their shared `core/`, `ops/`, `audio/`, `models/` files and `vendor/tokenizers.min.mjs` (@huggingface/tokenizers,
   Apache-2.0, unmodified; vendor/LICENSE-tokenizers.txt). Weights come from their own packs: Gemma 4 E2B-it (Google, Apache-2.0;
   licenses/NOTICE-Gemma-4.md) and ACE-Step 1.5 + Qwen3-Embedding-0.6B + the 5 Hz LM (MIT / Apache-2.0; licenses/NOTICE-music.md).
+- p0pc0rn 3.8: `llm/` also runs the assistant's Bigger brain and splits a model across two processes (`llm/split.js`, `llm/lworker.js`;
+  same authors). Its weights come from their own packs: NVIDIA Nemotron 3.5 Bolt E4B (NVIDIA, OpenMDW-1.1; post-trained from Gemma 4
+  E4B-it, Apache-2.0) and Google's Gemma 4 E4B MTP drafter (Apache-2.0); licenses/NOTICE-Nemotron-Bolt-E4B.md in the app.

@@ -19,8 +19,8 @@ import { openDB } from './idb.js';
 export const KB_DB = 'p0pc0rn-kb';
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const bare = (s) => norm(s).replace(/^the /, '');
-/** may this entry answer `query`? a topic asked before, the same title, or the title inside the query ("Hells Canyon" in "Hells Canyon
- *  Dam": the name guard then refuses it). The lane (research.js) applies the same rule and its guards to every source, starter included. */
+/** may this entry answer `query`? a topic asked before, the same title, or the title inside the query ("Eiffel" in "Eiffel
+ *  Tower": the name guard then refuses it). The lane (research.js) applies the same rule and its guards to every source, starter included. */
 export function kbMatch(query, e) {
   const q = norm(query), t = bare(e && e.title);
   if (!q || !t) return 0;

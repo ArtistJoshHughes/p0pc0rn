@@ -44,14 +44,23 @@ import { initCast } from './cast/cast_ui.js';
 import { lipsyncRunner, talkRunner } from './cast/talk.js';
 import { initTalk } from './cast/talk_ui.js';
 import { NUDGE_MAX, shotsOfFrame } from './assistant/storyboard.js';   // v023
+import { createApps } from './makeapp/host.js';   // 3.8: the Apps tab (apps made from skeletons, agentic and non-agentic)
+import { createBench, benchRunner } from './ui/bench.js';   // 3.8: Settings › Benchmark
 
-const APP_VERSION = '3.7 · v030';
+const APP_VERSION = '3.8 · v042';
 const MODELS = {
   image: { id: 'flux2-klein-4b', name: 'FLUX.2 Klein 4B', what: 'Pictures', noun: 'picture', total: 4.62e9 },
   video: { id: 'sanavideo2-5b', name: 'SANA-Video 2.0 5B', what: 'Videos', noun: 'video', total: 5.72e9 },
   reader: { id: 'ltx23-still-enc', name: 'Picture reader', what: 'Reads pictures for clips', noun: 'picture reader', total: 212701440 },
   // v019: the assistant, the music model and its optional lyrics planner (none of them needs a Hugging Face login)
-  brain: { id: 'gemma4-e2b', name: 'Assistant', what: 'Gemma 4 E2B, balanced 4/8-bit', noun: 'assistant', total: 3262871724 },
+  brain: { id: 'gemma4-e2b', name: 'Juli', what: 'Gemma 4 E2B, balanced 4/8-bit', noun: 'assistant', total: 3262871724 },
+  // 3.8: the assistant's add-on: Google's Gemma 4 E2B MTP drafter. Answers come faster with the same words (it guesses ahead, the assistant checks)
+  drafter: { id: 'gemma4-e2b-drafter', name: 'Faster replies', what: 'Gemma 4 drafter by Google · same answers, sooner', noun: 'faster replies', total: 53962752 },
+  // 3.8 (v040): Juli's Bigger brain (Josh: "I want both models"): NVIDIA Nemotron 3.5 Bolt E4B (post-trained from Google's Gemma 4 E4B,
+  // OpenMDW-1.1, text only) with Google's Gemma 4 E4B MTP drafter riding in its row (one tap downloads both). Chat stays with Juli
+  // (E2B); writing and agent tasks think with it where it can run (E4B_HERE)
+  brain4: { id: 'bolt-e4b', name: 'Bigger brain', what: 'NVIDIA Nemotron 3.5 Bolt E4B · Juli thinks and writes with it', noun: 'bigger brain', total: 4675838692 },
+  drafter4: { id: 'bolt-e4b-drafter', name: 'Bigger brain faster replies', what: 'Gemma 4 E4B drafter by Google · same answers, sooner', noun: 'bigger brain’s faster replies', total: 54773760 },
   music: { id: 'acestep15-turbo', name: 'Music', what: 'ACE-Step 1.5 turbo · songs', noun: 'music', total: 2774088531 },
   planner: { id: 'acestep15-lm06', name: 'Lyrics planner', what: 'Helps the singer follow the words', noun: 'lyrics planner', total: 939540992 },
   // v022: the starter knowledge pack (3,214 Wikipedia articles; the assistant looks there before going online)
@@ -66,13 +75,14 @@ const PACKS = (window.PF && PF.packs) || (window.P0_CONFIG && P0_CONFIG.packs) |
 const CAST_PACKS = { voice: PACKS['qwen3-tts-0.6b'], lipsync: PACKS['musetalk-1.5'] };
 const CAST_KINDS = new Set(['say', 'talk', 'lipsync']);   // queue jobs of Cast (never on Create's stage)
 const KEYS = ['image', 'video'];             // the two engines made at boot (Create's pictures and clips)
-const DL = ['image', 'k9b', 'video', 'reader', 'brain', 'music', 'planner', 'starter', 'voice', 'lipsync'];   // everything that downloads; the reader rides on the video engine, the planner on the music engine
-const ADDON = { reader: 'video', planner: 'music' };   // add-ons that live inside another model's engine (and folder)
-const KEY_OF = { 'flux2-klein-4b': 'image', 'flux2-klein-9b': 'k9b', 'sanavideo2-5b': 'video', 'gemma4-e2b': 'brain', 'acestep15-turbo': 'music', 'qwen3-tts-0.6b': 'voice', 'musetalk-1.5': 'lipsync' };
+const DL = ['image', 'k9b', 'video', 'reader', 'brain', 'drafter', 'brain4', 'drafter4', 'music', 'planner', 'starter', 'voice', 'lipsync'];   // everything that downloads; the reader rides on the video engine, the planner on the music engine, the drafter (3.8) on the assistant's, the bigger brain's drafter (v040) on its
+const ADDON = { reader: 'video', planner: 'music', drafter: 'brain', drafter4: 'brain4' };   // add-ons that live inside another model's engine
+const KEY_OF = { 'flux2-klein-4b': 'image', 'flux2-klein-9b': 'k9b', 'sanavideo2-5b': 'video', 'gemma4-e2b': 'brain', 'bolt-e4b': 'brain4', 'acestep15-turbo': 'music', 'qwen3-tts-0.6b': 'voice', 'musetalk-1.5': 'lipsync' };
 const K9B_PACK = PACKS['flux2-klein-9b'];   // v026.6 (the probe's pack and OPFS folder)
 // OPFS folders that belong to each model (the engine registry's `wipe` lists; refreshed from the engine at boot)
 const KEEP = { image: ['pocketflux/pack', 'pocketflux/cond', 'pocketflux/ckpt'], video: ['engine/sanavideo2-5b'], reader: ['engine/ltx23-still-enc'],
-  brain: [(window.PF && PF.assistantPack && PF.assistantPack.dir) || 'pocketllm/pack'], music: ['engine/acestep15-turbo'], planner: ['engine/acestep15-turbo/lm'], voice: ['engine/qwen3-tts-0.6b'], lipsync: ['engine/musetalk-1.5'], k9b: ['pocketflux/k9b'] };
+  brain: [(window.PF && PF.assistantPack && PF.assistantPack.dir) || 'pocketllm/pack'], drafter: [(window.PF && PF.drafterPack && PF.drafterPack.dir) || 'pocketllm/drafter'],
+  brain4: [(window.PF && PF.e4bPack && PF.e4bPack.dir) || 'pocketllm/e4b'], drafter4: [(window.PF && PF.e4bDrafterPack && PF.e4bDrafterPack.dir) || 'pocketllm/e4b_drafter'], music: ['engine/acestep15-turbo'], planner: ['engine/acestep15-turbo/lm'], voice: ['engine/qwen3-tts-0.6b'], lipsync: ['engine/musetalk-1.5'], k9b: ['pocketflux/k9b'] };
 const VRUN = 'engine/sanavideo2-5b/run';   // the video engine's scratch folder: checkpoint latent + the frames file of a decode
 const IRUN = 'engine/sanavideo2-5b/i2v-run';   // the picture clips' own scratch folder: latent + pinned pictures + frames
 // where a clip starts: words (text-to-video), a picture (i2v: the picture is frame 0), two pictures (FLF: first and last frame)
@@ -107,7 +117,7 @@ const CAPTION = { load: 'Getting ready', text: 'Reading your words', encode: 'St
 // a song's phases (engine/music): the planner, the style, the words and the band's set-up heat the kernels; the 8 steps and the mix pop them
 const SONG_CAPTION = { load: 'Getting ready', plan: 'Planning the song', text: 'Reading the style', lyrics: 'Reading the words', cond: 'Tuning the band', decode: 'Mixing', encode: 'Saving the song' };
 const SONG_HEAT = new Set(['load', 'plan', 'text', 'lyrics', 'cond']);
-const NOUN = { picture: 'picture', edit: 'picture', clip: 'clip', animate: 'clip', between: 'clip', resume: 'clip', song: 'song', musicvideo: 'music video', assemble: 'music video', mvflf: 'music video', mvplan: 'storyboard', say: 'voice line', talk: 'lip-sync', lipsync: 'lip-sync' };
+const NOUN = { makeapp: 'app', appask: 'app question', bench: 'benchmark', picture: 'picture', edit: 'picture', clip: 'clip', animate: 'clip', between: 'clip', resume: 'clip', song: 'song', musicvideo: 'music video', assemble: 'music video', mvflf: 'music video', mvplan: 'storyboard', say: 'voice line', talk: 'lip-sync', lipsync: 'lip-sync' };
 const DECODE = [450, 560, 700];
 // v030: clips decode with 700 MB by default (720p -36% against v027.3 on an iPhone 16 Pro Max: one tile, peak ~580 MB). Android
 // (experimental, not yet run on a device) keeps 450. A clip that runs out of memory still offers "Use 450 MB and retry".
@@ -134,7 +144,7 @@ const consented = () => !!rights.consent();
 const S = {
   phase: 'boot',        // boot | stop | setup (iPhone: "Add to Home Screen first") | ready | working | result | error
   tab: 'create', mode: ls.get('pf.app.mode') === 'video' ? 'video' : 'image',
-  caps: null, persisted: false, st: { image: null, video: null, reader: null, brain: null, music: null, planner: null, voice: null, lipsync: null, k9b: null },
+  caps: null, persisted: false, st: { image: null, video: null, reader: null, brain: null, drafter: null, brain4: null, drafter4: null, music: null, planner: null, voice: null, lipsync: null, k9b: null },
   dl: Object.fromEntries(DL.map((k) => [k, dlState(MODELS[k].total)])),
   stop: null,           // {title, text, detail, retry: 'reload' | 'boot'}
   free: null,           // bytes free for p0pc0rn on this phone (the chat's first message says it)
@@ -158,14 +168,14 @@ if (S.form.steps !== 3) S.form.steps = 4;
 if (!VSIZES.some((z) => z.id === S.vform.size)) S.vform.size = 'wide';
 if (!FRAMES[S.vform.len]) S.vform.len = 5;
 if (!SRC[S.vform.src]) S.vform.src = 'words';
-const E = { image: null, video: null, reader: null, brain: null, music: null, planner: null, starter: null, voice: null, lipsync: null };
+const E = { image: null, video: null, reader: null, brain: null, drafter: null, brain4: null, drafter4: null, music: null, planner: null, starter: null, voice: null, lipsync: null };
 const CAST = createCast();   // p0pc0rn Cast (IndexedDB 'p0pc0rn-cast')
 let CASTUI = null, TALKUI = null;
 let armT = 0, tickT = 0, draftT = 0, storTok = 0, poppedT = 0;
 let pop = null;   // the popcorn progress canvas (popcorn.js), made in init()
 const POPPED_MS = 3000;
 // ---- v019: the queue, the assistant and its settings
-let Q = null, AG = null, RS = null, RUN = null, CH = null;
+let Q = null, AG = null, RS = null, RUN = null, CH = null, APPS = null, BENCH = null;
 const CJ = new Map();   // queue job id -> {params, input, srcs} of a Create job (what Again / Edit / the Library need; rebuilt after a reload)
 const AS = { research: ls.get('pf.app.research', true) !== false, review: ls.get('pf.app.review', true) !== false, brainMode: ls.get('pf.app.brainMode', 'resident') === 'lean' ? 'lean' : 'resident' };
 /** Heating = before the first real work: loading the model, reading the words, reading a photo (a clip's 'encode' is the save at the end).
@@ -200,6 +210,19 @@ function readerEngine(v) {
 function plannerEngine(m) {
   if (!m || typeof m.lmStatus !== 'function') return null;
   return { status: () => m.lmStatus(), download: (o) => m.downloadLM(o), deleteModel: () => m.deleteLM(), requestPersistentStorage: () => m.requestPersistentStorage(), cancel() {} };
+}
+/** 3.8: the drafter ("Faster replies") as a model of its own (status / download / delete), carried by the assistant's engine. The
+ *  engine uses it by itself when it is on the phone; Android keeps plain decoding for now (FASTER_REPLIES). */
+function drafterEngine(b) {
+  if (!b || typeof b.hasDrafter !== 'function' || !b.hasDrafter()) return null;
+  return { status: () => b.drafterStatus(), download: (o) => b.downloadDrafter(o), deleteModel: () => b.deleteDrafter(), requestPersistentStorage: () => b.requestPersistentStorage(), cancel() {} };
+}
+/** 3.8: a phone that already has the assistant is offered the drafter ONCE (a toast with Add; Settings › Models has it too) */
+function offerDrafter() {
+  if (!E.drafter || !done('brain') || done('drafter') || S.dl.drafter.have > 0 || !consented() || (S.st.drafter && S.st.drafter.error)) return;
+  if (ls.get('pf.app.drafterOffered', false)) return;
+  ls.set('pf.app.drafterOffered', Date.now());
+  toast(`Faster replies: add Google's drafter to Juli · ${fmtSize(partTotal('drafter'))}`, { action: 'Add', ms: 12000, onAction: () => startDownload('drafter') });
 }
 /** the status of one model into S.st / S.dl (never throws: a model that can't be reached shows "can't reach" on its row) */
 async function refreshStatus(k) {
@@ -239,19 +262,32 @@ async function boot() {
     if (E[k]) continue;
     // v024.1: the song's decoder works in the iPhone's tile budget everywhere (450 MB: the engine's own Apple default), so a desktop test
     // smoke measures the phone's decode ("Mixing") and not a 1.2 GB desktop one
-    try { const e = await PF.createEngine(k === 'music' ? { model: MODELS[k].id, decodeBudgetMB: 450 } : { model: MODELS[k].id }); wire(e, k); E[k] = e; } catch (e) { E[k] = null; }
+    try { const e = await PF.createEngine(k === 'music' ? { model: MODELS[k].id, decodeBudgetMB: 450 } : Object.assign({ model: MODELS[k].id }, brainOpts())); wire(e, k); E[k] = e; } catch (e) { E[k] = null; }
   }
   E.planner = plannerEngine(E.music);
+  E.drafter = drafterEngine(E.brain);   // 3.8
+  // 3.8 (v040): the Bigger brain's engine where it can run (its row's status; nothing loads until a job needs it)
+  if (MODELS.brain4 && E4B_HERE() && !E.brain4) { try { const e = await PF.createEngine(Object.assign({ model: MODELS.brain4.id }, brain4Opts())); wire(e, 'brain4'); E.brain4 = e; } catch (e) { E.brain4 = null; } }
+  E.drafter4 = E.brain4 ? drafterEngine(E.brain4) : null;
   // p0pc0rn Cast: the voice engine and the (experimental) lip-sync engine, each its own module tree; never blocking the start
-  if (PLANNED_IN) { try { localStorage.removeItem('pocketlipsync:running'); } catch (x) { /* a planned fresh page inside a lip-sync is not a kill */ } }
+  // 3.8: and one between a 9B picture's stages (the 9B marks each stage as running before its fresh page; the job resumes from its own checkpoint)
+  if (PLANNED_IN) { try { localStorage.removeItem('pocketlipsync:running'); if (/^k9b /.test(PLANNED_IN.stage || '')) localStorage.removeItem('pocketk9b:running'); } catch (x) { /* a planned fresh page is not a kill */ } }
   // v026.7: LAZY (Josh's iPhone, Oct 15: the song died near the memory line): no module, store, worker or pack read until a job needs them
   if (!E.voice) E.voice = lazyEngine('voice', async () => (await import('./engine/voice/voice_engine.js')).createVoiceEngine({ model: MODELS.voice.id, packUrl: CAST_PACKS.voice }));
   if (!E.lipsync) E.lipsync = lazyEngine('lipsync', async () => (await import('./engine/lipsync/engine_lipsync.js')).createEngine({ model: MODELS.lipsync.id, packUrl: CAST_PACKS.lipsync }));
   if (!E.starter) E.starter = createStarterEngine({ base: PACKS['starter-kb'] });
   if (!E.k9b) E.k9b = lazyEngine('k9b', async () => (await import('./engine/k9b/k9b_engine.js')).createK9bEngine({ packUrl: K9B_PACK }));   // v026.6
-  await Promise.all(['brain', 'music', 'planner', 'starter', 'voice', 'lipsync', 'k9b'].map(refreshStatus));
-  const bl = ls.get('pf.app.brainLoading');   // the page died while the assistant was loading: load it lighter from now on
-  if (bl) { ls.set('pf.app.brainLoading', null); if (bl.mode !== 'lean') { setBrainMode('lean'); S.brainNote = 'The assistant stopped while loading, so it now loads lighter (about 1.2 GB). Settings › Assistant can switch it back.'; } }
+  await Promise.all(['brain', 'drafter', 'brain4', 'drafter4', 'music', 'planner', 'starter', 'voice', 'lipsync', 'k9b'].map(refreshStatus));
+  // 3.8: a lighter mode that an earlier version set by itself (not the person's own choice) goes back to Full once; one more failure
+  // loading in full and it stays lighter (brainFullFailed)
+  if (AS.brainMode === 'lean' && ls.get('pf.app.brainModeBy', null) !== 'user' && !ls.get('pf.app.leanReset38', null)) {
+    setBrainMode('resident', true); ls.set(FULL_FAILS, 1); ls.set('pf.app.leanReset38', Date.now()); diag('assistant back to full (3.8)');
+  }
+  const bl = ls.get('pf.app.brainLoading');   // the page died while the assistant was loading: the next load is lighter, once
+  if (bl) {
+    ls.set('pf.app.brainLoading', null);
+    if (bl.mode !== 'lean') { if (brainFullFailed() >= 2) S.brainNote = 'Juli stopped twice while loading in full, so it now loads lighter (about 1.2 GB, slower). Settings › Juli can switch it back to Full.'; else S.resumeLean = true; }
+  }
   refreshCk();
   if (!Q) { try { await initAssistant(); } catch (e) { S.agentError = S.agentError || msg(e); } }
   // onboarding: an iPhone's Safari tab with nothing downloaded yet asks for the Home Screen first (its storage is separate); everyone
@@ -260,6 +296,7 @@ async function boot() {
   startQueue();
   restoreUi();
   setTimeout(seedLazy, 6000);   // v026.7: the first open after the update learns the lazy engines' status once, in the background
+  setTimeout(offerDrafter, 4000);   // 3.8: once, to a phone that already has the assistant
 }
 // ---- v026.7: lazy engines (Cast voice, lip-sync, Klein 9B). The stand-in answers status() from what the app remembered; any other call
 // loads the real engine first (its module, then its store on demand). Downloads, deletes and jobs keep the remembered status current.
@@ -320,6 +357,9 @@ async function restoreUi() {
 }
 function wire(e, k) {
   e.on('warning', (w) => onWarning(w, k));
+  if (k === 'brain') e.on('split', onSplitOff);   // 3.8: Juli went on in one process
+  if (k === 'brain4') e.on('split', (d) => { if (d && d.down) { E4B_DOWN = { code: 'SPLIT_GONE', t: Date.now() }; diag('bigger brain off for this page', { why: d.why || '' }); } });   // 3.8 port: its work goes to Juli, no note
+  e.on('split-failed', (d) => diag('second process failed', Object.assign({ model: k }, d)));   // 3.8 port: for the benchmark card / diagnostics
   e.on('gpu-lost', () => { if (S.phase === 'working' && S.job && !S.job.waiting && S.job.mk === k && Q && Q.active && Q.active.job.id === S.job.id) set({ gpuReset: true }); });   // the queue's own unload destroys idle devices: not a reset
   e.on('state', (s) => { if (s.state === 'idle' && S.error && S.error.busy) set({ phase: 'ready', error: null }); });
 }
@@ -379,8 +419,9 @@ function startDownload(k) {
   if (!['idle', 'paused', 'dropped', 'failed'].includes(u.sub)) return;   // Resume only after the old call has settled (no BUSY)
   if (LTX_KEYS.has(k) && !ltxOk()) return openLtx(() => startDownload(k));   // v026.4: the LTX-2 licence (+ the Gemma tick), accepted first: every download path comes here
   if (k === 'k9b' && !fluxAccepted()) return openFlux(() => startDownload(k));   // v026.6: the FLUX Non-Commercial License, accepted once
+  if (k === 'brain4' && !mdwAccepted()) return openMdw(() => startDownload(k));   // 3.8 (v040): NVIDIA's OpenMDW-1.1, accepted once
   const other = DL.find((m) => m !== k && ['downloading', 'pausing'].includes(S.dl[m].sub));
-  if (other) { if (k === 'reader') S.pending = false; return toast(`One download at a time. Pause the ${dlNoun(other)} first.`); }
+  if (other) { if (k === 'reader') S.pending = false; return toast(`One download at a time. Pause ${theNoun(other)} first.`); }
   if (!E[k]) return toast("Couldn't reach the model server. Check Wi-Fi, then try again.");
   E[k].requestPersistentStorage().then((p) => { S.persisted = p; }, () => {});   // same gesture; the answer never blocks
   u.ctl = new AbortController();
@@ -395,18 +436,25 @@ function startDownload(k) {
         u.sub = 'idle';
         const next = k === 'music' && S.musicPair && E.planner && !done('planner');   // v021: one tap = the music model AND the lyrics planner
         const nextS = k === 'brain' && S.brainPair && E.starter && !done('starter');   // onboarding: one tap = the assistant AND the starter knowledge
+        const nextD = (k === 'brain' || k === 'starter') && S.brainPair && !nextS && E.drafter && !done('drafter');   // 3.8: ... AND faster replies
+        const next4 = k === 'brain4' && S.e4bPair && E.drafter4 && !done('drafter4');   // 3.8 (v040): one tap = the bigger brain AND its faster replies
         if (k === 'planner' || (k === 'music' && !next)) S.musicPair = false;
-        if (k === 'starter' || (k === 'brain' && !nextS)) S.brainPair = false;
+        if (k === 'drafter' || ((k === 'starter' || k === 'brain') && !nextS && !nextD)) S.brainPair = false;
+        if (k === 'drafter4' || (k === 'brain4' && !next4)) S.e4bPair = false;
         if (k === 'starter') plugStarter();
-        toast(k === 'starter' ? 'The starter knowledge is ready' : k === 'brain' ? (nextS ? 'The assistant is ready · now the starter knowledge' : 'The assistant is ready') : next ? 'The music model is in · now the lyrics planner' : (k === 'planner' || k === 'music') && done('music') && (!E.planner || done('planner')) ? 'Music is ready'
+        toast(k === 'brain4' ? (next4 ? 'The bigger brain is in · now its faster replies' : 'The bigger brain is ready') : k === 'drafter4' ? (done('brain4') ? 'The bigger brain is ready' : 'Its faster replies are in')
+          : k === 'drafter' ? 'Faster replies are ready' : k === 'starter' ? (nextD ? 'The starter knowledge is ready · now faster replies' : 'The starter knowledge is ready')
+          : k === 'brain' ? (nextS ? 'Juli is ready · now the starter knowledge' : nextD ? 'Juli is ready · now faster replies' : 'Juli is ready') : next ? 'The music model is in · now the lyrics planner' : (k === 'planner' || k === 'music') && done('music') && (!E.planner || done('planner')) ? 'Music is ready'
           : k === 'planner' ? 'The lyrics planner is ready' : `The ${MODELS[k].noun} model is ready`);
         if (next) setTimeout(() => startDownload('planner'), 0);
         if (nextS) setTimeout(() => startDownload('starter'), 0);
+        if (nextD) setTimeout(() => startDownload('drafter'), 0);
+        if (next4) setTimeout(() => startDownload('drafter4'), 0);
       }
       if (k === 'reader' && !done(k)) S.pending = false;
       syncWake(); render(); renderLessonDl(); if (S.tab === 'settings') renderSettings(); if (CH) CH.render();
       if (k === 'reader' && S.pending) { S.pending = false; if (S.mode === 'video' && vsrc() !== 'words') make(); }   // the clip the Make tap asked for
-      if (done(k) && Q && !(k === 'music' && S.musicPair)) Q.recheck();   // jobs that waited for this model go on (music: once the pair is complete)
+      if (done(k) && Q && !(k === 'music' && S.musicPair) && !(k === 'brain4' && S.e4bPair)) Q.recheck();   // jobs that waited for this model go on (music, the bigger brain: once the pair is complete)
     }, (e) => {
       if (isAbort(e)) u.sub = 'paused';
       else if (!navigator.onLine || e instanceof TypeError) u.sub = 'dropped';
@@ -420,7 +468,7 @@ function pauseDownload(k) {
   if (k === 'reader') S.pending = false;
   Object.assign(u, { sub: 'pausing', userPaused: true }); render(); renderLessonDl(); u.ctl.abort();
 }
-const dlTap = (k) => (k === 'music' ? musicTap() : S.dl[k].sub === 'downloading' ? pauseDownload(k) : startDownload(k));
+const dlTap = (k) => (k === 'music' ? musicTap() : k === 'brain4' ? e4bTap() : S.dl[k].sub === 'downloading' ? pauseDownload(k) : startDownload(k));
 // ---- v021 (Josh: "I want the music download button to do it all"): music = the music model + the lyrics planner, one tap, one bar
 const musicKeys = () => ['music', 'planner'].filter((k) => E[k]);
 const partTotal = (k) => S.dl[k].total || MODELS[k].total, partHave = (k) => (done(k) ? partTotal(k) : Math.min(S.dl[k].have || 0, partTotal(k)));
@@ -448,21 +496,25 @@ function musicTap() {
 }
 // ---- onboarding: the chat's first message offers the assistant AND the starter knowledge as one download (one button, one bar, both parts
 // listed), built like music's pair: the assistant first, then the starter knowledge by itself; the same button pauses and resumes the pair
-const assistKeys = () => ['brain', 'starter'].filter((k) => E[k]);
+// 3.8: faster replies (the drafter add-on, 81 MB) is a third part when this phone's assistant engine has one (not on Android for now)
+const assistKeys = () => ['brain', 'starter', 'drafter'].filter((k) => E[k]);
+const ASSIST_PART = { brain: 'Assistant', starter: 'Starter knowledge', drafter: 'Faster replies' };
 /** the pair as one download: {total, have, pct, running, pausing, partial, ready, addStarter, failed, label, parts} */
 function assistDl() {
   const ks = assistKeys(), total = ks.reduce((a, k) => a + partTotal(k), 0), have = ks.reduce((a, k) => a + partHave(k), 0);
   const running = ks.find((k) => S.dl[k].sub === 'downloading') || null, pausing = ks.some((k) => S.dl[k].sub === 'pausing');
-  const failed = ks.find((k) => S.dl[k].sub === 'failed') || null, brainOk = done('brain'), ready = brainOk && (!E.starter || done('starter'));
+  const failed = ks.find((k) => S.dl[k].sub === 'failed') || null, brainOk = done('brain'), ready = brainOk && ks.every((k) => done(k));
   const partial = ks.some((k) => !done(k) && S.dl[k].have > 0), starterHere = !E.starter || done('starter');   // the starter may already be here (Settings)
-  const addStarter = brainOk && !ready && !running && !pausing;   // the assistant is in, the starter knowledge is not (or it stopped)
+  const addStarter = brainOk && !ready && !running && !pausing;   // the assistant is in, an add-on is not (or it stopped)
+  const extras = ks.filter((k) => k !== 'brain' && !done(k)), addBytes = extras.reduce((a, k) => a + partTotal(k), 0);
+  const addWhat = extras.map((k) => (k === 'starter' ? 'the starter knowledge' : 'faster replies')).join(' + ');
   const pct = total ? have / total : 0, left = fmtSize(Math.max(0, total - have));
-  const label = ready ? 'The assistant is ready' : running ? `Pause · ${Math.floor(pct * 100)}%` : pausing ? 'Pausing…' : addStarter ? `Add the starter knowledge · ${fmtSize(partTotal('starter'))}`
-    : partial ? `Resume the assistant · ${left} left` : starterHere ? `Download the assistant · ${fmtSize(partTotal('brain'))}` : `Download the assistant + starter knowledge · ${fmtSize(total)}`;
-  const part = (k) => `${k === 'brain' ? 'Assistant' : 'Starter knowledge'} ${done(k) ? '✓' : S.dl[k].have > 0 ? `${Math.floor(partHave(k) / partTotal(k) * 100)}%` : fmtSize(partTotal(k))}`;
+  const label = ready ? 'Juli is ready' : running ? `Pause · ${Math.floor(pct * 100)}%` : pausing ? 'Pausing…' : addStarter ? `Add ${addWhat} · ${fmtSize(addBytes)}`
+    : partial ? `Resume Juli · ${left} left` : starterHere ? `Download Juli · ${fmtSize(total - (E.starter ? partTotal('starter') : 0))}` : `Download Juli + starter knowledge · ${fmtSize(total)}`;
+  const part = (k) => `${ASSIST_PART[k]} ${done(k) ? '✓' : S.dl[k].have > 0 ? `${Math.floor(partHave(k) / partTotal(k) * 100)}%` : fmtSize(partTotal(k))}`;
   return { total, have, pct, running, pausing, partial, ready, addStarter, failed, low: ks.some((k) => S.dl[k].low), label, parts: ks.map(part).join(' · ') };
 }
-/** the one button: download what is missing (the assistant, then the starter knowledge by itself), Pause / Resume the pair */
+/** the one button: download what is missing (the assistant, then the starter knowledge, then faster replies), Pause / Resume the pair */
 function assistTap() {
   const a = assistDl();
   if (a.running) { S.brainPair = true; return pauseDownload(a.running); }   // a paused pair resumes as a pair
@@ -470,6 +522,35 @@ function assistTap() {
   S.brainPair = true;
   if (!done('brain')) return startDownload('brain');
   if (E.starter && !done('starter')) return startDownload('starter');
+  if (E.drafter && !done('drafter')) return startDownload('drafter');
+}
+/** 3.8 (v040): the Bigger brain (NVIDIA Nemotron 3.5 Bolt E4B) and its faster replies (Google's Gemma 4 E4B drafter) as ONE download,
+ *  built like music's pair: the bigger brain first, then its drafter by itself; the same button pauses and resumes the pair. Offered
+ *  only where it can run (E4B_HERE: iOS 27's second process or a desktop browser) */
+const e4bHere = () => typeof E4B_HERE === 'function' && !!E4B_HERE();
+const e4bKeys = () => ['brain4', 'drafter4'].filter((k) => E[k]);
+const E4B_PART = { brain4: 'Bigger brain', drafter4: 'Faster replies' };
+/** the pair as one download: {total, have, pct, running, pausing, ready, addDrafter, failed, label, short, parts} */
+function e4bDl() {
+  const ks = e4bKeys(), total = ks.reduce((a, k) => a + partTotal(k), 0), have = ks.reduce((a, k) => a + partHave(k), 0);
+  const running = ks.find((k) => S.dl[k].sub === 'downloading') || null, pausing = ks.some((k) => S.dl[k].sub === 'pausing');
+  const failed = ks.find((k) => S.dl[k].sub === 'failed') || null, bigOk = done('brain4'), ready = bigOk && ks.every((k) => done(k));
+  const addDrafter = bigOk && !ready && !running && !pausing && !S.e4bPair && !(S.dl.drafter4.have > 0);
+  const pct = total ? have / total : 0, left = fmtSize(Math.max(0, total - have));
+  const label = ready ? 'The bigger brain is ready' : running ? `Pause · ${Math.floor(pct * 100)}%` : pausing ? 'Pausing…' : addDrafter ? `Add faster replies · ${fmtSize(partTotal('drafter4'))}`
+    : have > 0 ? `Resume the bigger brain · ${left} left` : `Download the bigger brain · ${fmtSize(total)}`;
+  const short = ready ? 'Ready' : running ? 'Pause' : pausing ? 'Pausing…' : addDrafter ? 'Add' : have > 0 ? 'Resume' : 'Download';
+  const part = (k) => `${E4B_PART[k]} ${done(k) ? '✓' : S.dl[k].have > 0 ? `${Math.floor(partHave(k) / partTotal(k) * 100)}%` : fmtSize(partTotal(k))}`;
+  return { total, have, pct, running, pausing, ready, addDrafter, failed, label, short, parts: ks.map(part).join(' · ') };
+}
+/** the one button: download what is missing (the bigger brain, then its faster replies), Pause / Resume the pair */
+function e4bTap() {
+  const m = e4bDl();
+  if (m.running) { S.e4bPair = true; return pauseDownload(m.running); }   // a paused pair resumes as a pair
+  if (m.ready || m.pausing) return;
+  S.e4bPair = true;
+  if (!done('brain4')) return startDownload('brain4');
+  if (E.drafter4 && !done('drafter4')) return startDownload('drafter4');
 }
 const autoResume = () => { if (document.hidden) return; for (const k of DL) { const u = S.dl[k]; if (u.sub === 'dropped' && !u.userPaused && E[k]) startDownload(k); } };
 const dlPct = (u) => (u.total ? u.have / u.total : 0);
@@ -481,7 +562,8 @@ function dlLine(u, pct) {
 const dlLabel = (u, short) => (u.sub === 'downloading' ? 'Pause' : u.sub === 'pausing' ? 'Pausing…' : u.have > 0 ? (short ? 'Resume' : `Resume · ${fmtSize(Math.max(0, u.total - u.have))} left`) : (short ? 'Download' : `Download ${fmtSize(u.total)}`));
 function renderDl() { renderLessonDl(); if (S.phase === 'setup') return; renderPill(); if (S.tab === 'create') { renderNeed(); renderReader(); } if (S.tab === 'settings') renderModels(); if (CH) CH.renderDl(); }
 /** what a download is called in a sentence ("Pause the music model first.") */
-const dlNoun = (k) => (k === 'reader' || k === 'planner' ? MODELS[k].noun : k === 'brain' ? 'assistant' : `${MODELS[k].noun} model`);
+const dlNoun = (k) => (k === 'reader' || k === 'planner' || k === 'drafter' || k === 'brain4' || k === 'drafter4' ? MODELS[k].noun : k === 'brain' ? 'assistant' : `${MODELS[k].noun} model`);
+const theNoun = (k) => (k === 'brain' ? 'Juli' : 'the ' + dlNoun(k));   // 3.8: the assistant is called Juli
 
 // ------------------------------------------------------------------------------------------------ making a picture or a clip
 function formParams() {
@@ -806,7 +888,7 @@ async function freshPage(stage, jobId) {
   // nothing big was destroyed in this page: 256 MB before a model loads; 64 MB at the song's own stages (the denoise page frees ~180 MB,
   // and the decode must start clean: Josh's iPhone died in it)
   // v026.2: a picture / clip render job always starts in a page where no other render ran (each still / shot of a music video)
-  const min = /^(song|say|k9b) /.test(stage) ? 64e6 : /^lipsync /.test(stage) ? 384e6 : /^render /.test(stage) ? (RENDERED ? 0 : 64e6) : FRESH_MIN;   // Cast: say = a song's rule; lip-sync: light
+  const min = /^(song|say|k9b) |^load brain4/.test(stage) ? 64e6 : /^lipsync /.test(stage) ? 384e6 : /^render /.test(stage) ? (RENDERED ? 0 : 64e6) : FRESH_MIN;   // Cast: say = a song's rule; lip-sync: light
   if (mode !== 'always' && freed < min) return false;
   const ids = Q ? Q.list().filter((j) => j.status === 'running').map((j) => j.id) : [];
   const ui = { tab: S.tab, board: MB.id || null, queue: !!($('queue') && !$('queue').hidden) };   // v026.1: the same screen after the reload
@@ -819,6 +901,7 @@ async function freshPage(stage, jobId) {
   // model's memory late) opens as a crash, with the safe-open card, not as a planned page that resumes the job and dies again
   addEventListener('pagehide', () => { try { const m = JSON.parse(localStorage.getItem(PLANNED) || 'null'); if (m && m.key === key && !m.left) { m.left = Date.now(); localStorage.setItem(PLANNED, JSON.stringify(m)); } } catch (x) { /* */ } });
   document.documentElement.classList.add('pf-fresh');   // v026.1: the cover (index.html), the same one the reopened page paints first
+  document.documentElement.setAttribute('data-fresh', String(stage || ''));   // 3.8: 'load <model>' = "Switching models..." (app.css)
   let rms = 120; try { rms = Number(localStorage.getItem('p0pc0rn:test:reloadMs')) || 120; } catch (x) { /* */ }   // v026.7: tests widen the window a page can die in
   setTimeout(() => location.reload(), rms);
   // v026.2: a reload can take long to commit on the iPhone (right after a 1.6 GB device is torn down); v026.1 gave up after 8 s and
@@ -833,6 +916,16 @@ async function freshPage(stage, jobId) {
 }
 const activeJobId = () => (Q && Q.active && Q.active.job ? Q.active.job.id : null);
 let LAST_UNLOADED = null;   // the model the engine host unloaded last in this page
+let UNLOADED_AT = 0;   // 3.8: when it did
+/** 3.8 (iOS 27): WebKit gives a destroyed model's GPU memory back late, and for a few seconds after a model leaves, opening an app or
+ *  loading Juli again can end the page (Josh's iPhone: the Quick benchmark's Apps step 1-2 s after Juli unloaded). On WebKit this waits
+ *  until SETTLE_MS have passed since the last unload; elsewhere it returns at once. -> the ms it waited */
+const SETTLE_MS = 8000;
+async function settle() {
+  const left = WEBKIT ? UNLOADED_AT + SETTLE_MS - Date.now() : 0;
+  if (left > 0) await new Promise((r) => setTimeout(r, left));
+  return Math.max(0, left);
+}
 let RENDERED = false;   // v026.2: a picture / clip render already ran in this page
 /** v026.2: before a picture / clip render: a fresh page on WebKit if another render already ran in this page (see freshPage) */
 async function beforeRender(kind) { await freshPage('render ' + kind, activeJobId()); RENDERED = true; }
@@ -859,6 +952,17 @@ addEventListener('error', (e) => diag('page error', { message: String((e && e.me
 addEventListener('p0pc0rn:manifest', (e) => { const d = (e && e.detail) || {}; diag('pack list refused', { pack: d.pack || null, kept: !!d.kept }); });   // v027.3 (engine/core/pin.js)
 addEventListener('unhandledrejection', (e) => diag('page error', { message: String((e && e.reason && (e.reason.stack || e.reason.message)) || (e && e.reason) || e).slice(0, 300) }));
 
+// 3.8 (v040, Josh 10-24): who thinks for Juli. Chat always runs on Juli's own model (Gemma 4 E2B: fast replies). A writing task or a
+// job that makes something (a picture, clip, song or app): Juli looks things up and checks pictures with her own model, and the Bigger
+// brain (NVIDIA Nemotron 3.5 Bolt E4B, text only) plans and writes, when it is on the phone, can run here (E4B_HERE), did not run out
+// of memory last time (E4B_BLOCKED) and is on in Settings › Juli (pf.app.brain4Use: on by default once downloaded). assistant/agent.js
+// BRAIN runs such a turn in phases, one model in memory at a time; an app's own questions (Trip Watch) stay on Juli.
+const BRAIN4_CTX = 2048;   // the Bigger brain's context on the phone (engine/llm/llm_engine.js LLM_MODELS['bolt-e4b'].ctxCap)
+const brain4On = () => ls.get('pf.app.brain4Use', true) !== false;
+const brain4Here = () => !!MODELS.brain4 && done('brain4') && typeof E4B_HERE === 'function' && !!E4B_HERE();
+const brain4Blocked = () => typeof E4B_BLOCKED === 'function' && !!E4B_BLOCKED();
+const brain4Usable = () => brain4Here() && !brain4Blocked() && brain4On();
+const brainFor = (role) => (role !== 'chat' && role !== 'vision' && brain4Usable() ? MODELS.brain4.id : MODELS.brain.id);
 async function initAssistant() {
   RUN = createRunners({ isInstalled: installed, foleyDefault: false, likeSources: mvRecords, realPeople: mvRealPeople });   // v023: + the music video's runners (mvflf, mvplan, mvreq)
   RUN.resume = { model: () => MODELS.video.id, async run(ctx) {   // Create's "Unfinished clip" (a picture clip): its checkpoint holds the pictures
@@ -874,13 +978,21 @@ async function initAssistant() {
   // p0pc0rn Cast: 'say' (a Cast member's voice), 'lipsync' + 'talk' (Make them talk, EXPERIMENTAL)
   RUN.say = sayRunner({ cast: CAST }); RUN.lipsync = lipsyncRunner();
   RUN.talk = talkRunner({ cast: CAST, say: (sid, m) => (AG ? AG.say(sid, m) : null), sizes: { tall: CLIP_SIZE.tall, wide: CLIP_SIZE.wide } });
+  // 3.8: the Apps tab's jobs (Juli makes an app; an app asks Juli a question) and Settings › Benchmark: all through this one queue
+  APPS = createApps(appsApi());
+  RUN.makeapp = APPS.runner(() => brainFor('app'), { ctxOf: (id) => (MODELS.brain4 && id === MODELS.brain4.id ? BRAIN4_CTX : 0), small: MODELS.brain.id });   // 3.8 (v040): the Bigger brain makes apps when it can
+  RUN.appask = APPS.askRunner(MODELS.brain.id);   // an app's own questions stay on Juli
+  RUN.bench = benchRunner({ MODELS, RUN });
   // v019 has no sound effects yet: the assistant is never offered add_sound, and the foley cookbook is left out of its notes
   const fi = MAIN_TOOLS.indexOf('add_sound'); if (fi >= 0) MAIN_TOOLS.splice(fi, 1);
   // v023: no music video from chat (Josh: the landed song's bubble offers Animate); the v019 runners stay for old queue jobs
   const mi = MAIN_TOOLS.indexOf('make_music_video'); if (mi >= 0) MAIN_TOOLS.splice(mi, 1);
-  Q = await createQueue({ runners: RUN, host: new EngineHost({ create: hostCreate, onEvent: (ev) => { HOSTLOG = HOSTLOG.concat(Object.assign({ t: Date.now() }, ev)).slice(-20); if (ev.type === 'unload') LAST_UNLOADED = ev.model; diag(`model ${ev.type}`, { model: ev.model }); } }), consent: consented, autoStart: false,
-    planned: (j) => !!(PLANNED_IN && (PLANNED_IN.ids || []).includes(j.id)) });   // v024.2: a planned fresh page is not a kill
+  Q = await createQueue({ runners: RUN, host: new EngineHost({ create: hostCreate, onEvent: (ev) => { HOSTLOG = HOSTLOG.concat(Object.assign({ t: Date.now() }, ev)).slice(-20); if (ev.type === 'unload') { LAST_UNLOADED = ev.model; UNLOADED_AT = Date.now(); } diag(`model ${ev.type}`, { model: ev.model }); } }), consent: consented, autoStart: false,
+    planned: (j) => !!(PLANNED_IN && (PLANNED_IN.ids || []).includes(j.id)),   // v024.2: a planned fresh page is not a kill
+    holdMs: (id) => (id === MODELS.brain.id || (MODELS.brain4 && id === MODELS.brain4.id) ? 5000 : 0) });   // 3.8: Juli stays loaded 5 s for a follow-up job (iOS 27, see queue.js runJob)
   wireQueue(); wireMv();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && Q) Q.endHold(); });   // 3.8: no model held in a hidden page
+  addEventListener('pagehide', () => { if (Q) Q.endHold(); });
   Q.on('change', (j) => { if (j.kind === 'say' && CASTUI) CASTUI.onJob(j); if (j.kind === 'lipsync' && j.status === 'done') saveAssistantResult(j.id).catch(() => {}); });
   Q.on('progress', (j) => { if (j.kind === 'say' && CASTUI) CASTUI.onJob(j); });
   try {
@@ -895,7 +1007,8 @@ async function initAssistant() {
     RS = await createResearch({});
     plugStarter();
     AG = await createAgent({ queue: Q, research: AS.research ? RS : null, cookbooks: loadCookbooks({ index, files }), hooks: { consent: consented, isInstalled: installed, review: AS.review, hfLogin: false,
-      castNames: () => CAST.names(), castJob: (job, tool, args, text) => castJob(job, tool, args, text) } });   // p0pc0rn Cast: the likeness gate + photo references
+      castNames: () => CAST.names(), castJob: (job, tool, args, text) => castJob(job, tool, args, text),   // p0pc0rn Cast: the likeness gate + photo references
+      brainModel: () => (brain4Usable() ? MODELS.brain4.id : null) } });   // 3.8 (v040): the Bigger brain plans and writes (agent.js BRAIN)
     RUN.attach(AG);
     const chat = RUN.chat;   // a turn woken only to say "here's your song" (or that a job stopped) needs no model: no reload of the assistant
     // p0pc0rn Cast: "make <name> say <line>" is answered in code (no assistant model): the 'say' chat job queues the voice and posts the audio
@@ -908,9 +1021,31 @@ async function initAssistant() {
     AG.on('diag', (step, data) => diag(step, data));   // v026.2: every research step in Diagnostics
   } catch (e) {
     AG = null; S.agentError = msg(e);
-    RUN.chat = { model: () => null, needsConsent: false, run: async () => { throw Object.assign(new Error("the assistant couldn't start: " + S.agentError), { code: 'NO_ASSISTANT' }); } };
+    RUN.chat = { model: () => null, needsConsent: false, run: async () => { throw Object.assign(new Error("Juli couldn't start: " + S.agentError), { code: 'NO_ASSISTANT' }); } };
   }
   CH = createChat(chatApi());
+  APPS.init().catch((e) => diag('apps: init failed', { message: String((e && e.message) || e).slice(0, 200) }));
+  try { BENCH = createBench(benchApi()); } catch (e) { diag('bench: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }
+}
+/** 3.8: what the Apps tab may use from the app (makeapp/host.js): the queue, the chat (an app's notice), sheets and toasts */
+function appsApi() {
+  return { Q: () => Q, toast, sheet: mvSheet, installed: (k) => done(k), consented, openLesson: () => openLesson(), diag,
+    settle: () => settle(), endHold: () => { if (Q) Q.endHold(); },   // 3.8 (iOS 27): a few seconds after a model leaves; Juli held for a follow-up lets go
+    busy: () => S.phase === 'working' || !!(Q && Q.active && RENDER_KINDS.has(Q.active.job.kind)),
+    modelBusy: () => S.phase === 'working' || !!(Q && (Q.holding || (Q.active && Q.modelOf(Q.active.job)) || (Q.next() && Q.modelOf(Q.next())))),   // a model is (about to be) in memory, Juli answering an app included (3.8: or held for a follow-up)
+    confirm: (title, text, ok, fn) => openSheet(title, text, ok, fn),
+    async notice(app, n) {   // an app's notice in Juli's chat: kept out of the model's history (it is never an instruction to Juli)
+      if (!AG || !CH) throw new Error('Juli is not ready');
+      const sid = await CH.session(); if (!sid) throw new Error('no chat');
+      await AG.say(sid, { kind: 'notice', app: String(app).slice(0, 30), title: n.title, severity: n.severity, text: n.text, history: false });
+      if (S.tab !== 'assistant') toast(`${app} posted in Juli’s chat`, { action: 'Show', onAction: () => go('assistant'), ms: 5000 });
+    } };
+}
+function benchApi() {
+  return { ls, toast, sheet: mvSheet, Q: () => Q, done, MODELS, consented, ltxOk, wake, learn, version: APP_VERSION, apps: () => APPS,
+    e4bHere: () => (typeof E4B_HERE === 'function' ? !!E4B_HERE() && !(typeof E4B_BLOCKED === 'function' && E4B_BLOCKED()) : false), e4bWhy: () => (typeof E4B_WHY === 'function' ? E4B_WHY() : null),   // 3.8 v040: the Bigger brain
+    planned: (id) => !!(PLANNED_IN && (PLANNED_IN.ids || []).includes(id)),
+    device: () => { const ua = navigator.userAgent; return `${/iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : 'Desktop'} · ${[...new Set((($('s-gpu') && $('s-gpu').textContent) || 'GPU').split(/\s+/))].join(' ')}${navigator.deviceMemory ? ` · ${navigator.deviceMemory} GB` : ''}`; } };
 }
 /** a 'turn' job woken after its render, when no model call is left: a song or music video (never reviewed), review off, or the job stopped */
 function replyOnly(j) {
@@ -940,7 +1075,7 @@ async function castJob(job, tool, args, text) {
 /** v024.1: the card after a page death: Try again / Discard / Diagnostics (the queue stays paused until a choice) */
 function safeOpen(back, died) {
   const roots = [...new Set(back.map((j) => j.root || j.id))].map((id) => Q.get(id)).filter(Boolean);
-  const what = roots.length ? roots.map((r) => (r.kind === 'chat' ? 'the assistant' : `the ${NOUN[r.kind] || 'job'}`)).join(' and ') : 'a job';
+  const what = roots.length ? roots.map((r) => (r.kind === 'chat' ? 'Juli' : `the ${NOUN[r.kind] || 'job'}`)).join(' and ') : 'a job';
   const where = died && died.step ? ` at “${died.step}”` : '';
   const { sheet, close } = mvSheet('safe-open', 'The last job stopped the page');
   sheet.append(mvEl('p', 'callout', `p0pc0rn closed while ${what} was working${where}. That usually means the phone ran out of memory. Nothing runs again until you choose.`));
@@ -948,7 +1083,7 @@ function safeOpen(back, died) {
   const drop = mvBtn('Discard it', 'btn'); drop.id = 'safe-discard';
   const dg = mvBtn('Diagnostics', 'btn ghost'); dg.id = 'safe-diag';
   retry.onclick = () => {
-    if (back.some((j) => j.kind === 'chat')) { S.resumeLean = true; const t = back.find((j) => j.kind === 'chat'); if (AG && t.session) AG.say(t.session, { kind: 'status', text: 'Trying once more, with a lighter assistant.', history: false }).catch(() => {}); }
+    if (back.some((j) => j.kind === 'chat')) { S.resumeLean = true; const t = back.find((j) => j.kind === 'chat'); if (AG && t.session) AG.say(t.session, { kind: 'status', text: 'Trying once more, with Juli loading lighter.', history: false }).catch(() => {}); }
     diag('safe open: try again', { jobs: back.map((j) => j.kind) }); ls.set(INFLIGHT, null); close(); Q.resume();
   };
   drop.onclick = async () => {
@@ -968,6 +1103,24 @@ function startQueue() {
   let died = ls.get(INFLIGHT, null);   // kept until the person decides (Try again / Discard), so a reopen asks again
   // v024.2: a planned fresh page is not a death: its jobs are already back in the queue (no kill); nothing to ask
   if (PLANNED_IN && died && (PLANNED_IN.ids || []).includes(died.id)) { ls.set(INFLIGHT, null); died = null; }
+  // 3.8 (iOS 27): the page ended while Juli answered WITH faster replies loaded: they stay off on this phone (the drafter's 54 MB is the
+  // margin a long prompt needs there); a toast says so and can turn them back on
+  if (died && ls.get('pf.app.brainDrafter', false) && /assistant/.test(String(died.step || '')) && FASTER_REPLIES) {   // brainDrafter: they were on
+    ls.set('pf.app.fasterOff', { t: Date.now(), step: String(died.step).slice(0, 80), split: !!ls.get('pf.app.brainSplit', false) });   // 3.8: with or without the split
+    if (E.brain && E.brain.opts) E.brain.opts.drafter = false;   // this page too (its engine was made before this check)
+    diag('faster replies off: the page ended during an answer', { step: died.step });
+    setTimeout(() => toast('Faster replies are off on this phone: it ran out of memory with them on. Juli answers a little slower.', { action: 'Turn on', ms: 12000, onAction: () => { ls.set('pf.app.fasterOff', null); location.reload(); } }), 1500);
+  }
+  ls.set('pf.app.brainDrafter', false);
+  // 3.8 (v040): the page ended while the Bigger brain was loaded: it stays off on this device (Juli's own model does its work) until
+  // Settings › Juli turns it back on
+  if (died && ls.get('pf.app.brain4Loaded', false) && !E4B_BLOCKED()) {
+    const lc = ls.get('pf.app.brain4Loaded', false);
+    ls.set('pf.app.brain4Off', { t: Date.now(), step: String(died.step || '').slice(0, 80), cfg: typeof lc === 'string' ? lc : 'd-c128' });
+    diag('bigger brain off: the page ended while it was loaded', { step: died.step });
+    setTimeout(() => toast('The Bigger brain ran out of memory on this phone, so Juli is using her own model. Settings › Juli can turn it back on.', { ms: 12000 }), 1800);
+  }
+  ls.set('pf.app.brain4Loaded', false);
   if (PLANNED_IN) {   // v026.2: how this page was opened (the next phone log says whether the cover was up and how long the reload took)
     let nav = null; try { const e = performance.getEntriesByType('navigation')[0]; nav = e ? e.type : null; } catch (x) { nav = null; }
     diag('fresh page: continuing', { stage: PLANNED_IN.stage, nav, coverAtStart: COVER_AT_START, reloadMs: Date.now() - PLANNED_IN.t, tab: (PLANNED_IN.ui || {}).tab || null, resumed: rec.map((j) => `${j.kind}:${j.status}:${j.fresh || 0}`) });
@@ -1002,6 +1155,7 @@ async function hostCreate(id) {
   // v024.2: a fresh page before a model loads, if this page destroyed a lot (WebKit). Not between two assistant turns (the assistant
   // unloads whenever the queue is idle; a reload per turn would flash every reply): only after another model, e.g. a song
   if (k !== 'brain' || (LAST_UNLOADED && LAST_UNLOADED !== MODELS.brain.id)) await freshPage('load ' + k, activeJobId());
+  else { const w = await settle(); if (w) diag('waited before loading Juli', { ms: w }); }   // 3.8 (iOS 27): Juli again right after she left
   if (k === 'k9b') {   // v026.6: FLUX.2 [klein] 9B, its own module (engine/k9b), staged: text -> encode -> denoise -> decode
     if (!E.k9b) throw Object.assign(new Error("the Klein 9B engine couldn't start"), { code: 'UNSUPPORTED' });
     const e = E.k9b.lazy ? await E.k9b.ensure() : E.k9b;   // v026.7: loaded only now
@@ -1014,9 +1168,10 @@ async function hostCreate(id) {
     if (E[k].lazy) { await refreshStatus(k); render(); }
     return k === 'voice' ? voiceAdapter(e) : lipsyncAdapter(e);
   }
-  if (!E[k]) { const e = await PF.createEngine(k === 'music' ? { model: id, decodeBudgetMB: 450 } : { model: id, ...(k === 'image' || k === 'video' ? PIC_ACC : {}) }); wire(e, k); E[k] = e; if (k === 'music') E.planner = plannerEngine(e); }   // v024.1: the phone's decode budget here too
+  if (!E[k]) { const e = await PF.createEngine(k === 'music' ? { model: id, decodeBudgetMB: 450 } : { model: id, ...(k === 'image' || k === 'video' ? PIC_ACC : {}), ...(k === 'brain' ? brainOpts() : k === 'brain4' ? brain4Opts() : {}) }); wire(e, k); E[k] = e; if (k === 'music') E.planner = plannerEngine(e); if (k === 'brain') { E.drafter = drafterEngine(e); refreshStatus('drafter'); } if (k === 'brain4') { E.drafter4 = drafterEngine(e); if (S.dl.drafter4) refreshStatus('drafter4'); } }   // v024.1: the phone's decode budget here too
   const e = E[k];
   if (k === 'brain') { await loadBrain(e); return brainAdapter(e); }
+  if (k === 'brain4') { await loadBrain4(e); return brainAdapter(e, 'brain4'); }   // 3.8: the Bigger brain
   if (k === 'music') return musicAdapter(e);
   if (k === 'video') { try { e.tune({ decodeBudgetMB: decodeMB() }); } catch (x) { /* applies from the next job */ } return videoAdapter(e); }
   // pictures: the runners call textToImage / imageToImage (v026.2: each in a fresh page on WebKit when another render ran in this page);
@@ -1057,6 +1212,40 @@ const tsig = (t) => (!t ? undefined : /^6\/8$/.test(t) ? '6' : String(t).split('
 /** v026.9: Android (Chrome): experimental; the same memory protection as the iPhone (planned fresh pages) */
 const ANDROID = /Android/i.test(navigator.userAgent || '');
 const WEBKIT = (() => { const u = navigator.userAgent || ''; return /iPhone|iPad|iPod/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) || (/Safari\//.test(u) && !/Chrome\/|Chromium|Edg\/|Android/.test(u)); })();
+// 3.8 (v038): faster replies (the drafter: q8 layers + a 4-bit head, 54 MB more on the graphics chip) everywhere but Android for now.
+// On iOS 27 the 81 MB 8-bit-head drafter left no room for a long prompt's read-in; the 4-bit head is as fast on an iPhone. On WebKit
+// the read-in goes in 128-token chunks (17 MB less kept on the graphics chip, measured on an iPhone; a little slower to read in).
+// 3.8 (v040, Josh: "I want both models"): on iOS 27 Safari part of Juli runs in a second process (engine/llm/split.js: a shared worker
+// that the app's own service worker, sw.js, serves with COEP require-corp gets a process and a memory budget of its own): her first 13
+// layers there (~0.4 GB), so faster replies and a long prompt fit beside the rest here. The Bigger brain (NVIDIA Bolt E4B) needs it there.
+const SAFARI_MAJOR = (() => { const m = /Version\/(\d+)/.exec(navigator.userAgent || ''); return m ? +m[1] : 0; })();
+const SPLIT_HERE = WEBKIT && SAFARI_MAJOR >= 27 && 'serviceWorker' in navigator && typeof SharedWorker === 'function';
+const splitOn = () => { const off = ls.get('pf.app.splitOff', null); return SPLIT_HERE && !(off && Date.now() - (+off.t || 0) < 3 * 864e5); };   // a phone that gave it up tries again after 3 days (or from Settings › Juli)
+/** where the Bigger brain can run: iOS 27 Safari (split) or a desktop browser; not Android yet */
+const E4B_HERE = () => (SPLIT_HERE && splitOn()) || (!WEBKIT && !ANDROID);
+/** why the Bigger brain can't run here ('' = it can): for its Settings row and the benchmark card */
+const E4B_WHY = () => (E4B_HERE() ? (E4B_DOWN ? `didn't load just now (${E4B_DOWN.code})` : E4B_BLOCKED() ? 'off on this phone after it ran out of memory (Settings › Juli turns it back on)' : '') : ANDROID ? 'not on Android yet' : WEBKIT && SAFARI_MAJOR > 0 && SAFARI_MAJOR < 27 ? `needs iOS 27 (this phone has iOS ${SAFARI_MAJOR})`
+  : SPLIT_HERE ? "the second process didn't work on this phone" : WEBKIT ? 'needs Safari on iOS 27' : 'not available in this browser');
+/** the Bigger brain is off on this device after the page ended while it was loaded, until Settings › Juli turns it back on */
+let E4B_DOWN = null;   // 3.8: it could not load in this page (no second process / no memory): Juli does its work until a reload
+const E4B_BLOCKED = () => { const off = ls.get('pf.app.brain4Off', null); return !!E4B_DOWN || !!(off && (off.cfg || 'd-c128') === E4B_CFG()); };
+// faster replies: everywhere but Android; on iOS 27 only with the split (one process there has no room for a long prompt beside them)
+const FASTER_REPLIES = !ANDROID && (!WEBKIT || SPLIT_HERE || (SAFARI_MAJOR > 0 && SAFARI_MAJOR < 27));
+const BRAIN_OPTS = WEBKIT && !splitOn() ? { chunk: 128 } : null;   // WebKit in one process: 128-token read-in chunks (17 MB less); split: 256 (fewer hops)
+// 3.8: a phone whose page ended while Juli answered with faster replies loaded keeps them off (pf.app.fasterOff: set in startQueue; the
+// toast there or Settings > Juli turns them back on)
+/** 3.8: faster replies: on iOS 27 only with the split; a stop recorded in one process (pf.app.fasterOff without split) does not count with it */
+const fasterOn = () => {
+  if (!FASTER_REPLIES || (SPLIT_HERE && !splitOn())) return false;
+  const off = ls.get('pf.app.fasterOff', null);
+  return !off || (SPLIT_HERE && splitOn() && !off.split);
+};
+/** 3.8: the engine options of Juli (E2B) and of the Bigger brain (E4B: split on WebKit or not at all; its drafter; 128-token read-in) */
+const brainOpts = () => ({ drafter: fasterOn(), modelOpts: BRAIN_OPTS, split: splitOn(), splitFallback: true, oneProcessOpts: WEBKIT ? { chunk: 128 } : null, reloadSettleMs: WEBKIT ? SETTLE_MS : 0 });
+// the Bigger brain on WebKit: split at 23 (layer 22 in the second process too, its KV mirrored back) so its drafter fits beside the head;
+// 64-token read-in chunks (Josh's iPhone, 10-24: split at 22 + drafter ended the page at 1,709 MB)
+const brain4Opts = () => ({ drafter: true, modelOpts: { chunk: WEBKIT ? 64 : 128 }, split: WEBKIT ? 'required' : false, reloadSettleMs: WEBKIT ? SETTLE_MS : 0 });
+const E4B_CFG = () => { const o = brain4Opts(); return `${o.drafter ? 'd' : 'nd'}-c${o.modelOpts.chunk}`; };   // a stop counts only for the set-up it happened with
 const songFormat = () => { let ok = false; try { ok = localStorage.getItem('p0pc0rn:aacOk') === '1'; } catch (x) { ok = false; } return WEBKIT && !ok ? 'wav' : 'm4a'; };
 const musicAdapter = (e) => ({ id: MODELS.music.id,
   async textToMusic(o) {
@@ -1071,29 +1260,79 @@ const musicAdapter = (e) => ({ id: MODELS.music.id,
     return Object.assign({}, r, { audio: r.blob, seconds: r.durationSec || o.seconds, url: null });   // seconds = the song's length (the runner's field), not the wall time
   },
   cancel: () => e.cancel(), unload: () => destroyDevice(e) });
-/** the assistant loads resident (1.43 GB, fastest); after a memory failure or a page kill while loading it loads lighter (<= 1.2 GB, part-streamed) */
+/** the assistant loads resident (about 1.5 GB, fastest); after a memory failure or a page kill while loading, its next load is lighter
+ *  (<= 1.2 GB, part-streamed: several times slower to answer). 3.8: lighter for good only after two failures in a row loading in full;
+ *  a full load that works clears the count, and the person's own choice in Settings › Juli always wins. */
+const FULL_FAILS = 'pf.app.brainFullFails';
 function setBrainMode(m, quiet) { AS.brainMode = m === 'lean' ? 'lean' : 'resident'; ls.set('pf.app.brainMode', AS.brainMode); if (!quiet && S.tab === 'settings') renderSettings(); }
+function brainFullFailed() { const n = (+ls.get(FULL_FAILS, 0) || 0) + 1; ls.set(FULL_FAILS, n); if (n >= 2) setBrainMode('lean', true); return n; }
 async function loadBrain(e) {
   const t0 = performance.now();
   let mode = S.resumeLean ? 'lean' : AS.brainMode;   // v024: the page died in a turn: its one retry loads the assistant lighter
   if (S.resumeLean) { S.resumeLean = false; diag('assistant loads lighter after a page kill'); }
-  const go1 = async (m) => { ls.set('pf.app.brainLoading', { mode: m, t: Date.now() }); const r = await e.load({ mode: m }); ls.set('pf.app.brainLoading', null); return r; };
+  let splitWhy = null;   // 3.8: why this load is one process (for the benchmark card)
+  const go1 = async (m) => {
+    ls.set('pf.app.brainLoading', { mode: m, t: Date.now() });
+    let r;
+    try { r = await e.load({ mode: m }); }
+    catch (x) {
+      if (!(x && x.code === 'SPLIT_FAILED')) throw x;
+      // 3.8 (iOS 27): no second process this time: Juli in one process without faster replies (the drafter needs the split's room)
+      splitWhy = msg(x).slice(0, 160); diag('split not used', { why: splitWhy });
+      e.opts.split = false; e.opts.drafter = false;
+      const n = (+ls.get('pf.app.splitFails', 0) || 0) + 1; ls.set('pf.app.splitFails', n);
+      if (n >= 3 && !ls.get('pf.app.splitWorked', false)) ls.set('pf.app.splitOff', { t: Date.now(), why: msg(x).slice(0, 120) });   // three loads in a row: stop trying on this phone (3.8 port: only where it never worked)
+      r = await e.load({ mode: m });
+    }
+    if (r && r.split) { ls.set('pf.app.splitFails', 0); ls.set('pf.app.splitWorked', true); }   // 3.8 port: + it works on this phone
+    ls.set('pf.app.brainLoading', null); return r;
+  };
   let r;
-  try { r = await go1(mode); }
+  try { r = await go1(mode); if (mode !== 'lean') ls.set(FULL_FAILS, 0); }
   catch (x) {
     ls.set('pf.app.brainLoading', null);
     if (mode === 'lean' || !(x && (x.code === 'OUT_OF_MEMORY' || /memory|allocat/i.test(msg(x))))) throw x;
     try { e.unload(); } catch (y) { /* */ }
-    setBrainMode('lean', true); mode = 'lean'; toast('The assistant is loading lighter to fit in memory.');
+    if (e.opts.split) { e.opts.split = false; e.opts.drafter = false; }   // 3.8: the lighter load is one process, without faster replies
+    const n = brainFullFailed(); mode = 'lean';
+    toast(n >= 2 ? 'Juli now loads lighter to fit in memory (slower). Settings › Juli can switch it back.' : 'Juli is loading lighter this time to fit in memory.');
     r = await go1('lean');
   }
-  S.brainLoad = { mode, seconds: +((performance.now() - t0) / 1000).toFixed(2), residentMB: r && r.residentMB };
+  S.brainLoad = { mode, seconds: +((performance.now() - t0) / 1000).toFixed(2), residentMB: r && r.residentMB, drafter: !!(r && r.drafter), split: (r && r.split) || null, splitError: splitWhy };   // 3.8: + faster replies on/off, the split
+  if (r && r.split) diag('Juli split', r.split);
+  ls.set('pf.app.brainDrafter', !!(r && r.drafter));   // 3.8: for the faster-replies safety net (startQueue)
+  ls.set('pf.app.brainSplit', !!(r && r.split));   // 3.8 (v040): ... and whether it happened with the split
+  if (r && r.drafterError) diag('faster replies not used', { error: r.drafterError });
 }
-const brainAdapter = (e) => ({ id: MODELS.brain.id, chat: (m, o) => brainChat(e, m, o), cancel: () => e.cancel(),
-  unload: async () => { e.unload(); await destroyDevice(e); } });   // v024.1: its device goes too (WebKit reclaims destroyed buffers lazily)
+/** 3.8 (v040): the Bigger brain (NVIDIA Bolt E4B): resident, split on iOS 27 (one process on a desktop browser), its drafter on; a
+ *  failure goes up to the job (the router runs that step on Juli instead) */
+/** 3.8: Juli's engine went on in one process (no second process this time): three loads in a row (online) = stop trying on this phone */
+function onSplitOff(d) {
+  const why = String((d && d.why) || '').slice(0, 160); diag('split not used', { why });
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;   // offline: not this phone's fault
+  const n = (+ls.get('pf.app.splitFails', 0) || 0) + 1; ls.set('pf.app.splitFails', n);
+  if (n >= 3 && !ls.get('pf.app.splitWorked', false)) ls.set('pf.app.splitOff', { t: Date.now(), why: why.slice(0, 120) });   // 3.8 port: only where it never worked
+}
+async function loadBrain4(e) {
+  const t0 = performance.now();
+  ls.set('pf.app.brain4Loaded', E4B_CFG());   // the safety net (startQueue): the page ended while it was loaded (with this set-up)
+  let r;
+  try { r = await e.load({ mode: 'resident' }); }
+  catch (x) {
+    ls.set('pf.app.brain4Loaded', false); try { e.unload(); } catch (y) { /* */ } diag('bigger brain did not load', { code: (x && x.code) || null, error: msg(x).slice(0, 160) });
+    if (x && /SPLIT_UNAVAILABLE|OUT_OF_MEMORY|NOT_DOWNLOADED/.test(x.code || '')) E4B_DOWN = { code: x.code, t: Date.now() };   // no retry per turn in this page
+    UNLOADED_AT = Date.now(); LAST_UNLOADED = MODELS.brain4.id;   // what it loaded is given back late: the next load waits / gets a fresh page
+    throw x;
+  }
+  S.brain4Load = { seconds: +((performance.now() - t0) / 1000).toFixed(2), residentMB: r && r.residentMB, drafter: !!(r && r.drafter), split: (r && r.split) || null };
+  diag('bigger brain loaded', S.brain4Load);
+}
+const brainAdapter = (e, key = 'brain') => ({ id: MODELS[key].id, chat: (m, o) => brainChat(e, m, o, key), cancel: () => e.cancel(),
+  countTokens: (m, o) => e.countTokens(m, o),   // 3.8: the router's fit check (no GPU)
+  unload: async () => { ls.set(key === 'brain4' ? 'pf.app.brain4Loaded' : 'pf.app.brainDrafter', false); e.unload(); } });   // 3.8 port: the device STAYS (bench v048: destroying it after every unload ended with 'The GPU was reset' at load 12, kept 40/40; its buffers are freed by unload, its pipelines make the next load faster)   // v024.1: its device goes too (WebKit reclaims destroyed buffers lazily); 3.8: and the split's worker part
 /** agent.js's chat call -> the engine's (ENGINE_API.md section 9): pictures move from the message parts into `images`; greedy decoding
  *  (what the phone measured: 17.8 tok/s); the person's turn streams its words into the chat. */
-async function brainChat(e, messages, o = {}) {
+async function brainChat(e, messages, o = {}, key = 'brain') {   // 3.8: key = which model (its own load on the card)
   const images = [];
   const msgs = messages.map((m) => (Array.isArray(m.content) ? Object.assign({}, m, { content: m.content.map((p) => (p && p.type === 'image' ? (images.push(p.image), { type: 'image' }) : p)) }) : m));
   const opts = { tools: o.tools, maxTokens: o.maxTokens || 256, signal: o.signal };
@@ -1102,7 +1341,7 @@ async function brainChat(e, messages, o = {}) {
   try { const aj = Q && Q.active && Q.active.job; if (aj) crumb(aj, `assistant: ${purpose}`); } catch (x) { /* */ }   // v024.1: the breadcrumb
   if (o.prefix) opts.prefix = o.prefix;
   if (images.length) opts.images = images;
-  const j = Q && Q.active && Q.active.job, plan = !o.prefix && Array.isArray(o.tools) && o.tools.some((t) => t && t.function && t.function.name === 'make_picture');
+  const j = Q && Q.active && Q.active.job, plan = o.stream != null ? !!o.stream : !o.prefix && Array.isArray(o.tools) && o.tools.some((t) => t && t.function && t.function.name === 'make_picture');   // 3.8: o.stream says so
   let acc = '';
   if (plan && j && j.session && CH) opts.onToken = (piece) => { acc += piece; CH.stream(j, acc); };
   let r;
@@ -1112,8 +1351,11 @@ async function brainChat(e, messages, o = {}) {
   } catch (x) { diag('assistant failed', { purpose, code: (x && x.code) || null, message: String((x && x.message) || x).slice(0, 300) }); throw x; }
   diag('assistant done', { purpose, s: r.timings ? +((r.timings.prefill || 0) + (r.timings.decode || 0)).toFixed(1) : null, promptTokens: r.promptTokens, tokens: r.tokens, enginePeakMB: r.peakMB });
   if (plan && j && CH) CH.stream(j, acc, true);
-  S.brainLast = { tokPerS: r.tokPerS, prefillTokPerS: r.prefillTokPerS, ttft: r.timings && r.timings.firstToken, tokens: r.tokens, promptTokens: r.promptTokens, peakMB: r.peakMB };
-  return { raw: r.text || '', text: r.text || '', usage: { promptTokens: r.promptTokens, completionTokens: r.tokens }, stopReason: r.stopped, timings: r.timings, tokPerS: r.tokPerS };
+  S[key === 'brain4' ? 'brain4Last' : 'brainLast'] = { tokPerS: r.tokPerS, prefillTokPerS: r.prefillTokPerS, ttft: r.timings && r.timings.firstToken, tokens: r.tokens, promptTokens: r.promptTokens, peakMB: r.peakMB };
+  const L = key === 'brain4' ? S.brain4Load : S.brainLoad;
+  return { raw: r.text || '', text: r.text || '', usage: { promptTokens: r.promptTokens, completionTokens: r.tokens }, stopReason: r.stopped, timings: r.timings, tokPerS: r.tokPerS,
+    tokens: r.tokens, promptTokens: r.promptTokens, peakMB: r.peakMB,
+    load: L ? { mode: L.mode || 'resident', drafter: L.drafter, seconds: L.seconds, residentMB: L.residentMB, split: L.split || null, splitError: L.splitError || null } : null };   // 3.8: for Settings › Benchmark
 }
 
 // ---- queue events -> the stage (popcorn), the pill, the chat and the queue sheet
@@ -1230,7 +1472,7 @@ function onQFailed(j) {
   // an assistant job: the agent says what happened in the chat; the pill says Burnt and taps through to the chat
   if (S.job && S.job.id === j.id) {
     S.job = null;
-    set({ phase: 'error', error: { title: `The ${NOUN[j.kind] || 'job'} didn't finish.`, note: 'The assistant says what happened in the chat.', actions: [['Open the chat', () => go('assistant')]], detail: `${e.code || ''} ${e.message}`.trim(), origin: 'assistant' } });
+    set({ phase: 'error', error: { title: `The ${NOUN[j.kind] || 'job'} didn't finish.`, note: 'Juli says what happened in the chat.', actions: [['Open the chat', () => go('assistant')]], detail: `${e.code || ''} ${e.message}`.trim(), origin: 'assistant' } });
   }
   syncWake(); renderPill();
 }
@@ -1259,7 +1501,7 @@ function onQBlocked(j, code, model) {
   else if (code === 'NOT_DOWNLOADED') {
     const k = KEY_OF[model];
     if ((j.kind === 'animate' || j.kind === 'between') && done('video') && E.reader && !done('reader')) { toast(`Getting the picture reader first (${fmtSize(S.dl.reader.total)}, one time). The clip starts right after.`); startDownload('reader'); }
-    else if (k) toast(`Download the ${dlNoun(k)} to go on (Settings › Models).`);
+    else if (k) toast(`Download ${theNoun(k)} to go on (Settings › Models).`);
   }
   qChanged(j);
 }
@@ -1709,28 +1951,31 @@ const metaLine = (m) => (isSong(m) ? `Song · ${clock(m.duration || 0)}${m.bpm ?
 
 // ------------------------------------------------------------------------------------------------ settings: models + storage
 /** the model a running or loaded queue job holds (its files must stay while it works) */
-const inUse = (k) => !!Q && !!Q.active && (KEY_OF[Q.modelOf(Q.active.job)] === k || (ADDON[k] && KEY_OF[Q.modelOf(Q.active.job)] === ADDON[k]));
+const inUse = (k) => { const m = Q && (Q.active ? Q.modelOf(Q.active.job) : Q.holding && Q.host ? Q.host.currentId : null); return !!m && (KEY_OF[m] === k || (!!ADDON[k] && KEY_OF[m] === ADDON[k])); };   // 3.8: a model held for a follow-up job is in use too
 function askDeleteModel(k) {
   if (S.phase === 'working' || ['downloading', 'pausing'].includes(S.dl[k].sub)) return;
   if (inUse(k)) return toast('Wait until the queue is done with it.');
-  const m = MODELS[k], st = S.st[k] || {}, bytes = (st.complete ? st.totalBytes : S.dl[k].have) || m.total, rd = k === 'reader', pl = k === 'planner', add = rd || pl;
-  // an add-on is no use without its model, so it goes with it (said in the sheet): the picture reader with the video model, the planner with music
-  const sub = k === 'video' ? 'reader' : k === 'music' ? 'planner' : null;
+  const m = MODELS[k], st = S.st[k] || {}, bytes = (st.complete ? st.totalBytes : S.dl[k].have) || m.total, rd = k === 'reader', pl = k === 'planner', dr = k === 'drafter', add = rd || pl || dr;
+  // an add-on is no use without its model, so it goes with it (said in the sheet): the picture reader with the video model, the planner
+  // with music, faster replies (3.8) with the assistant
+  const sub = k === 'video' ? 'reader' : k === 'music' ? 'planner' : k === 'brain' ? 'drafter' : k === 'brain4' ? 'drafter4' : null;
   const withSub = !!sub && !!E[sub] && S.dl[sub].have > 0 && !['downloading', 'pausing'].includes(S.dl[sub].sub);
-  const use = { image: 'make pictures', video: 'make clips', brain: 'use the assistant', music: 'make songs', starter: 'look things up offline', voice: 'make your Cast speak (their recordings stay)', lipsync: 'make lip-sync clips' }[k];
+  const use = { image: 'make pictures', video: 'make clips', brain: 'use Juli', brain4: 'let Juli think and write with it', music: 'make songs', starter: 'look things up offline', voice: 'make your Cast speak (their recordings stay)', lipsync: 'make lip-sync clips' }[k];
   const text = rd ? `Frees ${fmtSize(bytes)}. It downloads again by itself the next time you make a clip from a picture. Your Library stays.`
     : pl ? `Frees ${fmtSize(bytes)}. Songs still work without it, but the singer follows the words less closely. Your Library stays.`
-    : `Frees ${fmtSize(bytes + (withSub ? S.dl[sub].have : 0))}. You'll need to download it again to ${use}.${withSub ? ` The ${MODELS[sub].noun} goes with it.` : ''} ${k === 'brain' ? 'Your chats and Library stay.' : 'Your Library stays.'}`;
-  const title = rd ? 'Delete the picture reader?' : pl ? 'Delete the lyrics planner?' : k === 'brain' ? 'Delete the assistant model?' : k === 'starter' ? 'Delete the starter knowledge?' : `Delete the ${m.noun} model?`;
-  openSheet(title, text, rd ? 'Delete picture reader' : pl ? 'Delete lyrics planner' : 'Delete model', async () => {
+    : dr ? `Frees ${fmtSize(bytes)}. Juli still works without it, with the same answers, just more slowly. Your chats and Library stay.`
+    : `Frees ${fmtSize(bytes + (withSub ? S.dl[sub].have : 0))}. You'll need to download it again to ${use}.${withSub ? (sub === 'drafter' ? ' Faster replies go with it.' : sub === 'drafter4' ? ' Its faster replies go with it.' : ` The ${MODELS[sub].noun} goes with it.`) : ''} ${k === 'brain' || k === 'brain4' ? 'Your chats and Library stay.' : 'Your Library stays.'}`;
+  const title = rd ? 'Delete the picture reader?' : pl ? 'Delete the lyrics planner?' : dr ? 'Delete faster replies?' : k === 'brain' ? 'Delete Juli’s model?' : k === 'brain4' ? 'Delete the bigger brain?' : k === 'starter' ? 'Delete the starter knowledge?' : `Delete the ${m.noun} model?`;
+  openSheet(title, text, rd ? 'Delete picture reader' : pl ? 'Delete lyrics planner' : dr ? 'Delete faster replies' : 'Delete model', async () => {
     if (S.phase === 'working' || inUse(k)) return;
     if (k === 'starter' && RS) RS.starter = null;   // v022: no more starter hits once it is gone
-    try { await E[k].deleteModel(); S.st[k] = await E[k].status(); } catch (e) { return toast(rd ? "Couldn't delete the picture reader" : pl ? "Couldn't delete the lyrics planner" : "Couldn't delete the model"); }
+    try { await E[k].deleteModel(); S.st[k] = await E[k].status(); } catch (e) { return toast(rd ? "Couldn't delete the picture reader" : pl ? "Couldn't delete the lyrics planner" : dr ? "Couldn't delete faster replies" : "Couldn't delete the model"); }
     Object.assign(S.dl[k], dlState(S.dl[k].total), { have: S.st[k].haveBytes || 0, total: S.st[k].totalBytes || S.dl[k].total });
     if (withSub && sub === 'reader') { try { await E.reader.deleteModel(); } catch (e) { /* its own row still shows it */ } }   // the music engine's delete takes the planner's folder with it
+    if (withSub && (sub === 'drafter' || sub === 'drafter4')) { try { await E[sub].deleteModel(); } catch (e) { /* its own row still shows it */ } }   // 3.8: its own folder (v040: the bigger brain's too)
     if (sub && E[sub]) { await refreshStatus(sub); Object.assign(S.dl[sub], dlState(S.dl[sub].total), { have: (S.st[sub] && S.st[sub].haveBytes) || 0 }); }
     if (k === 'video') { ls.set('pf.app.ckGoneAt', Date.now()); refreshCk(); store.clearVideoInputs().catch(() => {}); }   // both checkpoints went with the folder
-    toast(rd ? 'Picture reader deleted' : pl ? 'Lyrics planner deleted' : k === 'brain' ? 'Assistant model deleted' : `${cap(m.noun)} model deleted`);
+    toast(rd ? 'Picture reader deleted' : pl ? 'Lyrics planner deleted' : dr ? 'Faster replies deleted' : k === 'brain' ? 'Juli’s model deleted' : k === 'brain4' ? 'Bigger brain deleted' : `${cap(m.noun)} model deleted`);
     if (CH) CH.render();
     render(); renderSettings();   // onboarding: no setup screen after the last model goes; Create and the chat offer the downloads
   });
@@ -1739,7 +1984,7 @@ function askDeleteModel(k) {
 const leftovers = () => (S.phase === 'working' ? [] : [{ path: `${VRUN}/frames.rgba`, why: 'frames of an unfinished clip' }, ...(S.ck.t2v ? [] : [{ path: `${VRUN}/latent.bin`, why: 'data of an old unfinished clip' }]),
   { path: `${IRUN}/frames.rgba`, why: 'frames of an unfinished picture clip' },
   ...(S.ck.pic ? [] : ['latent.bin', 'pin0.bin', 'pin1.bin'].map((f) => ({ path: `${IRUN}/${f}`, why: 'data of an old unfinished picture clip' })))]);
-const useName = (k) => (k === 'reader' ? 'Picture reader · LTX-2.3 encoder' : k === 'planner' ? 'Lyrics planner · ACE-Step 5 Hz LM' : k === 'brain' ? 'Assistant · Gemma 4 E2B' : k === 'music' ? 'Music model · ACE-Step 1.5 turbo' : `${cap(MODELS[k].noun)} model · ${MODELS[k].name}`);
+const useName = (k) => (k === 'brain4' ? 'Bigger brain · NVIDIA Nemotron 3.5 Bolt E4B' : k === 'drafter4' ? 'Bigger brain’s faster replies · Gemma 4 E4B drafter' : k === 'reader' ? 'Picture reader · LTX-2.3 encoder' : k === 'planner' ? 'Lyrics planner · ACE-Step 5 Hz LM' : k === 'drafter' ? 'Faster replies · Gemma 4 drafter' : k === 'brain' ? 'Juli · Gemma 4 E2B' : k === 'music' ? 'Music model · ACE-Step 1.5 turbo' : `${cap(MODELS[k].noun)} model · ${MODELS[k].name}`);
 const viaEngine = async (p) => { const st = E.video && E.video.store && E.video.store.st; if (!st) throw new Error('no engine storage'); await st.start(); await st.call('remove', { name: p }); };
 async function renderStorage() {
   const tok = ++storTok, list = $('files'), btn = $('s-clean'), why = $('s-clean-why');
@@ -1757,7 +2002,7 @@ async function renderStorage() {
   if (!r) { list.replaceChildren(Object.assign(document.createElement('p'), { className: 'li footnote dim', textContent: "This browser can't list its files." })); btn.disabled = true; why.textContent = ''; return; }
   const rows = r.top.map((t) => row(`${t.name}${t.dir ? '/' : ''}`, t.uses.length ? t.uses.map(useName).join(' + ') : 'Not used by p0pc0rn', fmtSize(t.bytes) + (t.unknown ? '+' : '')));
   if (lib) rows.push(row('Library', `${lib.pictures} ${lib.pictures === 1 ? 'picture' : 'pictures'}, ${lib.clips} ${lib.clips === 1 ? 'clip' : 'clips'}${lib.songs ? `, ${lib.songs} ${lib.songs === 1 ? 'song' : 'songs'}` : ''} · browser database`, fmtSize(lib.bytes)));
-  if (Q) { let qb = 0; try { for (const b of await Q.db.all('blobs')) qb += b.size || 0; } catch (e) { /* */ } if (tok !== storTok) return; rows.push(row('Assistant', 'chats, research and the queue (p0pc0rn-assistant, p0pc0rn-research, p0pc0rn-queue) · browser database', fmtSize(qb))); }
+  if (Q) { let qb = 0; try { for (const b of await Q.db.all('blobs')) qb += b.size || 0; } catch (e) { /* */ } if (tok !== storTok) return; rows.push(row('Juli', 'chats, research and the queue (p0pc0rn-assistant, p0pc0rn-research, p0pc0rn-queue) · browser database', fmtSize(qb))); }
   if (!rows.length) rows.push(Object.assign(document.createElement('p'), { className: 'li footnote dim', textContent: 'Nothing stored yet.' }));
   list.replaceChildren(...rows);
   const n = r.remove.length, total = r.remove.reduce((s, i) => s + i.bytes, 0);
@@ -1839,8 +2084,8 @@ function renderLessonDl() {
   $('ls-dl').hidden = !k; if (!k) return;
   L.dlKey = k;
   const u = S.dl[k], ready = done(k) && !['downloading', 'pausing'].includes(u.sub), name = dlNoun(k);   // onboarding: "the assistant" too
-  $('ls-dl-text').textContent = ready ? `The ${name} is ready. Finish the lesson to start making.`
-    : u.sub === 'downloading' ? `Downloading the ${name} · ${dlLine(u, true)}` : u.sub === 'failed' ? `Download stopped · ${dlLine(u, true)}` : `Download paused · ${dlLine(u, true)}`;
+  $('ls-dl-text').textContent = ready ? `${cap(theNoun(k))} is ready. Finish the lesson to start making.`
+    : u.sub === 'downloading' ? `Downloading ${theNoun(k)} · ${dlLine(u, true)}` : u.sub === 'failed' ? `Download stopped · ${dlLine(u, true)}` : `Download paused · ${dlLine(u, true)}`;
   $('ls-dl-fill').style.transform = `scaleX(${(ready ? 1 : dlPct(u)).toFixed(4)})`;
   const b = $('ls-dl-btn'); b.hidden = ready; b.disabled = u.sub === 'pausing'; b.textContent = u.sub === 'downloading' ? 'Pause' : u.sub === 'pausing' ? 'Pausing…' : 'Resume';
 }
@@ -1998,19 +2243,49 @@ function acceptFlux() {
   if (!fluxAccepted()) return toast("This browser couldn't save your acceptance. Private browsing blocks it.");
   const then = fluxThen; closeFlux(); toast('Licence accepted'); if (then) then();
 }
+// ---- 3.8 (v040): NVIDIA's OpenMDW License Agreement 1.1 for the Bigger brain (NVIDIA Nemotron 3.5 Bolt E4B), shown ONCE before its
+// download, as Klein 9B's licence: the statement, the full licence and I accept; stored with the licence version, shown again only if
+// that version changes. Its faster replies (Google's Gemma 4 E4B drafter) are Apache-2.0 and come with it. No licence text, no download.
+const MDW_KEY = 'p0pc0rn:openmdw-license', MDW_VERSION = '1.1', MDW_FILE = 'licenses/LICENSE-OpenMDW-1.1.txt', MDW_MARK = /OpenMDW/;
+const MDW_LABEL = "The Bigger brain is NVIDIA Nemotron 3.5 Bolt E4B, under NVIDIA's OpenMDW License Agreement, version 1.1 (OpenMDW-1.1). NVIDIA post-trained it from Google's Gemma 4 E4B (Apache-2.0); its faster replies are Google's Gemma 4 E4B drafter (Apache-2.0). Read the licence before you use it.";
+const mdwAccepted = () => { const a = ls.get(MDW_KEY); return !!(a && a.version === MDW_VERSION && a.acceptedAt); };
+let mdwThen = null;
+async function openMdw(then) {
+  mdwThen = typeof then === 'function' ? then : null;
+  $('mdw-label').textContent = MDW_LABEL;
+  $('mdw-size').textContent = `Download: ${fmtSize(partTotal('brain4') + (E.drafter4 ? partTotal('drafter4') : 0))} with its faster replies. Keep p0pc0rn open, the phone plugged in and the screen on; Pause and closing the page both resume.`;
+  openWrap('mdw');
+  const pre = $('mdw-text'), ok = $('mdw-ok'), full = () => MDW_MARK.test(pre.textContent) && pre.textContent.length >= 1000;
+  if (!full()) {
+    ok.disabled = true; pre.textContent = 'Loading the licence…';
+    try { const r = await fetch(MDW_FILE, { cache: 'no-cache' }); pre.textContent = r.ok ? await r.text() : ''; } catch (e) { pre.textContent = ''; }
+    if (!full()) pre.textContent = `The licence text could not be loaded (${MDW_FILE}). Check Wi-Fi, then open this again.`;
+  }
+  ok.disabled = !full(); ok.focus();
+}
+function closeMdw() { mdwThen = null; closeWrap('mdw'); }
+function acceptMdw() {
+  if ($('mdw-ok').disabled) return;
+  ls.set(MDW_KEY, { license: 'OpenMDW License Agreement', version: MDW_VERSION, acceptedAt: new Date().toISOString() });
+  if (!mdwAccepted()) return toast("This browser couldn't save your acceptance. Private browsing blocks it.");
+  const then = mdwThen; closeMdw(); toast('Licence accepted'); if (then) then();
+}
 // ---- v026.4: Settings › About › Licences and notices: every licence text in full, the required notices, the copyright lines
 const LIC = [
   ['p0pc0rn', [['p0pc0rn License 1.1 (draft) · Joshua Hughes', 'LICENSE.md'], ['Use policy (part of your terms)', 'USE-POLICY.md'], ['Trademarks', 'TRADEMARKS.md'], ['Notices', 'NOTICE.md'], ['Model licences', 'MODELS.md']]],
   ['Apache License 2.0', [['The licence text', 'licenses/LICENSE-Apache-2.0.txt'],
     ['FLUX.2 [klein] 4B and the FLUX.2 autoencoder · Black Forest Labs; Qwen3-4B · Alibaba Cloud', 'licenses/LICENSE-Apache-2.0.txt'],
     ['SANA-Video 2.0 5B · Copyright 2024 Nvidia', 'licenses/LICENSE-SANA-Video.txt'],
-    ['Gemma 4 E2B-it (the assistant) · Google', 'licenses/LICENSE-Gemma-4-Apache-2.0.txt'], ['Gemma 4 notice', 'licenses/NOTICE-Gemma-4.md'],
+    ['Gemma 4 E2B-it (Juli) · Google', 'licenses/LICENSE-Gemma-4-Apache-2.0.txt'], ['Gemma 4 notice', 'licenses/NOTICE-Gemma-4.md'],
+    ['Gemma 4 E2B-it MTP drafter (faster replies) · Google', 'licenses/LICENSE-Gemma-4-Apache-2.0.txt'],
+    ['Gemma 4 E4B-it MTP drafter (the Bigger brain’s faster replies) and Gemma 4 E4B (the Bigger brain’s base model) · Google', 'licenses/LICENSE-Gemma-4-Apache-2.0.txt'],
     ['Qwen3-Embedding-0.6B · Alibaba Cloud', 'licenses/LICENSE-Qwen3-Embedding-Apache-2.0.txt'],
     ['Qwen3-TTS (voice) · Copyright 2026 Alibaba Cloud', 'licenses/LICENSE-Qwen3-TTS-Apache-2.0.txt'],
     ['MediaPipe face models (lip-sync, experimental) · Google', 'licenses/LICENSE-MediaPipe-Apache-2.0.txt'],
     ['Qwen3-8B (Klein 9B\u2019s text encoder) · Alibaba Cloud', 'licenses/LICENSE-Apache-2.0.txt'],
     ['Tokenizers in the engine', 'engine/LICENSE-tokenizers.txt']]],
   ['FLUX Non-Commercial License v2.1', [['FLUX.2 [klein] 9B (Better pictures) · Black Forest Labs', 'licenses/LICENSE-FLUX-Non-Commercial-v2.1.md']]],
+  ['OpenMDW License Agreement 1.1', [['NVIDIA Nemotron 3.5 Bolt E4B (the Bigger brain) · NVIDIA', 'licenses/LICENSE-OpenMDW-1.1.txt'], ['Bigger brain notice (NVIDIA’s terms, the Gemma 4 base model, what p0pc0rn changed)', 'licenses/NOTICE-Nemotron-Bolt-E4B.md']]],
   ['MIT', [['ACE-Step 1.5 and its lyrics planner · Copyright (c) 2026 ACEStep (their Qwen3 parts: Apache-2.0)', 'licenses/LICENSE-ACE-Step-1.5.txt'],
     ['Music model notices', 'licenses/NOTICE-music.md'],
     ['MuseTalk 1.5 (lip-sync, experimental) · Copyright (c) 2024 Tencent Music Entertainment Group', 'licenses/LICENSE-MuseTalk-MIT.txt'],
@@ -2018,6 +2293,7 @@ const LIC = [
     ['Whisper tiny (lip-sync) · Copyright (c) 2022 OpenAI', 'licenses/LICENSE-Whisper-MIT.txt'],
     ['sd-vae-ft-mse (lip-sync) · Stability AI', 'licenses/LICENSE-sd-vae-ft-mse-MIT.txt'],
     ['TOON · Copyright (c) 2025-PRESENT Johann Schopplich', 'licenses/LICENSE-TOON-MIT.txt']]],
+  ['LGPL-2.1', [['p5.js 1.11.13 (the Apps tab’s app runtime) · the Processing Foundation and contributors', 'licenses/LICENSE-p5js-LGPL-2.1.txt'], ['p5.js notice', 'licenses/NOTICE-p5js.md']]],
   ['Gemma 2 (the video model reads your words with it)', [['Gemma Terms of Use', 'licenses/GEMMA_TERMS_OF_USE.txt'], ['Gemma Prohibited Use Policy', 'licenses/GEMMA_PROHIBITED_USE_POLICY.txt'], ['Gemma notice', 'licenses/NOTICE-Gemma.txt']]],
   ['LTX-2.3 by Lightricks (the video decoder and the picture reader)', [['LTX-2 Community License Agreement, with Attachment A', 'licenses/LICENSE-LTX-2.txt'], ['Video model notices', 'licenses/NOTICE-video.md']]],
   ['Knowledge', [['Starter pack: CC BY-SA 4.0 (Wikipedia text)', 'https://creativecommons.org/licenses/by-sa/4.0/legalcode'], ['Starter pack notice', 'starter:NOTICE.md']]],
@@ -2053,11 +2329,12 @@ function go(tab) {
   if (S.tab === 'library') { freeThumbs(); S.sel = null; }
   if (S.tab === 'assistant' && CH) CH.hide();
   S.tab = tab;
-  for (const v of ['create', 'assistant', 'library', 'settings']) $('v-' + v).hidden = v !== tab;
+  for (const v of ['create', 'assistant', 'apps', 'library', 'settings']) $('v-' + v).hidden = v !== tab;
   const el = $('v-' + tab); el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter');
   $('main').scrollTop = 0;
   if (tab === 'library') renderLibrary();
   if (tab === 'settings') renderSettings();
+  if (tab === 'apps' && APPS) APPS.render();
   render(); if (tab === 'create') placeAll();
   if (tab === 'create' && S.phase === 'working' && S.job && pop) { pop.start(); popTo(pop, S.job); }   // v019: a job that started on another tab: size the popcorn now that the stage shows
   if (tab === 'assistant' && CH) S.chatShown = CH.show();   // v026.1: the restore waits for the chat
@@ -2071,7 +2348,7 @@ function render() {
   root.toggleAttribute('data-busy', S.phase === 'working');
   if (inApp) root.dataset.tab = S.tab; else delete root.dataset.tab;
   if (!inApp) return renderGate();
-  $('title').textContent = { create: 'Create', assistant: 'Assistant', library: 'Library', settings: 'Settings' }[S.tab];
+  $('title').textContent = { create: 'Create', assistant: 'Juli', apps: 'Apps', library: 'Library', settings: 'Settings' }[S.tab];
   for (const t of document.querySelectorAll('.tab')) { if (t.dataset.tab === S.tab) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); }
   $('cta-bar').hidden = S.tab !== 'create'; $('chat-bar').hidden = S.tab !== 'assistant';
   renderCreate(); renderPill(); renderQBtn(); renderViewerActions();
@@ -2269,7 +2546,7 @@ const nth = (n) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 &
 /** a job that waits for the GPU: chat goes first, then the queue in order (assistant/queue.js runOrder) */
 function waitText(j) {
   const a = Q && Q.active && Q.active.job, pos = Q && j.id ? Q.positionOf(j.id) : null;
-  if (a && a.id !== j.id && a.kind === 'chat') return 'Waiting for the assistant to finish';
+  if (a && a.id !== j.id && a.kind === 'chat') return 'Waiting for Juli to finish';
   if (a && a.id !== j.id) return pos && pos > 1 ? `Waiting its turn · ${nth(pos)} in line` : 'Waiting its turn · next';
   return 'Getting ready';
 }
@@ -2301,7 +2578,7 @@ function renderWork(changed) {
   $('w-phase').textContent = j.waiting || j.sub === 'cancelling' || S.gpuReset ? caption(j) : phaseText(j);   // v026.9: the stage, the whole job's time below
   $('w-hot').hidden = !S.hot;
   const mv = j.id && Q ? mvRoot(Q, Q.get(j.id)) : null;   // v023: a music video's frame, shot or cut says which
-  $('w-keep').textContent = (mv ? `Music video: ${mvStatusOf(mv).text}. ` : j.origin === 'assistant' ? `The assistant's ${NOUN[j.kind] || 'job'}. ` : '') + (wake.supported ? 'Keep p0pc0rn open — the screen stays on.' : 'Keep the screen on until it finishes.');
+  $('w-keep').textContent = (mv ? `Music video: ${mvStatusOf(mv).text}. ` : j.origin === 'assistant' ? `Juli's ${NOUN[j.kind] || 'job'}. ` : '') + (wake.supported ? 'Keep p0pc0rn open — the screen stays on.' : 'Keep the screen on until it finishes.');
   renderTime();
 }
 function renderProgress() {
@@ -2353,7 +2630,7 @@ function renderPill() {
   pill.querySelector('span').textContent = working ? (j.sub === 'cancelling' ? 'Stopping…' : j.waiting ? 'Heating up' : heating(j) ? `Heating up · ${st.name}` : `Popping ${pct}% · ${st.name}${S.hot ? ' · warm' : ''}`)
     : chat ? 'Thinking' : popped ? 'Popped!' : burnt ? 'Burnt · details' : S.hot ? 'Warm' : dl ? `Downloading · ${Math.floor(dlPct(S.dl[dl]) * 100)}%` : 'Ready';
   pill.setAttribute('aria-label', working ? `A ${what} is being made${j.waiting || heating(j) ? ', getting ready' : `: ${st.name}, ${pct}% of this stage`}. Show it.`
-    : chat ? 'The assistant is thinking. Show the chat.' : popped ? 'Finished. Show it.' : burnt ? 'The last one did not finish. Show what happened.' : pill.textContent);
+    : chat ? 'Juli is thinking. Show the chat.' : popped ? 'Finished. Show it.' : burnt ? 'The last one did not finish. Show what happened.' : pill.textContent);
 }
 function renderViewerActions() {
   const busy = S.phase === 'working';
@@ -2418,8 +2695,8 @@ function renderModels() {
   const busy = S.phase === 'working';
   for (const row of $('models').children) {
     const k = row.dataset.m, m = MODELS[k], u = S.dl[k], st = S.st[k] || {}, inst = done(k), q = (s) => row.querySelector(s);
-    row.hidden = !E[k]; if (!E[k]) continue;   // the picture reader row needs the picture modes; the planner row the music engine
-    const auto = k === 'reader' ? ' · downloads by itself when a clip from a picture needs it' : k === 'planner' ? ' · comes with Download music' : k === 'k9b' && !inst ? ' · about 30 min on Wi-Fi' : '';
+    row.hidden = !E[k] || (k === 'brain4' && !e4bHere()); if (row.hidden) continue;   // the picture reader row needs the picture modes; the planner row the music engine; 3.8: the Bigger brain where it can run
+    const auto = k === 'reader' ? ' · downloads by itself when a clip from a picture needs it' : k === 'planner' ? ' · comes with Download music' : k === 'drafter' ? ' · comes with Juli’s download' : k === 'k9b' && !inst ? ' · about 30 min on Wi-Fi' : '';
     if (k === 'music' && !inst) {   // v021: the pair (music + lyrics planner): one button, one bar, both parts listed
       const md = musicDl(), go = q('.m-go');
       q('.m-sub').textContent = `${m.what} + lyrics planner · ${fmtSize(md.total)} · ${md.have > 0 ? `${md.running ? '' : md.failed ? 'stopped · ' : 'paused · '}${Math.floor(md.pct * 100)}% · ${md.parts}` : st.error ? "can't reach the model server" : 'not downloaded'}`;
@@ -2428,6 +2705,17 @@ function renderModels() {
       go.querySelector('span').textContent = md.short;
       const del = q('.m-del'); del.hidden = !(u.have > 0); del.disabled = busy || !!md.running || md.pausing || inUse(k);
       const bar = q('.m-bar'); bar.hidden = !(md.have > 0); bar.firstElementChild.style.transform = `scaleX(${md.pct.toFixed(4)})`;
+      continue;
+    }
+    if (k === 'brain4' && !(inst && (!E.drafter4 || done('drafter4')))) {   // 3.8 (v040): the pair (the bigger brain + its faster replies): one button, one bar, both parts
+      const bd = e4bDl(), go = q('.m-go');
+      q('.m-sub').textContent = bd.addDrafter ? `${m.what} · installed · faster replies not downloaded (${fmtSize(partTotal('drafter4'))})`
+        : `${m.what} + faster replies · ${fmtSize(bd.total)} · ${bd.have > 0 ? `${bd.running ? '' : bd.failed ? 'stopped · ' : 'paused · '}${Math.floor(bd.pct * 100)}% · ${bd.parts}` : st.error ? "can't reach the model server" : 'not downloaded'}`;
+      go.hidden = false; go.disabled = bd.pausing;
+      go.querySelector('use').setAttribute('href', bd.running ? '#i-pause' : bd.have > 0 && !bd.addDrafter ? '#i-play' : '#i-download');
+      go.querySelector('span').textContent = bd.short;
+      const del = q('.m-del'); del.hidden = !(u.have > 0 || inst || S.dl.drafter4.have > 0); del.disabled = busy || !!bd.running || bd.pausing || inUse(k);
+      const bar = q('.m-bar'); bar.hidden = !(bd.have > 0) || bd.addDrafter; bar.firstElementChild.style.transform = `scaleX(${bd.pct.toFixed(4)})`;
       continue;
     }
     q('.m-sub').textContent = inst ? `${m.what} · ${fmtSize(st.totalBytes || u.total)} · installed${st.packVersion ? ` · pack ${st.packVersion}` : ''}`
@@ -2444,11 +2732,36 @@ function renderModels() {
   $('s-models-why').hidden = !busy;
   $('s-clean').disabled = busy || !(S.files && S.files.remove.length);
 }
+/** 3.8 (v040): Settings › Juli: the Bigger brain row (shown once it is on the phone and can run here) */
+const BRAIN4_NOTE = 'When you ask Juli to write something, or to make a picture, clip, song or app, she looks things up and checks pictures with her own model, and NVIDIA’s Bigger brain plans and writes. Chat stays on Juli’s own model, so replies stay fast. One model fits in memory at a time, so these jobs take a few seconds longer to start.';
+function renderBrain4() {
+  const row = $('s-brain4-row'), box = $('s-brain4'), note = $('s-brain4-note'); if (!row || !box || !note) return;
+  row.hidden = !brain4Here();
+  const blocked = brain4Blocked();
+  box.checked = brain4On() && !blocked; box.hidden = blocked; box.disabled = blocked;
+  note.textContent = blocked ? 'The Bigger brain ran out of memory last time, so Juli is using her own model. ' : BRAIN4_NOTE;
+  if (blocked) {
+    const on = document.createElement('button'); on.type = 'button'; on.className = 'btn sm'; on.textContent = 'Turn the Bigger brain back on';
+    on.onclick = (e) => { e.preventDefault(); e.stopPropagation(); ls.set('pf.app.brain4Off', null); renderAssistantSettings(); };
+    note.append(on);
+  }
+}
 function renderAssistantSettings() {
   $('s-research').checked = AS.research; $('s-review').checked = AS.review;
   radio($('brainmode'), AS.brainMode);
   const b = S.brainLoad, l = S.brainLast;
-  $('s-brain-info').textContent = b ? `Last load: ${b.mode === 'lean' ? 'lighter' : 'full'}, ${b.seconds} s${b.residentMB ? `, ${b.residentMB} MB on the graphics chip` : ''}${l && l.tokPerS ? ` · ${l.tokPerS} tokens a second` : ''}.` : 'Loads for each chat and unloads before a picture, clip or song (one model on the graphics chip at a time).';
+  $('s-brain-info').textContent = b ? `Last load: ${b.mode === 'lean' ? 'lighter' : 'full'}, ${b.seconds} s${b.residentMB ? `, ${b.residentMB} MB on the graphics chip` : ''}${b.split ? ` (${b.split.workerMB} MB more in a second process)` : ''}${b.drafter ? ', faster replies on' : ''}${l && l.tokPerS ? ` · ${l.tokPerS} tokens a second` : ''}.` : 'Loads for each chat and unloads before a picture, clip or song (one model on the graphics chip at a time).';
+  if (FASTER_REPLIES && ls.get('pf.app.fasterOff', null) && !fasterOn() && !(SPLIT_HERE && !splitOn())) {   // 3.8: the safety net turned faster replies off on this phone
+    const on = document.createElement('button'); on.type = 'button'; on.className = 'btn sm'; on.textContent = 'Turn faster replies back on';
+    on.onclick = () => { ls.set('pf.app.fasterOff', null); location.reload(); };
+    $('s-brain-info').append(' Faster replies are off on this phone: it ran out of memory with them on. ', on);
+  }
+  if (SPLIT_HERE && !splitOn()) {   // 3.8: the second process was given up on this phone (three loads in a row)
+    const tr = document.createElement('button'); tr.type = 'button'; tr.className = 'btn sm'; tr.textContent = 'Try the second process again';
+    tr.onclick = () => { ls.set('pf.app.splitOff', null); ls.set('pf.app.splitFails', 0); location.reload(); };
+    $('s-brain-info').append(" Juli's second process didn't work on this phone, so she runs in one (without faster replies). ", tr);
+  }
+  renderBrain4();   // 3.8 (v040)
   const fin = Q ? Q.list().filter((j) => j.root === j.id && TERMINAL.has(j.status) && !Q.descendants(j.id).some((d) => !TERMINAL.has(d.status))).length : 0;
   $('s-qclear').disabled = !fin; $('s-qclear-why').textContent = fin ? `${fin} finished ${fin === 1 ? 'job' : 'jobs'} kept for the chat. The Library keeps everything that was made.` : 'Nothing finished is kept.';
   renderQBtn(); renderKB();
@@ -2824,11 +3137,12 @@ function init() {
   addEventListener('storage', (e) => { if (e.key === rights.CONSENT_KEY || e.key === null) { render(); renderLesson(); if (Q && consented()) Q.recheck(); } });   // an agreement made (or cleared) in another tab
   addEventListener('resize', () => { if (L.open) $('ls-track').scrollTo({ left: L.i * $('ls-track').clientWidth }); });
   for (const k of DL) {   // Settings › Models rows (the picture reader's row shows only when the engine has the picture modes)
+    if (k === 'drafter4') continue;   // 3.8 (v040): the bigger brain's faster replies ride in its row
     const m = MODELS[k], row = document.createElement('div'); row.className = 'model'; row.dataset.m = k;
     row.innerHTML = `<div class="m-top"><div class="m-txt"><span class="m-name"></span><span class="footnote dim m-sub num"></span></div><span class="li-end">`
       + '<button class="btn sm m-go" type="button"><svg class="ic"><use href="#i-download"/></svg><span>Download</span></button>'
       + '<button class="icon-btn m-del" type="button"><svg class="ic"><use href="#i-trash"/></svg></button></span></div><div class="bar m-bar"><i></i></div>';
-    row.querySelector('.m-name').textContent = m.name; row.querySelector('.m-del').setAttribute('aria-label', `Delete the ${dlNoun(k)}`);
+    row.querySelector('.m-name').textContent = m.name; row.querySelector('.m-del').setAttribute('aria-label', `Delete ${theNoun(k)}`);
     row.querySelector('.m-go').onclick = tapGuard(() => dlTap(k)); row.querySelector('.m-del').onclick = () => askDeleteModel(k);
     $('models').append(row);
   }
@@ -2849,6 +3163,8 @@ function init() {
   $('hq-x').onclick = () => { S.hq = null; saveHq(); render(); renderHq(); };
   $('flux').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeFlux(); });
   $('flux-ok').onclick = acceptFlux;
+  $('mdw').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeMdw(); });   // 3.8 (v040): the Bigger brain's licence
+  $('mdw-ok').onclick = acceptMdw;
   pick('detail', (v) => { S.form.ref = v; });
   pick('vsizes', (v) => { S.vform.size = v; });
   pick('vlen', (v) => { S.vform.len = Number(v); });
@@ -3002,11 +3318,12 @@ function init() {
   // v019: the queue button in the header, Settings > Assistant
   for (const id of ['c-queue', 'as-queue', 's-queue']) $(id).onclick = () => { if (CH) CH.openQueue(); };
   $('s-research').addEventListener('change', (e) => { AS.research = e.target.checked; ls.set('pf.app.research', AS.research); if (AG) AG.research = AS.research ? RS : null; });
+  if ($('s-brain4')) $('s-brain4').addEventListener('change', (e) => { ls.set('pf.app.brain4Use', e.target.checked ? null : false); renderAssistantSettings(); });   // 3.8 (v040): on = the default
   $('s-review').addEventListener('change', (e) => { AS.review = e.target.checked; ls.set('pf.app.review', AS.review); if (AG) AG.hooks.review = AS.review; });
-  $('brainmode').addEventListener('click', (e) => { const b = e.target.closest('[role="radio"]'); if (b) { setBrainMode(b.dataset.v); radio($('brainmode'), AS.brainMode); toast(AS.brainMode === 'lean' ? 'The assistant loads lighter from its next chat' : 'The assistant loads in full from its next chat'); } });
+  $('brainmode').addEventListener('click', (e) => { const b = e.target.closest('[role="radio"]'); if (b) { setBrainMode(b.dataset.v); ls.set('pf.app.brainModeBy', 'user'); ls.set(FULL_FAILS, 0); radio($('brainmode'), AS.brainMode); toast(AS.brainMode === 'lean' ? 'Juli loads lighter from its next chat' : 'Juli loads in full from its next chat'); } });
   // v021: the phone's own KB (every lookup kept for good): its count, and Clear (the KB, the 14-day cache, the misses)
-  $('s-kbclear').onclick = () => openSheet('Clear what the assistant has looked up?', 'The facts it looked up on Wikipedia and Fandom are kept on this phone, so asking again is instant. Clearing them means the next question looks things up again.', 'Clear', async () => {
-    try { if (RS) await RS.clearAll(); toast('Cleared what the assistant looked up'); } catch (e) { toast("Couldn't clear it"); }
+  $('s-kbclear').onclick = () => openSheet('Clear what Juli has looked up?', 'The facts it looked up on Wikipedia and Fandom are kept on this phone, so asking again is instant. Clearing them means the next question looks things up again.', 'Clear', async () => {
+    try { if (RS) await RS.clearAll(); toast('Cleared what Juli looked up'); } catch (e) { toast("Couldn't clear it"); }
     renderKB();
   });
   $('s-qclear').onclick = async () => {

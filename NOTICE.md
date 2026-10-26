@@ -20,6 +20,16 @@ notices). Nothing here is legal advice.
   > OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH USE OF THIS MODEL.
   The p0pc0rn project modified it: converted and quantized from the original weights. This is not an official Black Forest Labs product,
   and Black Forest Labs has not endorsed or approved it. Its text encoder, Qwen3-8B (Alibaba Cloud), is Apache-2.0.
+- **NVIDIA Nemotron 3.5 Bolt E4B** ("Bigger brain", the assistant's optional second model; NVIDIA Corporation): NVIDIA's model card says
+  "Use of this model is governed by the OpenMDW License Agreement, version 1.1. This model has been post-trained on the Google Gemma 4
+  model, and use of the Google Gemma 4 model is governed by Apache License, Version 2.0". The app shows the licence once before it
+  downloads. The p0pc0rn project modified it: converted and quantized from the original weights. This is not an official NVIDIA
+  product, and NVIDIA has not endorsed it. Details and sources: licenses/NOTICE-Nemotron-Bolt-E4B.md.
+  - The full agreement: licenses/LICENSE-OpenMDW-1.1.txt, the publisher's own text (github.com/OpenMDW/OpenMDW, 1.1/LICENSE.OpenMDW-1.1
+    at commit 9067ba54b2f84bc9e15a05734f570ec88e9f445d, the link NVIDIA's card gives; sha256
+    2ab44b68365473c112f5092211a38f231cb23e50de68b75a13369adbd76a74df).
+  - In plain words: keep a copy of the agreement and NVIDIA's notices with any copy of the model; it puts no limits on what you
+    make with it.
 - **Modified files:** every model file p0pc0rn downloads carries this notice:
   "Modified by the p0pc0rn project: converted and quantized from the original weights." They are not the original files.
 - **Starter knowledge pack:** contains text from Wikipedia, available under CC BY-SA 4.0. The pack is licensed CC BY-SA 4.0; the
@@ -33,6 +43,10 @@ notices). Nothing here is legal advice.
 - Qwen3-4B (Klein's text encoder) and Qwen3-Embedding-0.6B: Alibaba Cloud, Apache-2.0.
 - SANA-Video 2.0 5B: Copyright 2024 Nvidia, Apache-2.0.
 - Gemma 4 E2B-it (the assistant): Google, Apache-2.0 (not the Gemma Terms of Use).
+- Gemma 4 E2B-it MTP drafter ("faster replies", the assistant's add-on): Google, Apache-2.0.
+- NVIDIA Nemotron 3.5 Bolt E4B ("Bigger brain"): NVIDIA Corporation, OpenMDW License Agreement 1.1; post-trained from Google's
+  Gemma 4 E4B-it (Apache-2.0).
+- Gemma 4 E4B-it MTP drafter (the Bigger brain's drafter): Google, Apache-2.0.
 - LTX-2.3: Lightricks, LTX-2 Community License Agreement.
 - ACE-Step 1.5 (music) and its 5 Hz lyrics planner: Copyright (c) 2026 ACEStep, MIT; their Qwen3-based parts Apache-2.0.
 - Qwen3-TTS (voice): Copyright 2026 Alibaba Cloud, Apache-2.0.
@@ -42,9 +56,13 @@ notices). Nothing here is legal advice.
   Copyright (c) 2022 OpenAI, MIT; sd-vae-ft-mse, Stability AI, MIT (its card names no copyright holder); MediaPipe face models,
   Google, Apache-2.0.
 - Tokenizers in the engine: Apache-2.0 (engine/LICENSE-tokenizers.txt).
+- p5.js 1.11.13 (the Apps tab's drawing library, makeapp/p5.min.js, unmodified): the Processing Foundation and p5.js contributors,
+  LGPL-2.1 (licenses/NOTICE-p5js.md has the source link).
 
 ## Full licence texts
 
 Apache-2.0: licenses/LICENSE-Apache-2.0.txt (and the per-model copies next to it). MIT: licenses/LICENSE-ACE-Step-1.5.txt,
 LICENSE-MuseTalk-MIT.txt, LICENSE-Whisper-MIT.txt, LICENSE-sd-vae-ft-mse-MIT.txt, LICENSE-TOON-MIT.txt. Gemma: GEMMA_TERMS_OF_USE.txt,
 GEMMA_PROHIBITED_USE_POLICY.txt, NOTICE-Gemma.txt. LTX-2: LICENSE-LTX-2.txt. CC BY-SA 4.0: the starter pack's LICENSE.
+LGPL-2.1: licenses/LICENSE-p5js-LGPL-2.1.txt. OpenMDW-1.1 (the Bigger brain): licenses/LICENSE-OpenMDW-1.1.txt and
+licenses/NOTICE-Nemotron-Bolt-E4B.md.

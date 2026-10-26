@@ -1,3 +1,6 @@
+// 3.8 (from the phone bench v036, 10-23): lops.js + kv_heads > 1 (qkrope / attnDec over head-major KV caches [kvh][rows][D]) + hidden > 2048 (a gemv
+// without kPer keeps ONE split with the whole K in workgroup memory; normadd's row buffer is sized to D). kv_heads 1 and hidden
+// <= 2048 = the arithmetic before it, in the same order; the changed kernels have new pipeline keys.
 // Gemma 4 E2B decode / prefill kernels (WGSL) for the p0pc0rn LLM module.  Own file: the shared engine ops stay byte-identical.
 // Rules carried over from the Klein/SANA work: f32 residual + f32 norm statistics; f32 accumulate in every text-model GEMV/GEMM;
 // never write single lanes of a shared vector from different threads (Metal RMW clobber); every dispatch sized well under ~0.2 s.
@@ -15,6 +18,7 @@
 //   argmax   final reduction of the per-tile maxima
 'use strict';
 import { P } from '../core/gpu.js';
+import { kxPick, gemvV5 } from './lopsx.js';   // 3.8 (bench v041): the phone's kernel picks
 
 const bw = (b, off = 0, size = null) => ({ buffer: b, offset: off, size: Math.floor((size == null ? b._pf - off : size) / 4) * 4 });
 const dummy = (g, i) => { g._ldummies = g._ldummies || []; return g._ldummies[i] || (g._ldummies[i] = g.buffer(256, 'ldummy' + i)); };
@@ -32,7 +36,7 @@ function gemvCode(c) {
 @group(0) @binding(4) var<storage, read> NW: array<f32>;
 @group(0) @binding(5) var<storage, read> EV: array<f32>;
 @group(0) @binding(6) var<storage, read_write> MX: array<f32>;
-var<workgroup> xs: array<f32, ${KCH}>;
+var<workgroup> xs: array<f32, ${c.kch || KCH}>;
 var<workgroup> red: array<f32, 256>;
 var<workgroup> mxv: array<f32, 64>;
 var<workgroup> mxi: array<u32, 64>;`);
@@ -104,12 +108,15 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
  *       y: {buf}, ldy, kPer, stat: {buf, off(floats)} (rms) | src: {n, ld} (sum/pleg partials), norm: {buf, off(floats)}, ev: {buf, off}, mx: {buf} }
  *  geglu: N = the gate rows (the up rows follow at N .. 2N); returns the number of splits written */
 export function gemv(g, a) {
+  { const o = kxPick(a); if (o) return gemvV5(g, a, o); }   // 3.8 (bench v041): this shape's pick (lopsx.js)
   const enc = a.w.enc, w = enc === 'q4g32a.t64' ? 'q4' : enc === 'q8g64s.t64' ? 'q8' : null;
   if (!w) throw new Error('gemv: encoding ' + enc);
-  const cfg = { w, pro: a.pro || 'raw', epi: a.epi || 'store' };
-  const pipe = g.pipeline(`lgemv.${cfg.w}.${cfg.pro}.${cfg.epi}`, () => gemvCode(cfg));
   const K = a.K, N = a.N, G = w === 'q4' ? 32 : 64;
-  const kPer = Math.min(KCH, a.kPer || K); if (kPer % G) throw new Error('gemv: kPer must be a multiple of ' + G);
+  // v036: K > 2048 without a kPer = ONE split with the whole K in workgroup memory (its consumers read one split, as at K <= 2048)
+  const kch = !a.kPer && K > KCH ? Math.ceil(K / 256) * 256 : KCH; if (kch > 3072) throw new Error('gemv: K ' + K + ' needs a kPer');
+  const cfg = { w, pro: a.pro || 'raw', epi: a.epi || 'store', kch };
+  const pipe = g.pipeline(`lgemv.${cfg.w}.${cfg.pro}.${cfg.epi}` + (kch !== KCH ? '.' + kch : ''), () => gemvCode(cfg));
+  const kPer = Math.min(kch, a.kPer || K); if (kPer % G) throw new Error('gemv: kPer must be a multiple of ' + G);
   const nsplit = Math.ceil(K / kPer); if (cfg.epi !== 'store' && nsplit > 1) throw new Error('gemv: ' + cfg.epi + ' needs one split');
   if (N % 64) throw new Error('gemv: N % 64');
   const wG = a.w.cols / G, woff = (a.w.off || 0);
@@ -133,7 +140,7 @@ export function gemv(g, a) {
 }
 
 // ================================================================================================================ normadd (+ stat)
-const NORMADD = `
+const NORMADD = (TV) => `
 struct P { D: u32, nsrc: u32, ldp: u32, eps: f32, wOff: u32, scale: f32, statOff: u32, mode: u32 };
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> T: array<f32>;
@@ -141,7 +148,7 @@ struct P { D: u32, nsrc: u32, ldp: u32, eps: f32, wOff: u32, scale: f32, statOff
 @group(0) @binding(3) var<storage, read_write> X: array<f32>;
 @group(0) @binding(4) var<storage, read_write> ST: array<f32>;
 var<workgroup> red: array<f32, 256>;
-var<workgroup> tv: array<f32, 2048>;
+var<workgroup> tv: array<f32, ${TV}>;
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) t: u32) {
   let m = wid.x; let xb = m * p.D;
@@ -164,7 +171,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
 /** per row m < M: x_m = (x_m + rms(sum_j t_j,m) * w) * scale (mode 0) or x_m = sum_j t_j,m (mode 1); ST[statOff + m] = rstd(x_m).
  *  t: {buf, n (splits), ld (floats between splits)} rows of D */
 export function normadd(g, a) {
-  g.runner.dispatch(g.pipeline('lnormadd', () => NORMADD), [bw(a.t.buf), bw(a.w ? a.w.buf : dummy(g, 0)), bw(a.x.buf), bw(a.st.buf)],
+  g.runner.dispatch(g.pipeline(a.D > 2048 ? 'lnormadd.' + Math.ceil(a.D / 256) * 256 : 'lnormadd', () => NORMADD(a.D > 2048 ? Math.ceil(a.D / 256) * 256 : 2048)), [bw(a.t.buf), bw(a.w ? a.w.buf : dummy(g, 0)), bw(a.x.buf), bw(a.st.buf)],
     P().u32(a.D).u32(a.t.n || 1).u32(a.t.ld || a.D * (a.M || 1)).f32(a.eps || 1e-6).u32(a.w ? a.w.off || 0 : 0).f32(a.scale == null ? 1 : a.scale).u32(a.st.off || 0).u32(a.mode || 0).ab,
     [a.M || 1, 1], 2e-5 * (a.M || 1));
 }
@@ -172,7 +179,7 @@ export function normadd(g, a) {
 // ================================================================================================================ qkrope (decode)
 const QKROPE = `
 enable f16;
-struct P { D: u32, nq: u32, hasKV: u32, nsrc: u32, ldp: u32, pos: u32, eps: f32, qwOff: u32, kwOff: u32, npairs: u32, ropeOff: u32, kvRow: u32 };
+struct P { D: u32, nq: u32, hasKV: u32, nsrc: u32, ldp: u32, pos: u32, eps: f32, qwOff: u32, kwOff: u32, npairs: u32, ropeOff: u32, kvRow: u32, nkv: u32, kvLen: u32 };
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> S: array<f32>;      // split partials [nsrc][ldp]: q (nq * D) | k (D) | v (D)
 @group(0) @binding(2) var<storage, read> NW: array<f32>;
@@ -194,11 +201,13 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
   for (var k = 128u; k > 0u; k = k >> 1u) { if (t < k) { red[t] = red[t] + red[t + k]; } workgroupBarrier(); }
   let rs = inverseSqrt(red[0] / f32(p.D) + p.eps);
   let half = p.D / 2u;
-  if (h == p.nq + 1u) {                // v: unweighted RMS, no rope
-    for (var i = t; i < half; i = i + 256u) { VC[(p.kvRow * p.D) / 2u + i] = pack2x16float(vec2<f32>(hv[2u * i], hv[2u * i + 1u]) * rs); }
+  let isV = h >= p.nq + p.nkv; let kvh = select(h - p.nq, h - p.nq - p.nkv, isV);   // v036: k heads nq .. nq + nkv - 1, then the v heads
+  let cb = ((kvh * p.kvLen + p.kvRow) * p.D) / 2u;                                   // head-major cache [kvh][kvLen][D]
+  if (isV) {                // v: unweighted RMS, no rope
+    for (var i = t; i < half; i = i + 256u) { VC[cb + i] = pack2x16float(vec2<f32>(hv[2u * i], hv[2u * i + 1u]) * rs); }
     return;
   }
-  let wo = select(p.qwOff, p.kwOff, h == p.nq);
+  let wo = select(p.qwOff, p.kwOff, h >= p.nq);
   for (var d = t; d < half; d = d + 256u) {
     let a = hv[d] * rs * NW[wo + d]; let b = hv[d + half] * rs * NW[wo + d + half];
     var c = 1.0; var sn = 0.0;
@@ -207,25 +216,25 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
     if (h < p.nq) { Q[base + d] = lo; Q[base + d + half] = hi; }
     else { hv[d] = lo; hv[d + half] = hi; }
   }
-  if (h == p.nq) {
+  if (h >= p.nq) {
     workgroupBarrier();
-    for (var i = t; i < half; i = i + 256u) { KC[(p.kvRow * p.D) / 2u + i] = pack2x16float(vec2<f32>(hv[2u * i], hv[2u * i + 1u])); }
+    for (var i = t; i < half; i = i + 256u) { KC[cb + i] = pack2x16float(vec2<f32>(hv[2u * i], hv[2u * i + 1u])); }
   }
 }`;
 /** s: {buf, n, ld} partials of [q | k | v]; q -> Q f32 [nq][D]; k, v -> f16 cache rows kvRow (when hasKV) */
 export function qkrope(g, a) {
-  g.runner.dispatch(g.pipeline('lqkrope', () => QKROPE),
+  g.runner.dispatch(g.pipeline('lqkropeX', () => QKROPE),
     [bw(a.s.buf), bw(a.norm.buf), bw(a.rope.buf), bw(a.q.buf), bw(a.kc ? a.kc.buf : dummy(g, 1)), bw(a.vc ? a.vc.buf : dummy(g, 2))],
     P().u32(a.D).u32(a.nq).u32(a.hasKV ? 1 : 0).u32(a.s.n || 1).u32(a.s.ld).u32(a.pos).f32(a.eps || 1e-6).u32(a.qw).u32(a.kw || 0)
-      .u32(a.npairs).u32(a.rope.off || 0).u32(a.kvRow).ab,
-    [a.nq + (a.hasKV ? 2 : 0), 1], 2e-5);
+      .u32(a.npairs).u32(a.rope.off || 0).u32(a.kvRow).u32(a.nkv || 1).u32(a.kvLen || 0).ab,
+    [a.nq + (a.hasKV ? 2 * (a.nkv || 1) : 0), 1], 2e-5);
 }
 
 // ================================================================================================================ decode attention (MQA, split-K)
 export const ATT_CK = 64;
 const ATTDEC = `
 enable f16;
-struct P { D: u32, nh: u32, kStart: u32, kEnd: u32, nchunk: u32, ring: u32, pad1: u32, pad2: u32 };
+struct P { D: u32, nh: u32, kStart: u32, kEnd: u32, nchunk: u32, ring: u32, nkv: u32, kvLen: u32 };
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var<storage, read> Q: array<f32>;       // [nh][D]
 @group(0) @binding(2) var<storage, read> KC: array<vec4<f16>>; // [S][D]
@@ -242,7 +251,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
   for (var hh = hg; hh < p.nh; hh = hh + 4u) {
     var s = -3.0e38;
     if (j < nk) {
-      s = 0.0; let kb = krow(j0 + j) * D4; let qb = hh * p.D;
+      s = 0.0; let kb = ((hh / (p.nh / p.nkv)) * p.kvLen + krow(j0 + j)) * D4; let qb = hh * p.D;   // v036: the KV head of query head hh
       for (var d = 0u; d < D4; d = d + 1u) { let kv = vec4<f32>(KC[kb + d]); s = s + dot(kv, vec4<f32>(Q[qb + 4u * d], Q[qb + 4u * d + 1u], Q[qb + 4u * d + 2u], Q[qb + 4u * d + 3u])); }
     }
     sc[hh * 64u + j] = s;
@@ -262,9 +271,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
   for (var dp = t; dp < D2; dp = dp + 256u) {
     var acc: array<vec2<f32>, 8>;
     for (var hh = 0u; hh < 8u; hh = hh + 1u) { acc[hh] = vec2<f32>(0.0); }
+    let hpg = p.nh / p.nkv;
     for (var k = 0u; k < nk; k = k + 1u) {
-      let v = vec2<f32>(VC[krow(j0 + k) * D2 + dp]);
-      for (var hh = 0u; hh < p.nh; hh = hh + 1u) { acc[hh] = acc[hh] + sc[hh * 64u + k] * v; }
+      for (var gq = 0u; gq < p.nkv; gq = gq + 1u) {   // v036: each KV head's V row serves its own hpg query heads (nkv 1 = v052's order)
+        let v = vec2<f32>(VC[(gq * p.kvLen + krow(j0 + k)) * D2 + dp]);
+        for (var hh = gq * hpg; hh < (gq + 1u) * hpg; hh = hh + 1u) { acc[hh] = acc[hh] + sc[hh * 64u + k] * v; }
+      }
     }
     for (var hh = 0u; hh < p.nh; hh = hh + 1u) { let o = pb + 2u * p.nh + hh * p.D + 2u * dp; PT[o] = acc[hh].x; PT[o + 1u] = acc[hh].y; }
   }
@@ -293,8 +305,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
 export function attnDec(g, a) {
   const nchunk = Math.ceil((a.kEnd - a.kStart) / ATT_CK);
   if (nchunk > 256) throw new Error('attnDec: context too long for one combine (' + nchunk + ' chunks)');
-  g.runner.dispatch(g.pipeline('lattdec', () => ATTDEC), [bw(a.q.buf), bw(a.kc.buf), bw(a.vc.buf), bw(a.part.buf)],
-    P().u32(a.D).u32(a.nh).u32(a.kStart).u32(a.kEnd).u32(nchunk).u32(a.ring || 0).u32(0).u32(0).ab, [nchunk, 1], 3e-5 * nchunk);
+  g.runner.dispatch(g.pipeline('lattdecX', () => ATTDEC), [bw(a.q.buf), bw(a.kc.buf), bw(a.vc.buf), bw(a.part.buf)],
+    P().u32(a.D).u32(a.nh).u32(a.kStart).u32(a.kEnd).u32(nchunk).u32(a.ring || 0).u32(a.nkv || 1).u32(a.kvLen || 0).ab, [nchunk, 1], 3e-5 * nchunk);
   g.runner.dispatch(g.pipeline('lattcomb', () => ATTCOMB), [bw(a.part.buf), bw(a.out.buf)],
     P().u32(a.D).u32(a.nh).u32(nchunk).u32(0).ab, [a.nh, 1], 2e-5);
 }
@@ -365,6 +377,29 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
 /** ple[m][l][:] = (rms(proj[m][l] * projScale) * w + tok[m][l]) * 2^-0.5;  rows = n tokens */
 export function plefin(g, a) {
   g.runner.dispatch(g.pipeline('lplefin', () => PLEFIN), [bw(a.s.buf), bw(a.norm.buf, a.norm.off || 0, a.norm.bytes || null), bw(a.tok.buf), bw(a.out.buf)],
+    P().u32(a.nl).u32(a.dp).u32(a.s.n || 1).u32(a.s.ld).f32(a.projScale).f32(a.eps || 1e-6).f32(Math.SQRT1_2).u32(a.rowIn || 0).ab, [a.nl, a.n || 1], 2e-5);
+}
+// v048: plefin IN PLACE: O holds the token rows on input and the PLE rows on output (each thread reads its element, then writes it:
+// plefin's arithmetic, so the result is bit-identical; the prompt read-in saves its separate token-rows buffer)
+const PLEFIN_IP = `
+struct P { nl: u32, dp: u32, nsrc: u32, ldp: u32, projScale: f32, eps: f32, inScale: f32, rowIn: u32 };
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var<storage, read> S: array<f32>;       // projection partials [nsrc][ldp] (= nl * dp), row-major per token: rowIn * ldp
+@group(0) @binding(2) var<storage, read> NW: array<f32>;      // per_layer_projection_norm [dp]
+@group(0) @binding(3) var<storage, read_write> O: array<f32>; // in: the token rows (x sqrt(dp)), out: [rows][nl * dp]
+var<workgroup> red: array<f32, 256>;
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) t: u32) {
+  let l = wid.x; let m = wid.y; let b = l * p.dp;
+  var v = 0.0;
+  if (t < p.dp) { for (var j = 0u; j < p.nsrc; j = j + 1u) { v = v + S[j * p.ldp + (p.rowIn + m) * p.nl * p.dp + b + t]; } v = v * p.projScale; }
+  red[t] = v * v; workgroupBarrier();
+  for (var k = 128u; k > 0u; k = k >> 1u) { if (t < k) { red[t] = red[t] + red[t + k]; } workgroupBarrier(); }
+  let rs = inverseSqrt(red[0] / f32(p.dp) + p.eps);
+  if (t < p.dp) { let o = m * p.nl * p.dp + b + t; O[o] = (v * rs * NW[t] + O[o]) * p.inScale; }
+}`;
+export function plefinIP(g, a) {
+  g.runner.dispatch(g.pipeline('lplefinip', () => PLEFIN_IP), [bw(a.s.buf), bw(a.norm.buf, a.norm.off || 0, a.norm.bytes || null), bw(a.out.buf)],
     P().u32(a.nl).u32(a.dp).u32(a.s.n || 1).u32(a.s.ld).f32(a.projScale).f32(a.eps || 1e-6).f32(Math.SQRT1_2).u32(a.rowIn || 0).ab, [a.nl, a.n || 1], 2e-5);
 }
 

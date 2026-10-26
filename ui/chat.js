@@ -100,13 +100,13 @@ export function createChat(api) {
     const ag = !api.consented() && ready; $('as-agree').hidden = !ag;
     const err = api.agentError(), ro = api.readOnly();
     $('as-note').hidden = !(err || ro);
-    if (err || ro) $('as-note-text').textContent = ro ? 'p0pc0rn is open in another tab. Chat there, or close it and reopen this one.' : `The assistant couldn't start (${err}). Reload p0pc0rn to try again.`;
+    if (err || ro) $('as-note-text').textContent = ro ? 'p0pc0rn is open in another tab. Chat there, or close it and reopen this one.' : `Juli couldn't start (${err}). Reload p0pc0rn to try again.`;
     if (ready) return;
     const live = u.sub !== 'idle' || u.have > 0;
-    $('as-need-title').textContent = { downloading: 'Downloading the assistant', pausing: 'Pausing…', paused: 'Download paused', dropped: 'Paused — connection dropped', failed: 'Download stopped' }[u.sub] || 'Get the assistant';
+    $('as-need-title').textContent = { downloading: 'Downloading Juli', pausing: 'Pausing…', paused: 'Download paused', dropped: 'Paused — connection dropped', failed: 'Download stopped' }[u.sub] || 'Get Juli';
     $('as-need-text').textContent = u.sub === 'failed' ? "Couldn't reach the model server. Check Wi-Fi (and that you are signed in to it), then Resume."
       : st.error && !u.have ? "Couldn't reach the model server. Connect to Wi-Fi, then try Download."
-      : `The assistant (${m.what}) writes the prompts for you, and a song's style and lyrics, then makes them with the picture, video and music models. It runs on this phone: one-time download · ${api.fmtSize(u.total)} · Wi-Fi and a charger recommended; keep this screen open.`;
+      : `Juli (${m.what}) writes the prompts for you, and a song's style and lyrics, then makes them with the picture, video and music models. It runs on this phone: one-time download · ${api.fmtSize(u.total)} · Wi-Fi and a charger recommended; keep this screen open.`;
     $('as-need-bar').hidden = !live; $('as-need-fill').style.transform = `scaleX(${api.dlPct(u).toFixed(4)})`;
     $('as-need-line').hidden = !live; $('as-need-line').textContent = api.dlLine(u, true);
     const b = $('as-need-go'), dl = u.sub === 'downloading';
@@ -184,11 +184,11 @@ export function createChat(api) {
     })();
     try { await C.setupBusy; } finally { C.setupBusy = null; }
   }
-  const WELCOME = "Hi, I'm the p0pc0rn assistant. I write the prompts for you, and a song's style and lyrics, then make them with the picture, video and music models, here on this phone. First I need a one-time download: the assistant and the starter knowledge.";
+  const WELCOME = "Hi, I'm Juli, p0pc0rn's assistant. I write the prompts for you, and a song's style and lyrics, then make them with the picture, video and music models, here on this phone. First I need a one-time download: Juli and the starter knowledge.";
   const READY = "I'm ready. Ask me for a song, a picture or a clip.";
   const has = (k) => (k === 'assist' ? api.done('brain') : k === 'music' ? api.musicDl().ready : api.done(k));
   const offerable = (k) => k === 'assist' || k === 'music' || !!(api.E && api.E[k]);   // the models this phone's app can download
-  const nameOf = (k) => (k === 'assist' || k === 'brain' ? 'the assistant' : k === 'music' ? 'music' : ['planner', 'reader', 'starter'].includes(k) ? `the ${api.MODELS[k].noun}` : `the ${api.MODELS[k].noun} model`);
+  const nameOf = (k) => (k === 'assist' || k === 'brain' ? 'Juli' : k === 'music' ? 'music' : ['planner', 'reader', 'starter'].includes(k) ? `the ${api.MODELS[k].noun}` : `the ${api.MODELS[k].noun} model`);
   const listOf = (ks) => ks.map(nameOf).join(' and ');
   const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const freeLine = () => { const p = api.phone ? api.phone() : {}; return `Wi-Fi and a charger recommended; keep this screen open.${p.free != null ? ` ${api.fmtSize(Math.max(0, p.free))} free for p0pc0rn on this phone.` : ''}`; };
@@ -242,9 +242,9 @@ export function createChat(api) {
   /** the first message: what I do, the two parts with the sizes the packs report, the phone's notes, one button for both, Not now */
   function welcomeBody(b) {
     const M = api.MODELS, sz = (k) => api.fmtSize(api.S.dl[k].total || M[k].total), p = api.phone ? api.phone() : {};
-    b.append(mk('p', 'msg-text', "Hi, I'm the p0pc0rn assistant. I write the prompts for you, and a song's style and lyrics, then make them with the picture, video and music models, here on this phone."),
+    b.append(mk('p', 'msg-text', "Hi, I'm Juli, p0pc0rn's assistant. I write the prompts for you, and a song's style and lyrics, then make them with the picture, video and music models, here on this phone."),
       mk('p', 'msg-text', 'First I need a one-time download:'));
-    const ul = mk('ul', 'as-parts'); ul.append(mk('li', null, `The assistant (${M.brain.what}) · ${sz('brain')}`));
+    const ul = mk('ul', 'as-parts'); ul.append(mk('li', null, `Juli (${M.brain.what}) · ${sz('brain')}`));
     if (api.E && api.E.starter) ul.append(mk('li', null, `Starter knowledge (${M.starter.what}) · ${sz('starter')}${api.done('starter') ? ' · on this phone' : ''}`));
     b.append(ul, mk('p', 'footnote dim as-free', freeLine()));
     if (p.homeApp && !p.android) b.append(mk('p', 'footnote dim', "Already downloaded it in Safari? iPhone keeps the Home Screen app's storage separate, so this icon needs its own copy."));
@@ -323,6 +323,12 @@ export function createChat(api) {
     if (kind === 'status') {
       b.append(mk('p', 'msg-text footnote', m.text));
       if (m.jobId) { const c = card(m.jobId); if (c) b.append(c); }
+      return b;
+    }
+    if (kind === 'notice') {   // 3.8: a notice an app posted (Weather Alerts, Wildfire Watch...): plain text, labelled with the app; never sent to Juli's model
+      b.classList.add('sev-' + (['warning', 'watch'].includes(m.severity) ? m.severity : 'info'));
+      const h = mk('p', 'msg-notice-title'); h.append(svg(m.severity === 'info' ? 'i-apps' : 'i-alert', 'ic msg-ic'), mk('span', null, m.title || 'Notice'));
+      b.append(h); if (m.text) b.append(mk('p', 'msg-text', m.text)); b.append(mk('p', 'footnote dim msg-from', 'From the app ' + (m.app || '') + ' · ' + new Date(m.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })));
       return b;
     }
     if (kind === 'welcome') { welcomeBody(b); return b; }   // onboarding: drawn from the app's state, so the sizes and buttons stay current
@@ -453,10 +459,13 @@ export function createChat(api) {
     const P = j.params || {};
     if (j.kind === 'say') return `Voice · ${P.name || 'Cast'} says`;   // p0pc0rn Cast
     if (j.kind === 'talk' || j.kind === 'lipsync') return `Lip-sync · ${P.name || 'Cast'} (experimental)`;
-    if (j.kind === 'chat') return P.purpose && P.purpose !== 'turn' ? ({ songwrite: 'Writing the song', shotplan: 'Planning the shots', mvreview: 'Checking the shots', say: 'Voice' }[P.purpose] || 'Assistant') : `Assistant · “${(j.title || P.text || '').slice(0, 40)}”`;
+    if (j.kind === 'chat') return P.purpose && P.purpose !== 'turn' ? ({ songwrite: 'Writing the song', shotplan: 'Planning the shots', mvreview: 'Checking the shots', say: 'Voice' }[P.purpose] || 'Juli') : `Juli · “${(j.title || P.text || '').slice(0, 40)}”`;
     if (j.kind === 'song') return (P.title ? `Song · “${P.title}”` : 'Song') + (P.seconds ? ` · ${Math.round(P.seconds)} s` : '');   // v032: the length asked for
     if (j.kind === 'musicvideo' || j.kind === 'mvflf') return P.title ? `Music video · “${P.title}”` : 'Music video';
     if (j.kind === 'mvplan') return 'Writing the storyboard';
+    if (j.kind === 'makeapp') return `Make an app · “${(j.title || '').slice(0, 40)}”`;   // 3.8
+    if (j.kind === 'appask') return `Juli · a question from ${P.app || 'an app'}`;
+    if (j.kind === 'bench') return `Benchmark · ${j.title || ''}`;
     const n = api.NOUN[j.kind] || j.kind; return `${n[0].toUpperCase()}${n.slice(1)}${typeof j.tag === 'string' && j.tag.startsWith('create:') ? ' · from Create' : ''}`;
   };
   /** the job a family is busy with now (a music video: its running or next part) */
@@ -479,7 +488,7 @@ export function createChat(api) {
     if (j.status === 'failed') return `Didn't finish${j.error && j.error.code ? ` (${j.error.code})` : ''}`;
     if (j.status === 'blocked') return j.error && j.error.code === 'NO_CONSENT' ? 'Waiting for the agreement' : 'Waiting for a download';
     if (f.status === 'running') {
-      if (f.kind === 'chat') return 'The assistant is thinking';
+      if (f.kind === 'chat') return 'Juli is thinking';
       const v = viewOf(f); let t = api.caption(v);
       if (f !== j) { const kids = q.descendants(j.id).filter((x) => x.kind !== 'chat'), dn = kids.filter((x) => x.status === 'done').length; t = `${label(f)} · ${t} · ${dn} of ${kids.length} parts done`; }
       return t;
@@ -583,7 +592,7 @@ export function createChat(api) {
   async function send(textArg) {
     const inp = $('as-in'), text = String(textArg != null ? textArg : inp.value).trim();
     if (!text) return;
-    if (!AG()) return api.toast(api.agentError() ? "The assistant couldn't start. Reload p0pc0rn." : 'The assistant is still starting.');
+    if (!AG()) return api.toast(api.agentError() ? "Juli couldn't start. Reload p0pc0rn." : 'Juli is still starting.');
     const local = localAnswer(text);   // onboarding: answered here, in code (no model; nothing is made)
     if (local) return localTurn(text, local, textArg == null);
     if (!api.consented()) return api.openLesson();   // anything that can make something waits for the agreement
@@ -622,7 +631,7 @@ export function createChat(api) {
     const q = Q(); if (!q) return;
     const { live, done, runRoot } = families(), list = $('q-list'), dn = $('q-done');
     list.textContent = ''; dn.textContent = '';
-    if (!live.length) list.append(mk('p', 'li footnote dim', 'Nothing is waiting. Make something on Create, or ask the assistant.'));
+    if (!live.length) list.append(mk('p', 'li footnote dim', 'Nothing is waiting. Make something on Create, or ask Juli.'));
     const movable = live.filter((t) => t.id !== runRoot && t.kind !== 'chat');
     live.forEach((t) => {
       const r = mk('div', 'qrow'); r.dataset.job = t.id;
@@ -701,5 +710,5 @@ export function createChat(api) {
   /** v021: what the assistant is doing right now ("Looking up “Golden Gate Bridge”…"), shown in the thinking bubble */
   function activity(sid, text) { if (sid !== C.sid) return; C.activity = text || ''; if (C.shown) renderPending(); }
   function research(sid, jid, rows) { if (sid !== C.sid) return; C.rl = { jid, rows }; if (C.shown) renderPending(); }   // v026.2
-  return { render, renderDl, show, hide, onMessage, stream, progress, queueChanged, openQueue, closeQueue, newChat, send, activity, research, get sid() { return C.sid; } };
+  return { render, renderDl, show, hide, onMessage, stream, progress, queueChanged, openQueue, closeQueue, newChat, send, activity, research, session: ensureSession, get sid() { return C.sid; } };
 }

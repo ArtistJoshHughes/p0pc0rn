@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- v027.3 (security review M2): what this page may load and talk to: its own files, the model packs on Hugging Face (and its CDN), and the lookups on Wikipedia, Wikimedia and Fandom; inline scripts by hash (csp_hashes.py). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-qqCPNeJmDeaW59jeNXVjC8rP+xmqGR62X5rLL9FTqn4='; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<!-- v027.3 (security review M2): what this page may load and talk to: its own files, the model packs on Hugging Face (and its CDN), and the lookups on Wikipedia, Wikimedia and Fandom; inline scripts by hash (csp_hashes.py).
+     3.8: + the sources that apps made in p0pc0rn may read, only for an app the person allowed (makeapp/sources.js: NWS, Open-Meteo place search, NIFC wildfires, CoinGecko),
+     and frame-src 'self' for the apps' sandbox page (makeapp/frame.html, iframe sandbox="allow-scripts": no network of its own, no storage, no access to this page). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-UXv8gDTrR7EN2aBKhbQrFFcKzMY8/Wc9OaYoFQhDHp0='; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com https://api.weather.gov https://geocoding-api.open-meteo.com https://services3.arcgis.com https://api.coingecko.com; frame-src 'self'; child-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
@@ -18,7 +20,7 @@
 <!-- v026.1: after a planned fresh page the FIRST frame is the cover, never the start screen or the Create tab; the app takes it down
      once the same screen is back (20 s fallback). The marker is the app's own ('p0pc0rn:planned', read-only here); v026.7: only once the old page stamped it as it left.
      post-launch: the cover's style is in app.css (html.pf-fresh), a render-blocking stylesheet: the CSP allows no inline styles. -->
-<script>try { var pfp = JSON.parse(localStorage.getItem('p0pc0rn:planned') || 'null'); if (pfp && pfp.left && Date.now() - pfp.t < 600000) { document.documentElement.classList.add('pf-fresh');
+<script>try { var pfp = JSON.parse(localStorage.getItem('p0pc0rn:planned') || 'null'); if (pfp && pfp.left && Date.now() - pfp.t < 600000) { document.documentElement.classList.add('pf-fresh'); document.documentElement.setAttribute('data-fresh', String(pfp.stage || ''));
   setTimeout(function () { document.documentElement.classList.remove('pf-fresh'); }, 20000); } } catch (e) {}</script>
 <meta name="apple-mobile-web-app-title" content="p0pc0rn">
 <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
@@ -27,13 +29,13 @@
 <link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
 <title>p0pc0rn</title>
-<link rel="stylesheet" href="app.css?v=030">
+<link rel="stylesheet" href="app.css?v=042">
 <link rel="stylesheet" href="cast/cast.css">
 <!-- Engine bridge (classic script, exposes window.PF). Then the app (ES module, runs after parsing). -->
 <script src="gpuclamp.js"></script>
 <script src="config.js"></script>
 <script src="pocketflux.js"></script>
-<script type="module" src="app.js?v=030"></script>
+<script type="module" src="app.js?v=042"></script>
 </head>
 <body>
 <!-- Icon sprite: 24-unit grid, 1.5 stroke, round caps. -->
@@ -67,6 +69,7 @@
     <symbol id="i-queue" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14.5 6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
+    <symbol id="i-apps" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
     <symbol id="i-film" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="M7.5 5.5v13M16.5 5.5v13M3.5 12h4M16.5 12h4"/></symbol>
   </defs>
 </svg>
@@ -235,27 +238,55 @@
       </div>
     </section>
 
-    <section id="v-assistant" class="view chat-view" aria-label="Assistant" hidden>
+    <section id="v-assistant" class="view chat-view" aria-label="Juli" hidden>
       <div id="as-need" class="need" hidden>
-        <p class="headline" id="as-need-title">Get the assistant</p>
+        <p class="headline" id="as-need-title">Get Juli</p>
         <p class="footnote dim" id="as-need-text"></p>
         <div class="bar" id="as-need-bar"><i id="as-need-fill"></i></div>
         <p class="footnote dim num" id="as-need-line"></p>
         <button class="btn sm" id="as-need-go" type="button"><svg class="ic"><use href="#i-download"/></svg><span>Download</span></button>
       </div>
       <div id="as-agree" class="need" hidden>
-        <p class="headline">Before the assistant makes anything</p>
+        <p class="headline">Before Juli makes anything</p>
         <p class="footnote dim">A short lesson about copyright, trademarks and people's likeness, then one agreement. About two minutes.</p>
         <button class="btn sm" id="as-agree-go" type="button"><svg class="ic"><use href="#i-shield"/></svg><span>Start the lesson</span></button>
       </div>
       <p class="note warn" id="as-note" hidden><svg class="ic"><use href="#i-alert"/></svg><span id="as-note-text"></span></p>
       <div id="as-hello" class="as-hello" hidden>
         <p class="title">Ask for a song, a picture or a clip</p>
-        <p class="footnote dim">The assistant writes the prompt, the song's style and its lyrics for you, then the job waits its turn in the queue. Everything runs on this phone.</p>
+        <p class="footnote dim">Juli writes the prompt, the song's style and its lyrics for you, then the job waits its turn in the queue. Everything runs on this phone.</p>
         <div class="as-try" id="as-try"></div>
       </div>
       <div class="as-top" id="as-top"><button class="qlink" id="as-queue" type="button" hidden><svg class="ic"><use href="#i-queue"/></svg><span>Queue</span><svg class="ic chev"><use href="#i-chevron"/></svg></button><button class="mini" id="as-new" type="button" hidden>New chat</button></div>
       <div id="as-log" class="as-log" role="log" aria-live="polite" aria-label="Conversation"></div>
+    </section>
+
+    <section id="v-apps" class="view" aria-label="Apps" hidden>
+      <div class="apps-make">
+        <p class="headline">Make an app</p>
+        <p class="footnote dim">Your phone, with apps made for you. Say what you want: Juli picks a skeleton below, fills it in, and the app runs here, on this phone. Agentic apps keep working for you while p0pc0rn is open.</p>
+        <label class="vh" for="apps-in">Describe the app</label>
+        <textarea id="apps-in" rows="2" placeholder="A packing list for a camping weekend…" autocapitalize="sentences" enterkeyhint="go"></textarea>
+        <button class="btn cta" id="apps-make" type="button"><svg class="ic"><use href="#i-sparkle"/></svg><span>Make it</span></button>
+        <p class="apps-status footnote" id="apps-status" hidden></p>
+      </div>
+      <p class="label">My apps</p>
+      <div class="list" id="apps-mine"></div>
+      <p class="footnote dim pad" id="apps-mine-none">Apps you make or add show here.</p>
+      <p class="label">Agentic apps</p>
+      <p class="footnote dim pad">Juli works in these on her own while p0pc0rn is open: they look things up, re-check, keep a notebook on this phone and bring you what needs your eye. Only you confirm what they suggest.</p>
+      <div class="list" id="apps-agentic"></div>
+      <p class="label">Non-agentic apps</p>
+      <p class="footnote dim pad">Tools you use. Some also check a source on their own and post a notice in Juli’s chat.</p>
+      <div class="list" id="apps-tools"></div>
+      <p class="label">Skeletons</p>
+      <div class="list">
+        <label class="li link" for="apps-import" id="apps-import-row"><span>Import a skeleton (.p0skel.json)</span><svg class="ic"><use href="#i-chevron"/></svg></label>
+        <a class="li link" id="apps-guide" href="makeapp/Skeleton-Guide.md" download="p0pc0rn Skeleton Guide.md"><span>Download the Skeleton Guide</span><svg class="ic"><use href="#i-download"/></svg></a>
+      </div>
+      <input type="file" id="apps-import" accept=".json,application/json" class="vh" tabindex="-1">
+      <p class="footnote dim pad">Give the guide to an AI helper such as Claude, with a sentence or two about the app you want: it writes one skeleton file for you to import here. Every app runs in a locked sandbox and asks before it does anything.</p>
+      <p class="footnote dim pad">What apps can reach: only the sources an app you allowed asks for, read straight from this phone: the US National Weather Service (api.weather.gov), Open-Meteo place search, the national wildfire incident service (NIFC, on services3.arcgis.com) and CoinGecko prices. Apps never see your photos, Library, Cast or files. Prices are shown as facts, never as advice.</p>
     </section>
 
     <section id="v-library" class="view" aria-label="Library" hidden>
@@ -287,14 +318,15 @@
         <button type="button" role="radio" data-v="560"><b>560 MB</b><span>faster</span></button>
         <button type="button" role="radio" data-v="700"><b>700 MB</b><span>fastest</span></button></div>
       <p class="footnote dim pad">How much graphics memory a clip may use while it develops. 700 MB is the fastest; if a clip stops while developing, choose 450 MB.</p>
-      <p class="label" id="l-assistant">Assistant</p>
+      <p class="label" id="l-assistant">Juli</p>
       <div class="list" id="s-assistant">
-        <label class="li sw-row" for="s-research"><span><span class="sw-name">Look things up on Wikipedia &amp; Fandom</span><span class="footnote dim">Answers and songs about real things, characters and franchises are written from what the assistant looks up, with the sources shown. The words of a lookup are sent to Wikipedia or Fandom. Nothing else leaves the phone.</span></span><input type="checkbox" class="sw" id="s-research"></label>
-        <label class="li sw-row" for="s-review"><span><span class="sw-name">Look at results and retry</span><span class="footnote dim">The assistant checks each picture or clip and makes it again if something is clearly wrong (at most twice).</span></span><input type="checkbox" class="sw" id="s-review"></label>
+        <label class="li sw-row" for="s-research"><span><span class="sw-name">Look things up on Wikipedia &amp; Fandom</span><span class="footnote dim">Answers and songs about real things, characters and franchises are written from what Juli looks up, with the sources shown. The words of a lookup are sent to Wikipedia or Fandom. Nothing else leaves the phone.</span></span><input type="checkbox" class="sw" id="s-research"></label>
+        <label class="li sw-row" for="s-review"><span><span class="sw-name">Look at results and retry</span><span class="footnote dim">Juli checks each picture or clip and makes it again if something is clearly wrong (at most twice).</span></span><input type="checkbox" class="sw" id="s-review"></label>
+        <label class="li sw-row" for="s-brain4" id="s-brain4-row" hidden><span><span class="sw-name">Bigger brain for writing and making</span><span class="footnote dim" id="s-brain4-note"></span></span><input type="checkbox" class="sw" id="s-brain4"></label>
         <button class="li link" id="s-queue" type="button"><span>Queue</span><span class="li-end"><span class="dim" id="s-qstate">–</span><svg class="ic"><use href="#i-chevron"/></svg></span></button>
-        <div class="li kb-row" id="s-kb"><span><span class="sw-name">Things the assistant has looked up · <span id="s-kbn">0</span></span><span class="footnote dim">Kept on this phone for good, so asking again is instant, even offline. Private: never uploaded.</span></span><span class="li-end"><button class="btn sm" id="s-kbclear" type="button">Clear</button></span></div>
+        <div class="li kb-row" id="s-kb"><span><span class="sw-name">Things Juli has looked up · <span id="s-kbn">0</span></span><span class="footnote dim">Kept on this phone for good, so asking again is instant, even offline. Private: never uploaded.</span></span><span class="li-end"><button class="btn sm" id="s-kbclear" type="button">Clear</button></span></div>
       </div>
-      <p class="label" id="l-brainmode">Assistant memory</p>
+      <p class="label" id="l-brainmode">Juli’s memory</p>
       <div class="seg" id="brainmode" role="radiogroup" aria-labelledby="l-brainmode"><i class="ind"></i>
         <button type="button" role="radio" data-v="resident"><b>Full</b><span>fastest, about 1.4 GB</span></button>
         <button type="button" role="radio" data-v="lean"><b>Lighter</b><span>about 1.2 GB, slower</span></button></div>
@@ -324,6 +356,12 @@
       </div>
       <p class="label">Heat</p>
       <div class="list"><p class="li callout">A picture takes 2–3 minutes, a 5-second clip about 6 and a song a minute or two. After about a minute the phone warms and slows down. Plugged in, out of the sun, case off, and a short break between jobs all help.</p></div>
+      <p class="label" id="l-bench">Benchmark</p>
+      <div class="list">
+        <p class="li callout"><span>How fast this phone runs p0pc0rn, in one tap. <b>Quick</b> takes about 3 minutes: a heat reading, Juli’s chat speed, a long prompt and the apps (each one opens; then Trip Watch’s check runs with Juli on test data, nothing goes online); about 4 with the Bigger brain, whose chat speed and read-in it adds. <b>Full</b> takes about 13–16 minutes and adds a long answer from each model, a picture, a short clip and a song for the models you have. Results stay on this phone.</span></p>
+        <div class="li bench-row"><button class="btn sm" id="s-bench-quick" type="button">Quick · ~3 min</button><button class="btn sm" id="s-bench-full" type="button">Full · ~13–16 min</button></div>
+      </div>
+      <div class="bench-out" id="s-bench-out" hidden></div>
       <p class="label">About</p>
       <div class="list">
         <div class="li brand-row"><img src="icon-180.png" alt="" width="40" height="40"><div class="brand-txt"><p class="brand-name">p0pc0rn</p><p class="footnote dim">by Joshua Hughes</p></div></div>
@@ -335,7 +373,7 @@
         <details class="li ref" id="s-diag"><summary><span>Diagnostics</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body"><p class="footnote dim">The last 200 steps on this phone: what ran, its memory and any errors. Copy adds the app version, the browser's own description and, where the browser reports it, the phone's memory. Research and Cast steps keep kinds and counts, never a topic, title, quote or name. Nothing leaves the phone unless you copy it.</p><pre class="mono footnote" id="s-diagtext"></pre><button class="btn sm" type="button" id="s-diagcopy">Copy</button></div></details>
         <div class="li"><span>Built by</span><span class="dim">Josh Hughes</span></div>
         <p class="li footnote dim">FLUX.2 [klein] 4B and FLUX.2 autoencoder © Black Forest Labs, Apache-2.0 · Qwen3-4B text encoder © 2024 Alibaba Cloud, Apache-2.0 · SANA-Video 2.0 5B © NVIDIA, Apache-2.0 · LTX-2.3 video decoder and picture reader (VAE decoder and encoder) © Lightricks, LTX-2 Community License Agreement · tokenizers.js © Hugging Face, Apache-2.0. The model files are modified (re-quantised) copies. The popcorn progress animation was generated with LTX-2.3 (Lightricks) from FLUX.2 [klein] stills.</p>
-        <p class="li footnote dim">The assistant: Gemma 4 E2B-it © Google, Apache-2.0 (not the Gemma Terms of Use). Songs: ACE-Step 1.5 turbo, its 5 Hz lyrics planner and its audio decoder © ACE Studio and StepFun, MIT; the Qwen3-Embedding-0.6B text encoder inside it © Alibaba Cloud, Apache-2.0. These model files are modified (re-quantised) copies too. Lookups use Wikipedia (CC BY-SA 4.0) and Fandom wikis (CC BY-SA, as each wiki states): the assistant cites the pages it used.</p>
+        <p class="li footnote dim">Juli: Gemma 4 E2B-it © Google, Apache-2.0 (not the Gemma Terms of Use). Songs: ACE-Step 1.5 turbo, its 5 Hz lyrics planner and its audio decoder © ACE Studio and StepFun, MIT; the Qwen3-Embedding-0.6B text encoder inside it © Alibaba Cloud, Apache-2.0. These model files are modified (re-quantised) copies too. Lookups use Wikipedia (CC BY-SA 4.0) and Fandom wikis (CC BY-SA, as each wiki states): Juli cites the pages it used.</p>
         <p class="li footnote dim">Cast voices: Qwen3-TTS-12Hz-0.6B-Base and its 12 Hz codec © Alibaba Cloud (Qwen), Apache-2.0 (re-quantised copies). Face finding for Cast photos: MediaPipe BlazeFace © Google, Apache-2.0 (engine/face/LICENSE-mediapipe.txt). Lip-sync (experimental): MuseTalk 1.5 UNet (MIT; experimental, for consented faces and voices only; its CreativeML Open RAIL-M use restrictions are part of your terms), sd-vae-ft-mse © Stability AI (MIT), whisper-tiny encoder © OpenAI (MIT), MediaPipe Face Landmarker © Google (Apache-2.0), re-quantised copies.</p>
         <p class="li footnote dim">Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms. The video model reads your words with Gemma-2-2B-it; using it is subject to the Gemma Prohibited Use Policy, and the use restrictions of the LTX-2 Community License (paragraph 4 and Attachment A). Both are part of p0pc0rn's terms of use.</p>
         <button class="li link" id="s-lic" type="button"><span>Licences and notices</span><svg class="ic"><use href="#i-chevron"/></svg></button>
@@ -351,6 +389,7 @@
         <p class="li callout">👄 LoRAs for SANA video, starting with a lip-dub LoRA like LTX's.</p>
         <p class="li callout">🎬 Animated cartoons, sitcoms and cinema, rendered locally and free on your own device.</p>
         <p class="li callout">🎷 Labs: experimental features, starting with Playing Jazz — give it one idea and the AI improvises a short film, each clip picking up from the last frame of the one before, scored with an instrumental track.</p>
+        <p class="li callout">📲 Push notifications for agentic apps: alerts even when p0pc0rn is closed.</p>
         <p class="li callout">🔄 Updated workflows.</p>
         <p class="li callout">🐞 Debugging.</p>
         <p class="li callout">✨ More features.</p>
@@ -379,7 +418,8 @@
   <nav class="tabs" aria-label="Sections">
     <div class="tab-hair" aria-hidden="true"><i id="tab-fill"></i></div>
     <button class="tab" type="button" data-tab="create" aria-current="page"><svg><use href="#i-sparkle"/></svg><span>Create</span></button>
-    <button class="tab" type="button" data-tab="assistant"><svg><use href="#i-chat"/></svg><span>Assistant</span><i class="tab-dot" aria-hidden="true"></i></button>
+    <button class="tab" type="button" data-tab="assistant"><svg><use href="#i-chat"/></svg><span>Juli</span><i class="tab-dot" aria-hidden="true"></i></button>
+    <button class="tab" type="button" data-tab="apps"><svg><use href="#i-apps"/></svg><span>Apps</span></button>
     <button class="tab" type="button" data-tab="library"><svg><use href="#i-grid"/></svg><span>Library</span></button>
     <button class="tab" type="button" data-tab="settings"><svg><use href="#i-gear"/></svg><span>Settings</span></button>
   </nav>
@@ -485,6 +525,18 @@
     <p class="label">The full licence</p>
     <pre class="doc-text" id="flux-text" tabindex="0"></pre>
     <button class="btn" id="flux-ok" type="button">I accept</button>
+  </div>
+</div>
+<!-- 3.8 (v040): NVIDIA's OpenMDW License Agreement 1.1, once, before the Bigger brain downloads -->
+<div id="mdw" class="sheet-wrap" hidden>
+  <div class="scrim" data-close></div>
+  <div class="sheet docsheet" role="dialog" aria-modal="true" aria-labelledby="mdw-title">
+    <div class="pk-top"><p class="title" id="mdw-title">The Bigger brain's licence</p><button class="mini" type="button" data-close>Not now</button></div>
+    <p class="callout" id="mdw-label"></p>
+    <p class="footnote dim" id="mdw-size"></p>
+    <p class="label">The full licence</p>
+    <pre class="doc-text" id="mdw-text" tabindex="0"></pre>
+    <button class="btn" id="mdw-ok" type="button">I accept</button>
   </div>
 </div>
 <!-- v026.4: Settings › About › Licences and notices -->

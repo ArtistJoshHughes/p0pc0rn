@@ -12,6 +12,9 @@ Running your own copy instead is optional, and it has its own rules (the end of 
   - **iPhone:** iOS 26 or later, in Safari.
     - On iOS 18, WebGPU sits behind a Safari feature flag; that's untested.
     - The test phone is an iPhone 16 Pro Max. Phones with less memory may struggle with the bigger models.
+    - **iOS 27** gives Juli more room: she runs in two parts, her first layers in a helper process of their own, started by
+      p0pc0rn's own service worker. Nothing to set up. On iOS 27 faster replies and Juli's Bigger brain (optional) need it; if the
+      helper can't start, Juli runs in one part, without faster replies (Settings › Juli › "Try the second process again").
   - **Android (Chrome): experimental. It was prepared on a desktop with Android-like limits; the first device test (Pixel 10) is pending.**
     - Use Chrome, kept up to date.
     - First open **Settings › About › Device check** (or `devcheck.html`), tap **Run the check**, then **Copy report**. It lists
@@ -29,15 +32,19 @@ Running your own copy instead is optional, and it has its own rules (the end of 
   | Better pictures (Klein 9B, optional: slower, better) | about 9.6 GB | Pictures |
   | Videos (SANA-Video 2.0 5B) | 5.7 GB | |
   | Clips from a picture, or between two pictures (picture reader) | 0.2 GB | Videos |
-  | Assistant (Gemma 4 E2B) | 3.3 GB | |
+  | Juli, the assistant (Gemma 4 E2B) | 3.3 GB | |
+  | Faster replies (Google's Gemma 4 drafter; comes with Juli, not on Android yet) | 54 MB | Juli |
+  | Bigger brain (NVIDIA Nemotron 3.5 Bolt E4B, optional: Juli thinks and writes with it; iOS 27 on iPhone, or a desktop browser; not on Android yet) | 4.7 GB, with its 55 MB drafter | Juli |
   | Songs (ACE-Step 1.5 turbo) | 2.8 GB | |
   | Lyrics planner (optional) | 0.9 GB | Songs |
-  | Starter knowledge (offline Wikipedia facts) | 3 MB | Assistant |
+  | Starter knowledge (offline Wikipedia facts) | 3 MB | Juli |
   | Cast voices (Qwen3-TTS) | 1.4 GB | |
   | Lip-sync (experimental) | 1.0 GB | Voice |
 
-  - Music videos use Assistant, Songs, Pictures, Videos and the picture reader.
-  - Everything in the table comes to about 20 GB without the 9B, and about 30 GB with it.
+  - Music videos use Juli, Songs, Pictures, Videos and the picture reader.
+  - The Bigger brain plans and writes when you ask Juli to write something, or to make a picture, clip, song or app; chat and
+    looking at pictures stay on Juli's own model (Settings › Juli › "Bigger brain for writing and making" turns it off).
+  - Everything in the table comes to about 25 GB without the 9B, and about 34 GB with it.
   - Keep a few GB free on top.
 
 ## First run on the phone
@@ -47,16 +54,16 @@ Running your own copy instead is optional, and it has its own rules (the end of 
 2. **iPhone: add it to your Home Screen first.**
    - Tap Share › Add to Home Screen, then open p0pc0rn from the new icon and do everything else there.
    - iOS keeps the Home Screen app apart from Safari: models and your agreement in one aren't in the other.
-3. **Agree.** p0pc0rn opens in the Assistant chat with the rights lesson on top. Read it and tap **I agree**. Nothing can be made
+3. **Agree.** p0pc0rn opens in Juli's chat with the rights lesson on top. Read it and tap **I agree**. Nothing can be made
    before that.
 4. **Settings › Storage › Protected from iOS cleanup › Allow.**
-5. **Download what you want.** The chat's first message offers the assistant and the starter knowledge as one download (3.3 GB).
+5. **Download what you want.** The chat's first message offers Juli and the starter knowledge as one download (3.3 GB).
    Ask it for a picture, a song or a clip, and it offers that model if it isn't on the phone yet. **Settings › Models** has every
    model: tap **Download** there.
    - Each model shows its licence first. Read it and accept.
    - Keep the app in front, the phone plugged in and on Wi-Fi.
    - If the download stops (screen lock, app in the background), it picks up where it left off when you're back.
-6. **Make something:** ask the assistant, or on **Create** describe a picture and tap **Make**. A picture takes about 2 to 3 minutes;
+6. **Make something:** ask Juli, or on **Create** describe a picture and tap **Make**. A picture takes about 2 to 3 minutes;
    a 5-second clip about 6.
 
 ## Storage tips

@@ -18,12 +18,27 @@ import { renderBlock, citationFooter, relevant, asOf, numberWords } from './rese
 import { blockTerms, scanPrompt, stripPrompt, isProtected, fnv } from './likeness.js';
 import { openDB, uid } from './idb.js';
 import { clipFrames, shrinkForModel } from './media.js';
+import { estTokens, promptTokens, EST_LOW } from './fit.js';   // 3.8 (v040): prompt sizes for the Bigger brain's context
 
 export const LIMITS = { steps: 6, research: 3, badCalls: 2, rerolls: 2, mvRerolls: 3, history: 4, historyKeep: 16, planNotes: 1000, songNotes: 650 };   // v026.8: the last 4 turns in full + a summary of the 12 before
-export const SAMPLING = { tool: { temperature: 0.3, topP: 0.95, topK: 64 }, review: { temperature: 0.1, topP: 0.95, topK: 64 } };
+// 3.8 (10-24): the structured calls (reviews, checks, the prompt rewrite, the research reader) ask for EXACT (greedy) words; the chat
+// turn and the creative calls (write_song, plan_shots) ask for sampling. The app's adapter (app.js brainChat) passes no temperature
+// today, so every call decodes greedily with the "Faster replies" drafter; the engine samples (with the drafter) when one is passed.
+export const SAMPLING = { tool: { temperature: 0.3, topP: 0.95, topK: 64 }, review: {}, exact: {} };
+// 3.8 (v040, Josh 10-24): chat stays fast on Juli's own model; for a writing task or any agent task E2B is the research agent and
+// E4B is the brain; E2B (it has vision) reviews pictures. When the Bigger brain (NVIDIA Nemotron 3.5 Bolt E4B, text only;
+// hooks.brainModel() -> its model id) can be used, such a turn runs in PHASES with one model in memory at a time: Juli's own model
+// looks things up first (gather), then the Bigger brain plans and writes (one model swap; it never looks anything up itself), and Juli
+// reviews what was made. Chat turns, turns with a photo, the reviews, the music video's shot plans and storyboards (longer than the
+// Bigger brain's context) and an app's own questions stay on E2B. The Bigger brain loads with 2,048 tokens on the phone (the iOS 27
+// split): its prompts are fitted first (fitPlan / fitSong: fewer earlier turns, shorter fact lists, fewer notes, older tool
+// exchanges, a shorter answer, in that order; recorded in st.trimmed), a request too long for even its smallest prompt stays with
+// Juli (fitsBigFloor), and a job whose Bigger brain could not load, ran out of memory or got a prompt too long goes to Juli's own
+// model once (queue.js runner.fallback).
+export const BRAIN = { ctx: 2048, reserve: 8, planMax: 600, planMin: 400, writeMax: 900, writeMin: 600, songMax: 700, songMin: 500, notes: 400, history: 2, historyChars: 300, factLines: 6, retryNote: 80 };
 
 export const SYSTEM_CORE = [
-  'You are the creative assistant inside p0pc0rn, an iPhone app that makes pictures, short video clips and songs on the phone itself.',
+  'You are Juli, the creative assistant inside p0pc0rn, an iPhone app that makes pictures, short video clips and songs on the phone itself.',
   'How you work:',
   '- To make something, call ONE tool and write its prompt yourself, in English, following the NOTES. Never ask the person to write the prompt.',
   '- Before drawing or describing a real place, thing or event you are not sure about, or anything from a film, game, show or comic, call research. Use only the FACTS it returns; never invent facts.',
@@ -114,7 +129,8 @@ export class Agent {
     const m = { id: uid('m'), role: 'user', at: Date.now(), text: String(text || '').slice(0, 4000), photoKey };
     s.messages.push(m); s.history.push({ role: 'user', content: m.text, mid: m.id }); s.history = s.history.slice(-this.limits.historyKeep);
     await this.db.put('sessions', s); this.emit('message', sid, m);
-    return this.queue.add('chat', { purpose: 'turn', text: m.text, photoKey, message: m.id }, { session: sid, title: m.text.slice(0, 60) });   // chat jumps the queue (queue.js runOrder)
+    const follow = s.brainLast && Date.now() - s.brainLast.at < 30 * 60e3 ? s.brainLast.kind : null;   // 3.8 (v040): the last Bigger brain turn's kind (route)
+    return this.queue.add('chat', Object.assign({ purpose: 'turn', text: m.text, photoKey, message: m.id }, follow ? { follow } : {}), { session: sid, title: m.text.slice(0, 60) });   // chat jumps the queue (queue.js runOrder)
   }
   async remember(sid, kind, rec) {
     const s = await this.session(sid); if (!s) return;
@@ -123,7 +139,99 @@ export class Agent {
   }
 
   // ---- the runner for 'chat' jobs (runners.js wires it)
-  runner() { return { model: () => MODEL.chat, needsConsent: false, run: (ctx) => this.run(ctx) }; }
+  runner() { return { model: (j) => this.modelFor(j), fallback: (j, m, e) => this.fallbackFor(j, m, e), needsConsent: false, run: (ctx) => this.run(ctx) }; }
+
+  // ---- 3.8 (v040): which model runs a chat job, and the Bigger brain's prompts (BRAIN)
+  /** the Bigger brain's model id when it can be used now (on the phone, can run here, on in Settings › Juli), else null */
+  bigModel() { try { return (this.hooks.brainModel && this.hooks.brainModel()) || null; } catch (e) { return null; } }
+  /** this job runs on the Bigger brain (any model but Juli's own: its prompts must fit BRAIN.ctx) */
+  onBig(ctx) { return !!(ctx && ctx.engine && ctx.engine.id && ctx.engine.id !== MODEL.chat); }
+  /** a turn's route, from its words alone (the same answer before and during its run): kind chat | writing | agent; brain = the
+   *  Bigger brain plans and writes it; gather = Juli looks things up for it first */
+  route(j) {
+    const P = (j && j.params) || {}, text = String(P.text || ''), kind = taskKind(text, P.follow || null);
+    const brain = kind !== 'chat' && !P.photoKey && !screenRequest(text) && !!this.bigModel() && this.fitsBigFloor(text, kind);
+    return { kind, brain, gather: brain && !!this.research && lookupWorthy(text) };
+  }
+  /** the queue's model for a chat job (runner.model) */
+  modelFor(j) {
+    const big = this.bigModel(), p = (j && j.params && j.params.purpose) || 'turn';
+    if (!big) return MODEL.chat;
+    if (p === 'turn') {
+      const st = j.state;
+      if (!st) { const r = this.route(j); return r.brain && !r.gather ? big : MODEL.chat; }   // nothing to look up: straight to the Bigger brain
+      return st.stage === 'plan' && st.route && st.route.brain && st.brainPhase ? big : MODEL.chat;   // after a render: Juli reviews it (vision)
+    }
+    return p === 'songwrite' ? big : MODEL.chat;   // the song's words: writing. The shot plan (longer than its context) and the reviews (pictures): Juli
+  }
+  /** the queue's fallback (runner.fallback): the Bigger brain could not load, ran out of memory or got a prompt too long -> Juli, once */
+  fallbackFor(j, model, e) {
+    if (!model || model === MODEL.chat) return null;
+    this.rlDiag('assistant: the Bigger brain could not do this one, Juli takes over', { code: (e && e.code) || null, purpose: (j && j.params && j.params.purpose) || 'turn' });
+    return MODEL.chat;
+  }
+  /** the smallest prompt the Bigger brain's plan can have (no earlier turns, no facts, the always-on notes) can fit with its shortest
+   *  answer (the low estimate: decided before any model is loaded): a request surely too long for it (a long pasted text) stays with
+   *  Juli. Kept per text (the queue asks often). */
+  fitsBigFloor(text, kind) {
+    const key = kind + '|' + text; this._floor = this._floor || new Map();
+    if (!this._floor.has(key)) {
+      const sys = SYSTEM_CORE + '\n' + (kind === 'writing' ? BRAIN_WRITE : BRAIN_PLAN) + '\n\nNOTES:\n' + this.cookbooks.text(this.cookbooks.ids(this.cookbooks.index.always));
+      const n = estTokens([{ role: 'system', content: sys }, { role: 'user', content: text }], { tools: decls(kind === 'writing' ? ['ask_user'] : planToolNames(text, false)) }) / EST_LOW;
+      if (this._floor.size > 64) this._floor.clear();
+      this._floor.set(key, n + (kind === 'writing' ? BRAIN.writeMin : BRAIN.planMin) + BRAIN.reserve <= BRAIN.ctx);
+    }
+    return this._floor.get(key);
+  }
+  /** the Bigger brain's plan prompt before it is fitted (plan() and the check before the swap): its tools (a writing task: ask_user
+   *  only), its system prompt (the notes within BRAIN.notes; sysLean: the always-on ones), the last BRAIN.history turns, the request */
+  async planPrompt(ctx, st) {
+    const text = ctx.params.text || '', s = await this.session(ctx.job.session), writing = !!st.route && st.route.kind === 'writing';
+    const names = writing ? ['ask_user'] : planToolNames(text, false), cb = this.cookbooks.pick(text, names, BRAIN.notes);
+    const sysFor = (lean) => SYSTEM_CORE + '\n' + (writing ? BRAIN_WRITE : BRAIN_PLAN) + '\n\nNOTES:\n' + this.cookbooks.text(lean ? this.cookbooks.ids(this.cookbooks.index.always) : cb);
+    const history = ((s && s.history) || []).filter((h) => h.mid !== ctx.params.message).slice(-BRAIN.history).map((h) => ({ role: h.role, content: clipText(h.content, BRAIN.historyChars) }));
+    return { system: sysFor(false), sysLean: sysFor(true), history, user: { role: 'user', content: text }, tools: decls(names), writing };
+  }
+  /** the plan call fitted to the Bigger brain's context -> {messages, maxTokens} | null (it cannot fit). While the prompt and its answer
+   *  are too long, in order: one earlier turn, then none; the fact lists cut to 3 lines, the notes to the always-on ones, the fact lists
+   *  to 1 line; older tool exchanges dropped (the lookups stay); the shortest answer. Each step taken is recorded once in st.trimmed
+   *  (dry: a check before the swap, nothing recorded). */
+  async fitPlan(ctx, st, { system, sysLean, history, user, tools, writing }, dry = false) {
+    const cap = BRAIN.ctx - BRAIN.reserve, had = (st.trimmed || []).length;
+    let hist = history, sys = system, facts = BRAIN.factLines, msgs = st.msgs, maxTokens = writing ? BRAIN.writeMax : BRAIN.planMax;
+    const steps = [
+      ['one earlier turn', () => { if (hist.length <= 1) return false; hist = hist.slice(-1); return true; }],
+      ['no earlier turns', () => { if (!hist.length) return false; hist = []; return true; }],
+      ['facts: 3 lines each', () => { if (facts <= 3) return false; facts = 3; return true; }],
+      ['notes: the always-on ones', () => { if (sys === sysLean) return false; sys = sysLean; return true; }],
+      ['facts: 1 line each', () => { if (facts <= 1) return false; facts = 1; return true; }],
+      ['older tool exchanges', () => { const k = keepRecent(msgs); if (k.length >= msgs.length) return false; msgs = k; return true; }],
+      ['a shorter answer', () => { const m = writing ? BRAIN.writeMin : BRAIN.planMin; if (maxTokens <= m) return false; maxTokens = m; return true; }],
+    ];
+    const build = () => [{ role: 'system', content: sys }, ...hist, user, ...cutFacts(msgs, facts)];
+    let messages = build(), n = await promptTokens(ctx.engine, messages, { tools });
+    for (const [what, step] of steps) {
+      if (n + maxTokens <= cap) break;
+      if (!step()) continue;
+      if (!dry && !(st.trimmed || []).includes(what)) st.trimmed = (st.trimmed || []).concat(what);
+      messages = build(); n = await promptTokens(ctx.engine, messages, { tools });
+    }
+    if (dry) return n + maxTokens <= cap ? { messages, maxTokens } : null;
+    st.fit = { tokens: n, maxTokens };
+    if (n + maxTokens > cap) return null;
+    if ((st.trimmed || []).length > had) this.rlDiag('assistant: fitted for the Bigger brain', { trimmed: st.trimmed, tokens: n, maxTokens });
+    return { messages, maxTokens };
+  }
+  /** the song writer's prompt fitted to the Bigger brain's context with room for one retry note -> {messages, maxTokens, facts}; too
+   *  long even with the always-on notes alone and two fact lines: TOO_LONG (the queue gives the job to Juli) */
+  async fitSong(ctx, sysOf, userOf) {
+    const cap = BRAIN.ctx - BRAIN.reserve - BRAIN.retryNote, tools = decls(['write_song']), prefix = '<|tool_call>call:write_song{';
+    for (const [notes, facts, maxTokens] of [[600, 8, BRAIN.songMax], [400, 8, BRAIN.songMax], [200, 6, BRAIN.songMax], [0, 6, BRAIN.songMax], [0, 4, BRAIN.songMax], [0, 2, BRAIN.songMax], [0, 2, BRAIN.songMin]]) {
+      const messages = [{ role: 'system', content: sysOf(notes) }, userOf(facts)];
+      if (await promptTokens(ctx.engine, messages, { tools, prefix }) + maxTokens <= cap) return { messages, maxTokens, facts };
+    }
+    throw Object.assign(new Error('the song request is too long for the Bigger brain'), { code: 'TOO_LONG' });
+  }
   async run(ctx) {
     const p = ctx.params.purpose || 'turn';
     if (p === 'turn') return this.turn(ctx);
@@ -141,7 +249,8 @@ export class Agent {
   /** the quarantined reader for research.js: a separate stateless call on the loaded model - no tools, no history */
   readerFor(ctx) {
     return async (messages, o = {}) => {
-      const r = await ctx.engine.chat(messages, Object.assign({ maxTokens: o.maxTokens || 600, temperature: o.temperature == null ? 0.1 : o.temperature, topP: 0.95, topK: 64, stop: STOP, signal: o.signal || ctx.signal }, o.prefix ? { prefix: o.prefix } : {}));   // v022: the reader's forced start
+      const r = await ctx.engine.chat(messages, Object.assign({ maxTokens: o.maxTokens || 600, stop: STOP, signal: o.signal || ctx.signal },
+        o.temperature ? { temperature: o.temperature, topP: 0.95, topK: 64 } : {}, o.prefix ? { prefix: o.prefix } : {}));   // 3.8: exact unless a temperature is asked for   // v022: the reader's forced start
       return typeof r === 'string' ? r : (r.raw != null ? r.raw : r.text || '');
     };
   }
@@ -154,10 +263,40 @@ export class Agent {
     if (st.stage === 'plan') {
       const hard = screenRequest(ctx.params.text);                   // the absolute cases never reach a model
       if (hard) { await this.say(sid, { text: hard.reply, kind: 'refusal', code: hard.code }); st.stage = 'done'; await save(); return { reply: hard.reply, refused: hard.code }; }
+      // 3.8 (v040): the two-model route (BRAIN): Juli looks things up on her own model, then the Bigger brain plans and writes
+      if (!st.route) { st.route = this.route(ctx.job); if (this.onBig(ctx)) Object.assign(st.route, { brain: true, gather: false }); await save(); }
+      if (st.route.brain && !st.brainPhase) {
+        if (st.route.gather && !this.onBig(ctx)) {
+          await this.gather(ctx, st, save);
+          if (st.chatGround && st.chatGround.ask) return this.finish(ctx, st, save, st.chatGround.ask, { kind: 'question', options: [] });
+        }
+        st.chatGround = st.chatGround || { skip: true };
+        // with an exact count here (the engine's tokenizer: the same for both models) a prompt that cannot fit stays with Juli: no swap for nothing
+        if (!this.onBig(ctx) && ctx.engine && typeof ctx.engine.countTokens === 'function' && !(await this.fitPlan(ctx, st, await this.planPrompt(ctx, st), true))) {
+          st.route.brain = false; await save(); this.rlDiag('assistant: too long for the Bigger brain, Juli keeps it', { kind: st.route.kind });
+          return this.plan(ctx, st, save);
+        }
+        st.brainPhase = true; await save();
+        if (!this.onBig(ctx) && this.bigModel()) {   // the queue loads the Bigger brain for this job (modelFor) and runs it again
+          this.rlDiag('assistant: the Bigger brain takes over', { kind: st.route.kind, facts: (st.research || []).filter((r) => r.status === 'hit').length });
+          this.emit('activity', sid, ctx.job.id, 'Handing this to the Bigger brain…');
+          return { wait: 'all' };
+        }
+      }
       return this.plan(ctx, st, save);
     }
     if (st.stage === 'wait') return this.afterChild(ctx, st, save);
     return { reply: st.reply || '' };
+  }
+
+  /** 3.8 (v040): the research phase of a writing or agent turn, on Juli's own model: the lookup planner and the lookups (groundChat),
+   *  and a song's subject (groundSong), so the Bigger brain plans and writes from the facts with no swap back */
+  async gather(ctx, st, save) {
+    const sid = ctx.job.session, text = ctx.params.text || '', s = await this.session(sid);
+    st.chatGround = (await this.groundChat(ctx, st, text, s, { force: true })) || { skip: true }; await save();
+    if (st.chatGround.ask || st.ground || !songMakeAsk(text)) return;
+    st.ground = (await this.groundSong(ctx, st, text, { tags: /instrumental/i.test(text) ? 'instrumental' : '' })) || { skip: true }; await save();
+    if (st.ground.hit === false) await this.say(sid, { text: `No facts found for “${st.ground.topic}” (${st.ground.reason}), so the words come from your request alone.`, kind: 'status', history: `(no facts for ${st.ground.topic})` });
   }
 
   async plan(ctx, st, save) {
@@ -165,13 +304,15 @@ export class Agent {
     // v026.8: the plan prompt carries only what this request needs (v033's real smoke: 2,937 of the 3,096 tokens that fit): its tools
     // (planToolNames) and the notes for them, within planNotes tokens; earlier turns beyond the last few go in as a one-line summary.
     // v021: a TOO_LONG plan call is retried with only the always-on notes; v026.8: then once more without the earlier turns
-    const toolNames = planToolNames(text, !!this.research);
+    // 3.8 (v040): the Bigger brain's turn (BRAIN): no lookups (Juli did them first) and, for a writing task, no tools to make things with
+    const big = !!st.brainPhase, onBig = this.onBig(ctx), writing = big && !!st.route && st.route.kind === 'writing';
+    const toolNames = writing ? ['ask_user'] : planToolNames(text, !!this.research && !big);
     const songOnly = toolNames.includes('make_song') && !toolNames.some((n) => /picture|clip|sound/.test(n));   // a song's words are written later, by the song writer
-    const cb = this.cookbooks.pick(text, toolNames, songOnly || toolNames.length >= 7 ? this.limits.songNotes : this.limits.planNotes);   // a follow-up with no clear kind: the short budget
+    const cb = this.cookbooks.pick(text, toolNames, onBig ? BRAIN.notes : songOnly || toolNames.length >= 7 ? this.limits.songNotes : this.limits.planNotes);   // a follow-up with no clear kind: the short budget (3.8: the Bigger brain's, shorter)
     const hist0 = (s.history || []).filter((h) => h.mid !== ctx.params.message), recentN = this.limits.history;
     const earlier = earlierSummary(hist0.slice(0, Math.max(0, hist0.length - recentN)));
-    const sysFor = (lean) => SYSTEM_CORE + (this.research ? '' : '\n' + LOOKUPS_OFF) + '\n\nNOTES:\n' + this.cookbooks.text(lean ? this.cookbooks.ids(this.cookbooks.index.always) : cb)
-      + (earlier && !st.noHistory ? '\n\n' + earlier : '');
+    const sysFor = (lean) => SYSTEM_CORE + (big ? '\n' + (writing ? BRAIN_WRITE : BRAIN_PLAN) : this.research ? '' : '\n' + LOOKUPS_OFF) + '\n\nNOTES:\n' + this.cookbooks.text(lean ? this.cookbooks.ids(this.cookbooks.index.always) : cb)
+      + (earlier && !st.noHistory && !onBig ? '\n\n' + earlier : '');   // 3.8: no room for the summary in the Bigger brain's context
     let system = sysFor(!!st.leanNotes);
     // v021: a song's subject is looked up by code (groundSong: song_subject -> research -> the writer with the facts), so the planner
     // of a song request is not offered research (the desktop smoke test: Gemma called research itself, then the plan overflowed)
@@ -187,27 +328,35 @@ export class Agent {
     for (;;) {
       if (st.steps >= this.limits.steps) return this.finish(ctx, st, save, "I couldn't settle on a plan for that. Could you say it another way?");
       st.steps++;
-      const history = st.noHistory ? [] : hist0.slice(-recentN).map((h) => ({ role: h.role, content: clipText(h.content, 600) }));   // v026.8: the last turns, each at most 600 characters
+      const history = st.noHistory ? [] : hist0.slice(-(onBig ? BRAIN.history : recentN)).map((h) => ({ role: h.role, content: clipText(h.content, onBig ? BRAIN.historyChars : 600) }));   // v026.8: the last turns, each at most 600 characters (3.8: the Bigger brain: 2, 300)
       const user = { role: 'user', content: text };
       if (ctx.params.photoKey && st.steps === 1) {
         const ph = await ctx.getBlob(ctx.params.photoKey);
         if (ph) user.content = [{ type: 'image', image: await this.hooks.shrink(ph) }, { type: 'text', text: text + '\n(The person added the photo above.)' }];
       }
-      const messages = [{ role: 'system', content: system }, ...history, user, ...st.msgs];
+      let messages = [{ role: 'system', content: system }, ...history, user, ...(st.shortFacts ? cutFacts(keepRecent(st.msgs), 3) : st.msgs)], maxTokens = 1000, tools = planTools;
+      if (onBig) {   // 3.8 (v040): fitted to the Bigger brain's context; a turn that cannot fit goes to Juli (the queue's fallback)
+        const bp = await this.planPrompt(ctx, st), f = await this.fitPlan(ctx, st, bp); await save();
+        if (!f) throw Object.assign(new Error('the request is too long for the Bigger brain'), { code: 'TOO_LONG' });
+        messages = f.messages; maxTokens = f.maxTokens; tools = bp.tools;
+        this.emit('activity', sid, ctx.job.id, writing ? 'The Bigger brain is writing…' : 'The Bigger brain is planning…');
+      }
       let out;
-      try { out = await this.llm(ctx, messages, Object.assign({ tools: planTools, maxTokens: 1000 }, SAMPLING.tool)); }
+      try { out = await this.llm(ctx, messages, Object.assign({ tools, maxTokens, stream: true }, SAMPLING.tool)); }   // 3.8: stream = the plan call (its words show in the chat)
       catch (e) {
-        if (!e || e.code !== 'TOO_LONG' || (st.leanNotes && st.noHistory)) throw e;
-        if (!st.leanNotes) { st.leanNotes = true; system = sysFor(true); messages[0] = { role: 'system', content: system }; }
-        else { st.noHistory = true; system = sysFor(true); messages.splice(0, messages.length, { role: 'system', content: system }, user, ...st.msgs); }   // v026.8: then without the earlier turns
-        await save();
-        try { out = await this.llm(ctx, messages, Object.assign({ tools: planTools, maxTokens: 1000 }, SAMPLING.tool)); }
-        catch (e2) {
-          if (!e2 || e2.code !== 'TOO_LONG' || st.noHistory) throw e2;
-          st.noHistory = true; system = sysFor(true); messages.splice(0, messages.length, { role: 'system', content: system }, user, ...st.msgs); await save();
-          out = await this.llm(ctx, messages, Object.assign({ tools: planTools, maxTokens: 1000 }, SAMPLING.tool));
+        if (onBig || !e || e.code !== 'TOO_LONG' || (st.leanNotes && st.noHistory && st.shortFacts)) throw e;   // 3.8: the Bigger brain's TOO_LONG: the queue gives the turn to Juli
+        // v021 / v026.8: a TOO_LONG plan call is retried with only the always-on notes, then without the earlier turns; 3.8 (v040): then with
+        // each fact list cut to 3 lines and only the lookups and the last tool exchange kept (a long turn the Bigger brain handed back)
+        for (;;) {
+          if (!st.leanNotes) st.leanNotes = true; else if (!st.noHistory) st.noHistory = true; else if (!st.shortFacts) st.shortFacts = true; else throw e;
+          system = sysFor(true);
+          messages = [{ role: 'system', content: system }, ...(st.noHistory ? [] : history), user, ...(st.shortFacts ? cutFacts(keepRecent(st.msgs), 3) : st.msgs)];
+          await save();
+          try { out = await this.llm(ctx, messages, Object.assign({ tools: planTools, maxTokens: 1000 }, SAMPLING.tool)); break; }
+          catch (e2) { if (!e2 || e2.code !== 'TOO_LONG') throw e2; e = e2; }
         }
       }
+      if (onBig) this.emit('activity', sid, ctx.job.id, '');
       // v026.8: a tool call that came back unreadable (v033's long-chat smoke: "expected , or } at 333") is asked for once more, plainly
       if (!out.toolCalls.length && ((out.errors && out.errors.length) || /<\|tool_call>|call:\s*\w+\s*\{/.test(out.raw || '')) && !st.parseRetry) {
         st.parseRetry = true; st.msgs.push({ role: 'user', content: 'Your last tool call could not be read. Call the tool again: every text value inside <|"|> quotes, nothing else.' });
@@ -240,6 +389,7 @@ export class Agent {
           let content;
           if (!v.ok) { content = 'error: ' + v.errors.join('; '); st.bad++; }
           else if (st.research.length >= this.limits.research) content = 'research limit reached for this message: answer with the facts you have.';
+          else if (big) content = 'the lookups for this message are done: answer with the facts you have.';   // 3.8 (v040): the Bigger brain never looks things up
           else content = await this.doResearch(ctx, st, v.args, text);
           st.msgs.push({ role: 'tool', tool_call_id: id, name: 'research', content });
         }
@@ -272,7 +422,7 @@ export class Agent {
       // time (not left to the model): sort the subject (a focused, forced song_subject call), look it up through the airlocked lane,
       // then write the lyrics FROM the rendered facts. Personal or abstract topics skip it and nothing is said; a miss gets one line.
       if (c.name === 'make_song' && !st.ground) {
-        st.ground = (await this.groundSong(ctx, st, text, v.args)) || { skip: true }; await save();
+        st.ground = (big ? null : await this.groundSong(ctx, st, text, v.args)) || { skip: true }; await save();   // 3.8 (v040): the Bigger brain looks nothing up (Juli did, first: gather)
         if (st.ground.hit === false) await this.say(sid, { text: `No facts found for “${st.ground.topic}” (${st.ground.reason}), so the words come from your request alone.`, kind: 'status', history: `(no facts for ${st.ground.topic})` });
       }
       if ((c.name === 'make_song' || c.name === 'make_music_video') && v.args.tags) v.args.tags = cleanTags(v.args.tags);   // v022: never an artist name
@@ -372,9 +522,9 @@ export class Agent {
   /** v021: the lookup step of a plain chat turn -> null (no lookup: research off, a render request, small talk, a question about the
    *  app, nothing lookup-worthy) | {looked: [titles], reused: [titles], missed: [topics]} | {ask: '...'} (a name the message does not
    *  settle). Facts reach the answer only as the lane's rendered fact lines, as synthetic research calls the planner then reads. */
-  async groundChat(ctx, st, text, s) {
+  async groundChat(ctx, st, text, s, { force = false } = {}) {   // 3.8 (v040): force = a writing or agent turn's lookups (gather)
     const t = String(text || '').trim(), sid = ctx.job.session, jid = ctx.job.id;
-    if (!this.research || !t || RENDER_ASK.test(t) || SMALL_TALK.test(t) || APP_ASK.test(t)) return null;
+    if (!this.research || !t || (!force && RENDER_ASK.test(t)) || SMALL_TALK.test(t) || APP_ASK.test(t)) return null;
     const forced = FORCE_ASK.test(t), kept = (s && s.facts) || [];
     this.emit('activity', sid, jid, 'Checking what to look up…');
     let topics = await this.planTopics(ctx, t, forced);
@@ -421,7 +571,7 @@ export class Agent {
     const exact = explicitTitles(text, forced);
     let topics = [];
     try {
-      const raw = await this.readerFor(ctx)([{ role: 'system', content: PLAN_SYS + (forced ? PLAN_FORCE : '') }, { role: 'user', content: 'MESSAGE:\n' + String(text).slice(0, 1200) }], { maxTokens: 160, temperature: 0.1 });
+      const raw = await this.readerFor(ctx)([{ role: 'system', content: PLAN_SYS + (forced ? PLAN_FORCE : '') }, { role: 'user', content: 'MESSAGE:\n' + String(text).slice(0, 1200) }], { maxTokens: 160 });   // 3.8: exact (the planner's reading)
       topics = parseTopics(raw);
     } catch (e) { if (isAbort(e)) throw e; topics = []; }
     if (forced && !topics.length && !exact.length) { const rest = String(text).replace(FORCE_ASK, '').split(/[.;?!\n]/)[0].trim(); if (rest.length >= 2) exact.push(rest.slice(0, 80)); }
@@ -509,7 +659,7 @@ export class Agent {
     if (!yes) return;
     try {
       const out = await this.llm(ctx, [{ role: 'system', content: ORIGINAL_SYS }, { role: 'user', content: `PROMPT: ${args[key]}` }],
-        Object.assign({ tools: decls(['original_prompt']), maxTokens: 300, prefix: '<|tool_call>call:original_prompt{' }, SAMPLING.tool));
+        Object.assign({ tools: decls(['original_prompt']), maxTokens: 300, prefix: '<|tool_call>call:original_prompt{' }, SAMPLING.exact));
       const c = out.toolCalls.find((x) => x.name === 'original_prompt'), np = c && String((c.arguments || {}).prompt || '').trim();
       if (np && np.length > 20) { const sc = scanPrompt(np, st.likeBlocks); args[key] = sc.hit ? stripPrompt(np, st.likeBlocks, sc) : np; st.likeRegen = true; }
     } catch (e) { if (isAbort(e)) throw e; }
@@ -638,6 +788,9 @@ export class Agent {
     const reply = foot && (extra.modelText || extra.kind === 'result') ? `${body}\n\n${foot}` : body;
     st.stage = 'done'; st.reply = reply; await save();
     await this.say(sid, Object.assign({ text: reply, history: body }, extra, st.rl && st.rl.length ? { research: st.rl.slice() } : {}, { modelText: undefined }));   // v026.2: the research list
+    if (st.route && st.route.brain) {   // 3.8 (v040): its follow-up ("make it shorter") goes to the Bigger brain too (ask: follow)
+      const s = await this.session(sid); if (s) { s.brainLast = { kind: st.route.kind, at: Date.now() }; await this.db.put('sessions', s); }
+    }
     if (this.research && this.research.afterAnswer) this.research.afterAnswer();   // v021: a stale KB entry's revision check, after the reply
     return { reply, research: (st.research || []).filter((r) => r.status === 'hit').map((r) => ({ title: r.title, url: r.source.permalink, license: r.source.license })) };
   }
@@ -647,15 +800,18 @@ export class Agent {
   /** {idea, seconds, tags?, bpm?} -> {title, tags, bpm, key?, timeSignature?, lyrics (normalised, within the line budget), notes},
    *  written by the loaded model in a focused, forced write_song call */
   async writeSong(ctx, P) {
-    const ids = this.cookbooks.ids(this.cookbooks.index.songwrite);
-    const G = P.ground && P.ground.hit ? P.ground : null, need = G ? Math.min(3, G.values.length, Math.max(2, lyricBudget(P.seconds, P.bpm || SONG_DEFAULTS.bpm) - 1)) : 0;
+    const big = this.onBig(ctx);   // 3.8 (v040): the Bigger brain writes the words: its notes and facts fitted to its context (fitSong)
+    const G = P.ground && P.ground.hit ? P.ground : null; let need = G ? Math.min(3, G.values.length, Math.max(2, lyricBudget(P.seconds, P.bpm || SONG_DEFAULTS.bpm) - 1)) : 0;
     const nb = lyricBudget(P.seconds, P.bpm || SONG_DEFAULTS.bpm), short = nb <= 3 ? `\nA very short song: one [verse] and one [chorus], ${nb} short lines in all (3 to 6 words each).` : '';   // v032: 10-20 s songs
-    const factText = G ? `\n\nFACTS about "${G.title}" (${G.site}):\n${G.lines.map((l) => '- ' + l + sungAs(l)).join('\n')}\nWrite NEW lines: never quote an existing song or the source. Build the lyrics from ${need < 3 ? 'these facts' : '3 to 5 of these facts'}: names, dates, places, numbers, details. Sing every number exactly as given. Use no other facts.` : '';
-    const messages = [{ role: 'system', content: 'You write original songs made on this phone. Call write_song.\n\nNOTES:\n' + this.cookbooks.text([...this.cookbooks.index.always, ...ids]) },
-      { role: 'user', content: `The song is for: ${P.idea}\nLength: ${P.seconds} seconds.${P.tags ? '\nStyle: ' + P.tags : ''}${P.bpm ? `\nTempo: ${P.bpm} BPM, so at most ${lyricBudget(P.seconds, P.bpm)} sung lines.` : `\nPick the bpm for the style; at most (${P.seconds} - 6) x bpm / 480 sung lines (${lyricBudget(P.seconds, 120)} at 120 BPM).`}${short}${factText}\nWrite the lyrics now.` }];
+    const factText = (n) => !G ? '' : `\n\nFACTS about "${G.title}" (${G.site}):\n${G.lines.slice(0, n).map((l) => '- ' + l + sungAs(l)).join('\n')}\nWrite NEW lines: never quote an existing song or the source. Build the lyrics from ${Math.min(need, n) < 3 ? 'these facts' : '3 to 5 of these facts'}: names, dates, places, numbers, details. Sing every number exactly as given. Use no other facts.`;
+    const sysOf = (budget) => 'You write original songs made on this phone. Call write_song.\n\nNOTES:\n' + this.cookbooks.text([...this.cookbooks.index.always, ...(budget === 0 ? [] : this.cookbooks.ids(this.cookbooks.index.songwrite, budget == null ? undefined : budget))]);
+    const userOf = (n) => ({ role: 'user', content: `The song is for: ${P.idea}\nLength: ${P.seconds} seconds.${P.tags ? '\nStyle: ' + P.tags : ''}${P.bpm ? `\nTempo: ${P.bpm} BPM, so at most ${lyricBudget(P.seconds, P.bpm)} sung lines.` : `\nPick the bpm for the style; at most (${P.seconds} - 6) x bpm / 480 sung lines (${lyricBudget(P.seconds, 120)} at 120 BPM).`}${short}${factText(n)}\nWrite the lyrics now.` });
+    let messages = [{ role: 'system', content: sysOf(null) }, userOf(Infinity)], maxTokens = 700;
+    if (big) { const f = await this.fitSong(ctx, sysOf, userOf); messages = f.messages; maxTokens = f.maxTokens; if (G) need = Math.min(need, f.facts); }
+    const base = messages.length;
     let best = null;
     for (let k = 0; k < 3; k++) {
-      const out = await this.llm(ctx, messages, Object.assign({ tools: decls(['write_song']), maxTokens: 700, prefix: '<|tool_call>call:write_song{' }, SAMPLING.tool));
+      const out = await this.llm(ctx, messages, Object.assign({ tools: decls(['write_song']), maxTokens, prefix: '<|tool_call>call:write_song{' }, SAMPLING.tool));
       const c = out.toolCalls.find((x) => x.name === 'write_song'), v = c && validate('write_song', c.arguments);
       const bad = v && v.ok ? screenRender('make_song', v.args, { userText: P.idea }) : null;
       const bpm = (v && v.ok && (P.bpm || v.args.bpm)) || SONG_DEFAULTS.bpm;
@@ -671,8 +827,10 @@ export class Agent {
         if (!best || out.used.length > best.used.length) best = out;
         thin = `the lyrics use ${out.used.length} of the facts; use at least ${need} of them (names, dates, places, numbers) and no other facts`;   // a closed check, asked again
       }
-      messages.push({ role: 'assistant', tool_calls: [{ id: 'w' + k, type: 'function', function: { name: 'write_song', arguments: (c && c.arguments) || {} } }] },
-        { role: 'tool', tool_call_id: 'w' + k, name: 'write_song', content: 'error: ' + (long || thin || (bad ? bad.reason : (v ? v.errors.join('; ') : 'call write_song with title, tags, bpm and lyrics'))) });
+      const why = long || thin || (bad ? bad.reason : (v ? v.errors.join('; ') : 'call write_song with title, tags, bpm and lyrics'));
+      if (big) { messages.length = base; messages.push({ role: 'user', content: `Your last lyrics could not be used: ${why}. Call write_song again.` }); }   // 3.8: no room for the last attempt itself
+      else messages.push({ role: 'assistant', tool_calls: [{ id: 'w' + k, type: 'function', function: { name: 'write_song', arguments: (c && c.arguments) || {} } }] },
+        { role: 'tool', tool_call_id: 'w' + k, name: 'write_song', content: 'error: ' + why });
     }
     if (best) return best;
     return { title: 'Untitled', tags: (P.tags || 'pop, upbeat') + ', instrumental', bpm: P.bpm || 110, lyrics: '', notes: ['the model could not write lyrics: instrumental'], used: [] };
@@ -768,12 +926,55 @@ const LOOK_RELS = new Set(['color', 'material', 'form', 'style', 'weapon', 'sett
 const LIKE_SYS = 'You check picture prompts for an app that never recreates a real person, a character, a brand or an artwork. Answer with the recognisable tool: yes if the prompt names the SUBJECT or describes its signature look (its face, outfit, colours, emblem, items) closely enough to recognise it; no if it describes only an original take (an archetype, a role, an era, a setting, a mood).';
 const ORIGINAL_SYS = 'Rewrite the picture PROMPT as an ORIGINAL scene with the original_prompt tool. Keep the archetype, the role, the era, the setting, the mood, the materials and the palette. Remove every name, emblem, logo, signature outfit, colour combination or item that would let someone recognise a real person, a character, a brand or an artwork. One or two sentences, plain words.';
 // ---- v021: grounded chat (Josh, Oct 13: "chat with Wikipedia and Fandom grounding")
-const LOOKUPS_OFF = 'Looking things up on Wikipedia and Fandom is switched off (Settings > Assistant). If the person asks about a fact, say in one short sentence that you cannot look it up right now, then answer briefly and carefully from what you know.';
+const LOOKUPS_OFF = 'Looking things up on Wikipedia and Fandom is switched off (Settings > Juli). If the person asks about a fact, say in one short sentence that you cannot look it up right now, then answer briefly and carefully from what you know.';
 const RENDER_ASK = /\b(?:make|draw|paint|create|generate|render|sketch|design|compose|write)\b[\s\S]{0,60}\b(?:picture|photo|image|drawing|painting|portrait|poster|wallpaper|clip|video|movie|song|track|tune|ballad|music|lyrics)\b|\b(?:animate|edit)\b|^\s*(?:please\s+)?(?:paint|draw|sketch)\b|\b(?:picture|photo|image|clip|video|song)\s+(?:of|about)\b/i;
 const SMALL_TALK = /^(?:hi|hello|hey|yo|thanks|thank you|thx|ok|okay|cool|nice|great|wow|good (?:morning|afternoon|evening|night)|how are you|what'?s up|bye|goodbye|lol|haha)\b[\s\S]{0,30}$/i;
 const APP_ASK = /\b(?:p0pc0rn|this app|the app|download(?:s|ed|ing)?|settings?|queue|library|lyrics planner|music model|picture model|video model|assistant model|storage|battery|(?:you(?:'ve| have)?|i) looked (?:things )?up|lookups)\b/i;   // v021: questions about the lookups themselves (the FAQ answers them)
 const FORCE_ASK = /^\s*(?:research|look\s*up|lookup)\s*[:\-]?\s+/i;
 const FOLLOW_UP = /^(?=[\s\S]{0,160}$)[\s\S]*\b(?:it|its|it's|they|them|their|he|him|his|she|her|that|there|this|those|these)\b/i;
+// ---- 3.8 (v040): the two-model route (BRAIN)
+const BRAIN_PLAN = 'Juli already looked up the facts for this message: they are the research results below, if any. Use only those facts and never invent facts. There are no more lookups for this message.';
+const BRAIN_WRITE = BRAIN_PLAN + ' The person asked for a piece of writing: write all of it as your reply, in plain text, in the form and length they asked for. Call ask_user only if the request is unclear in a way that changes the writing.';
+const MAKE_NOUN = /\b(?:picture|photo|image|drawing|painting|portrait|poster|wallpaper|clip|video|movie|animation|song|track|tune|ballad|music|lyrics)s?\b/i;
+const WRITE_ASK = new RegExp(String.raw`\b(?:write|compose|draft|rewrite|redraft|polish|proofread|edit|shorten|expand|summari[sz]e|outline|brainstorm|plan|translate|make|give|create|come up with)\b[\s\S]{0,80}?\b(?:poems?|poetry|story|stories|tale|essay|letter|e-?mail|note|message|speech|toast|eulogy|script|scene|chapter|blog|post|caption|bio|article|report|review|haiku|limerick|sonnet|verses?|rhymes?|jokes?|riddles?|outline|itinerary|recipe|description|pitch|summary|tweet|cover letter|invitation|slogan|tagline|dialogue|monologue|fable|agenda|paragraph)\b`
+  + String.raw`|\b(?:write|compose|draft) (?:me |us |him |her |them )?(?:a|an|the|my|our|some|this)\b|\bhelp me (?:write|plan|draft)\b|\btell (?:me |us )?(?:a|another) (?:story|joke|tale|fable|riddle)\b|\bplan (?:a|an|my|our|the) (?:trip|day|week|weekend|party|menu|route|visit|holiday|vacation)\b`, 'i');
+const FOLLOW_EDIT = /\b(?:shorter|longer|shorten|lengthen|expand|rewrite|rephrase|reword|redo|revise|tweak|change|edit|fix|improve|add|remove|cut|replace|swap|another|again|instead|funnier|sadder|happier|darker|simpler|more|less|verse|stanza|line|paragraph|ending|title|tone)\b/i;
+/** chat | writing | agent (something to make) for a message; follow = the kind of this chat's last Bigger brain turn: a short edit of it
+ *  ("make it shorter", "change the last line") stays that kind */
+export function taskKind(text, follow = null) {
+  const t = String(text || '');
+  if (RENDER_ASK.test(t) && (MAKE_NOUN.test(t) || /\banimate\b/i.test(t))) return 'agent';
+  if (WRITE_ASK.test(t)) return 'writing';
+  if (RENDER_ASK.test(t)) return 'agent';
+  if ((follow === 'writing' || follow === 'agent') && t.length <= 240 && FOLLOW_EDIT.test(t)) return follow;
+  return 'chat';
+}
+/** worth a lookup before the Bigger brain plans (Juli's own model runs first): a name the person wrote (a capitalised word inside a
+ *  sentence, a "Title (thing)"), a forced lookup, or a song about a subject (its facts are looked up: groundSong) */
+export function lookupWorthy(text) {
+  const t = String(text || '');
+  if (FORCE_ASK.test(t) || songMakeAsk(t) || explicitTitles(t, false).length) return true;
+  return t.split(/(?<=[.!?])\s+|\n+/).some((sent) => sent.trim().split(/\s+/).slice(1).some((w) => /^["“(]?\p{Lu}/u.test(w) && !/^["“(]?(?:I|I'm|I'd|I'll|I've|OK|AI|TV|DJ)\b/.test(w)));
+}
+/** a plan's tool exchanges with each looked-up fact list cut to its first n lines (headers, notes and sources kept) */
+function cutFacts(msgs, n) {
+  return msgs.map((m) => {
+    if (m.role !== 'tool' || m.name !== 'research' || typeof m.content !== 'string') return m;
+    let k = 0; const out = [];
+    for (const line of m.content.split('\n')) {
+      if (/^FACTS about /.test(line)) k = 0;
+      else if (/^- /.test(line)) { k++; if (k > n) continue; }
+      out.push(line);
+    }
+    return Object.assign({}, m, { content: out.join('\n') });
+  });
+}
+/** a plan's tool exchanges with only the lookups and the last exchange kept (an assistant call with its answers, or a nudge) */
+function keepRecent(msgs) {
+  const groups = [];
+  for (const m of msgs) { if (m.role === 'tool' && groups.length) groups[groups.length - 1].push(m); else groups.push([m]); }
+  return groups.filter((g, i) => i === groups.length - 1 || g.some((m) => m.role === 'tool' && m.name === 'research')).flat();
+}
 const PLAN_SYS = 'You are a LOOKUP PLANNER for a chat assistant. Read the MESSAGE and list the specific things it asks about that an encyclopedia or a fan wiki would answer: named people, places, events, organizations, works (books, films, songs, games), objects, species, characters and franchises. Put the main subject FIRST, named exactly as an encyclopedia title (e.g. "Golden Gate Bridge", "SS Edmund Fitzgerald"). For a character, game, film, show or comic give kind "popculture" and its franchise. Return ONLY JSON: {"topics":[{"topic":"...","kind":"real","franchise":""}]}. Return {"topics":[]} for small talk, opinions, advice, questions about this app, the person\'s own life, family, friends or pets, and generic words. At most 2 topics.';
 const PLAN_FORCE = ' FORCE MODE: the person asked for a lookup; list every named thing (at most 4).';
 const WIKI_TITLE_RE = /\b([A-Z][\w'.-]*(?: [A-Z][\w'.-]*){0,3} \([a-z][\w' .-]{1,30}\))/g;
@@ -859,8 +1060,8 @@ export function failReason(j) {
   if (c === 'KILLED') return `the page stopped twice while ${doing}, so the phone is probably short on memory (closing other apps helps)`;
   if (c === 'OUT_OF_MEMORY' || /out of memory|outofmemory|allocation failed|memory/i.test(m)) return `the phone ran out of memory while ${doing}`;
   if (c === 'GPU_LOST') return `the graphics chip reset while ${doing}`;
-  if (c === 'TOO_LONG') return 'the conversation got too long for the assistant (start a new chat)';
-  if (c === 'NOT_DOWNLOADED') return 'the assistant is not on this phone any more (Settings > Models)';
+  if (c === 'TOO_LONG') return 'the conversation got too long for Juli (start a new chat)';
+  if (c === 'NOT_DOWNLOADED') return 'Juli is not on this phone any more (Settings > Models)';
   if (c === 'NO_CONSENT') return 'the agreement is needed first (Settings > Rights & Copyright)';
   const short = m.replace(/\s+/g, ' ').trim().slice(0, 80);
   return `something went wrong while ${doing}${short ? ` (${short})` : ''}; Settings > About > Diagnostics has the details`;

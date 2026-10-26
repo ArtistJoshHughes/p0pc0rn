@@ -1,0 +1,68 @@
+{
+ "p0skel": 1,
+ "manifest": {
+  "id": "wildfire-watch",
+  "name": "Wildfire Watch",
+  "description": "Checks current US wildfire incidents within 25, 50 or 100 miles of one place on its own and posts each notable fire (100 acres or more, or within 25 miles) into Juli’s chat once. US only.",
+  "category": "non-agentic",
+  "version": "1.0",
+  "author": "p0pc0rn",
+  "runtime": "p5-kit@1",
+  "entry": "sketch.js",
+  "permissions": {
+   "storage": true,
+   "online": [
+    "fires.wfigs",
+    "geocode.openmeteo"
+   ],
+   "chat.post": true,
+   "location": "place"
+  },
+  "triggers": [
+   {
+    "type": "on-open"
+   },
+   {
+    "type": "interval",
+    "minMinutes": 90,
+    "calmMinutes": 720
+   }
+  ],
+  "slots": {
+   "title": {
+    "type": "string",
+    "max": 22,
+    "required": true
+   },
+   "accent": {
+    "type": "color",
+    "required": true
+   },
+   "radius_mi": {
+    "type": "enum",
+    "enum": [
+     25,
+     50,
+     100
+    ],
+    "required": true,
+    "desc": "how far to watch"
+   },
+   "place_hint": {
+    "type": "string",
+    "max": 60,
+    "required": false,
+    "desc": "a town the person named, to pre-fill the search (they still confirm it)"
+   }
+  }
+ },
+ "slots_default": {
+  "title": "Wildfire Watch",
+  "accent": "#ff6a3d",
+  "radius_mi": 50
+ },
+ "notes_for_juli": "radius_mi: 25, 50 or 100 (50 unless the person says). place_hint = the town if the person named one, else leave it out. Never invent a location.",
+ "files": {
+  "sketch.js": "/* WILDFIRE WATCH - a live p0pc0rn app (non-agentic: it checks on its own; Juli does not work in it). It watches current US wildfire incidents (NIFC / WFIGS) within a distance the person\n   picks around ONE place they type in, and posts each NOTABLE fire into Juli's chat once: 100 acres or more, or any size within 25\n   miles. Checks run only while p0pc0rn is open: every 90 minutes while a notable fire is in range, every 12 hours when it is calm.\n   Data: the national wildfire incident service through the host (p0.fetch). The place is kept on this phone only. */\n\n// ===== SLOTS =====\nconst SL = window.SLOTS || {};\nconst TITLE = String(SL.title || 'Wildfire Watch').slice(0, 22);\nconst ACCENT = /^#[0-9a-fA-F]{6}$/.test(SL.accent || '') ? SL.accent : '#ff6a3d';\nconst RADII = [25, 50, 100];\nconst RADIUS0 = RADII.includes(+SL.radius_mi) ? +SL.radius_mi : 50;\nconst BIG_ACRES = 100, CLOSE_MI = 25;\nconst PLACE0 = String(SL.place_hint || '').slice(0, 60);\n\n// ===== STATE (saved) =====\nconst KEY = 'fire.v1';\nlet st = { place: null, radius: RADIUS0, seen: [], lastCheck: 0 };\nlet data = { fires: null, err: null, at: 0, busy: false };\nlet ui = { query: PLACE0, results: null, searching: false, editing: false, contentH: 900 };\nfunction loadSt() { st = Object.assign({ place: null, radius: RADIUS0, seen: [], lastCheck: 0 }, K.load(KEY, {})); }\nfunction saveSt() { K.save(KEY, st); }\nloadSt();\n\n// ===== DISTANCE + THE RULE =====\nfunction miles(a, b) {\n  const R = 3958.8, toR = Math.PI / 180, dLat = (b.lat - a.lat) * toR, dLon = (b.lon - a.lon) * toR;\n  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLon / 2) ** 2;\n  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));\n}\nconst notable = (f) => (f.acres || 0) >= BIG_ACRES || f.mi <= CLOSE_MI;\nfunction inRange(list) {\n  return (list || []).map((f) => Object.assign({}, f, { mi: miles(st.place, f) })).filter((f) => f.mi <= st.radius).sort((a, b) => a.mi - b.mi);\n}\nconst acresText = (a) => (a == null ? 'size unknown' : a < 1 ? 'under 1 acre' : Math.round(a).toLocaleString('en-US') + ' acres');\n\n// ===== THE CHECK =====\nasync function check() {\n  loadSt();\n  if (!st.place) return { active: false };\n  const d = await p0.fetch('fires.wfigs', { lat: st.place.lat, lon: st.place.lon, radiusMi: st.radius });\n  const fires = inRange(d.fires);\n  let posted = 0;\n  for (const f of fires) {\n    if (!f.id || st.seen.includes(f.id) || !notable(f)) continue;\n    try { await p0.chat.post({ title: (f.name || 'Unnamed') + ' Fire · ' + Math.round(f.mi) + ' mi from ' + st.place.name,\n      severity: f.mi <= CLOSE_MI ? 'warning' : 'watch', text: acresText(f.acres) + (f.contained != null ? ', ' + Math.round(f.contained) + '% contained' : '') + '. Follow local officials for evacuation orders.' }); }\n    catch (e) { break; }   // the hour's notices are used up: the rest wait for the next check\n    st.seen.push(f.id); st.seen = st.seen.slice(-300); saveSt(); posted++;   // remembered at once: never posted twice\n  }\n  st.lastCheck = Date.now(); saveSt();\n  if (p0.mode === 'run') { data.fires = fires; data.at = Date.now(); }\n  return { active: fires.some(notable), posted };\n}\nif (window.p0) p0.onCheck(check);\n\n// ===== DATA =====\nasync function refresh(quiet) {\n  if (!st.place || data.busy || !window.p0) return;\n  data.busy = true; data.err = null;\n  try {\n    const d = await p0.fetch('fires.wfigs', { lat: st.place.lat, lon: st.place.lon, radiusMi: st.radius });\n    data.fires = inRange(d.fires); data.at = Date.now();\n    if (!quiet) K.toast('Updated', { tone: 'good', icon: 'refresh', ms: 1200 });\n  } catch (e) { data.err = String((e && e.message) || e); if (!quiet) K.toast(\"Couldn't reach the wildfire service\", { tone: 'bad', icon: 'alert' }); }\n  data.busy = false;\n}\nasync function search() {\n  const q = ui.query.trim();\n  if (q.length < 2 || ui.searching) return;\n  ui.searching = true; ui.results = null;\n  try { ui.results = (await p0.fetch('geocode.openmeteo', { name: q })).results || []; if (!ui.results.length) K.toast('No place with that name', { tone: 'warn' }); }\n  catch (e) { K.toast(\"Couldn't search for places\", { tone: 'bad' }); }\n  ui.searching = false;\n}\nfunction choose(r) {\n  if (r.cc !== 'US') { K.toast('The wildfire service covers the US only', { tone: 'warn', icon: 'alert', ms: 3000 }); return; }\n  st.place = { name: [r.name, r.region].filter(Boolean).join(', ').slice(0, 60), lat: r.lat, lon: r.lon };\n  st.seen = []; saveSt(); ui.results = null; ui.editing = false; K.blurInputs();\n  K.sfx('success'); data.fires = null; refresh(true);\n}\n\n// ===== DRAWING =====\nfunction setup() {\n  K.setup({ mode: 'dark', accent: ACCENT });\n  K.scene('main', drawMain);\n  if (st.place && window.p0 && p0.mode === 'run') refresh(true);\n}\nfunction draw() { K.render(); }\n\nfunction drawMain() {\n  K.backdrop({ top: K.C.bg, bottom: K.darken(ACCENT, 0.85), glow: [{ x: K.W * 0.2, y: 60, r: 260, color: K.alpha(ACCENT, 0.16) }] });\n  const sub = st.place ? 'Within ' + st.radius + ' mi of ' + st.place.name : 'Pick a place to watch';\n  const top = K.navBar.top(sub) + 8, clipY = K.navBar.bottom(), w = K.W - 2 * K.S.l, x = K.S.l;\n  const off = K.scroll('main', 0, clipY, K.W, K.H - clipY, ui.contentH);\n  K.clip(0, clipY, K.W, K.H - clipY, () => { ui.contentH = body(x, top - off, w) + off - top + 40; });\n  const tap = K.navBar(TITLE, off, { sub, right: st.place ? { id: 'refresh', icon: 'refresh' } : undefined });\n  if (tap === 'refresh') refresh(false);\n}\n\nfunction body(x, y, w) {\n  const y0 = y;\n  if (!st.place || ui.editing) y = placePicker(x, y, w);\n  else {\n    K.card(x, y, w, 64, { r: 16 });\n    K.icon('pin', x + 30, y + 32, 20, ACCENT);\n    K.text(st.place.name, x + 54, y + 28, 'headline', K.C.text, { maxW: w - 150 });\n    K.text(st.lastCheck ? 'Last check ' + K.fmt.ago(st.lastCheck) : 'Not checked yet', x + 54, y + 48, 'footnote', K.C.text3);\n    if (K.button('change', x + w - 92, y + 14, 80, 36, 'Change', { style: 'tinted' })) { ui.editing = true; ui.query = ''; ui.results = null; }\n    y += 80;\n    K.text('DISTANCE', x, y + 14, 'label', K.C.text2); y += 24;\n    const ri = K.segmented('radius', x, y, w, RADII.map((r) => r + ' mi'), RADII.indexOf(st.radius));\n    if (RADII[ri] !== st.radius) { st.radius = RADII[ri]; saveSt(); refresh(true); }\n    y += 52;\n    K.text('FIRES IN RANGE', x, y + 14, 'label', K.C.text2); y += 26;\n    if (data.busy && !data.fires) { K.shimmer(x, y, w, 72, 16); y += 84; }\n    else if (data.err && !data.fires) { y += K.empty(K.W / 2, y + 10, 'alert', 'Offline', 'Fires will show when the wildfire service answers.', { w }) + 16; }\n    else if (data.fires && !data.fires.length) { K.card(x, y, w, 64, { r: 16 }); K.icon('checkCircle', x + 30, y + 32, 20, K.C.good); K.text('No wildfires reported in range', x + 54, y + 37, 'body', K.C.text, { maxW: w - 70 }); y += 76; }\n    else for (const [i, f] of (data.fires || []).entries()) {\n      const n = notable(f), col = f.mi <= CLOSE_MI ? K.C.bad : n ? K.C.warn : K.C.text3;\n      K.card(x, y, w, 72, { r: 16 });\n      K.circle(x + 30, y + 36, 16, { fill: K.alpha(col, 0.18) }); K.icon('flame', x + 30, y + 36, 18, col);\n      K.text((f.name || 'Unnamed') + ' Fire', x + 56, y + 30, 'headline', K.C.text, { maxW: w - 140 });\n      K.text(acresText(f.acres) + (f.contained != null ? ' · ' + Math.round(f.contained) + '% contained' : ''), x + 56, y + 52, 'footnote', K.C.text3, { maxW: w - 140 });\n      K.text(Math.round(f.mi) + ' mi', x + w - 16, y + 42, 'headline', col, { align: 'right' });\n      y += 82; if (i > 20) break;\n    }\n    y += K.para('Notable fires (100 acres or more, or within 25 miles) are posted to Juli’s chat once each. Checks run while p0pc0rn is open. For evacuation orders, follow your local officials.', x, y + 6, w, 'footnote', K.C.text3) + 10;\n  }\n  K.text('Data: NIFC wildfire incidents (WFIGS)', x, y + 16, 'caption', K.C.text3);\n  return y + 30 - y0;\n}\n\nfunction placePicker(x, y, w) {\n  K.text('PLACE TO WATCH (US)', x, y + 14, 'label', K.C.text2); y += 24;\n  ui.query = K.input('place', x, y, w - 96, 48, ui.query, { placeholder: 'Town or city', icon: 'pin', onEnter: search });\n  if (K.button('find', x + w - 86, y, 86, 48, ui.searching ? '…' : 'Find', { style: 'primary', disabled: ui.searching })) search();\n  y += 60;\n  if (ui.results) for (const [i, r] of ui.results.entries()) {\n    const row = K.listRow('res' + i, x, y, w, 56, { title: r.name, sub: [r.region, r.country].filter(Boolean).join(', '), icon: 'pin', iconColor: r.cc === 'US' ? ACCENT : K.C.text3, chevron: true, r: 14 });\n    if (row.tap) choose(r);\n    y += 62;\n  }\n  if (st.place && K.button('cancel', x, y + 4, w, 44, 'Keep ' + st.place.name, { style: 'ghost' })) { ui.editing = false; ui.results = null; K.blurInputs(); }\n  return y + (st.place ? 60 : 12);\n}\n"
+ }
+}

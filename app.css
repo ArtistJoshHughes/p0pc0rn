@@ -651,6 +651,7 @@ html.pf-fresh body > * { visibility: hidden !important; }
 html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
   background: #000; color: #f2f2f7; font: 17px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; z-index: 2147483647; visibility: visible; }
 @media (prefers-color-scheme: light) { html.pf-fresh body::after { background: #F6F6F8; color: #1c1c1e; } }
+html.pf-fresh[data-fresh^="load "] body::after { content: 'Switching models\2026'; }   /* 3.8: a model switch says so (Josh) */
 .sprite { position: absolute; }
 #s-diagtext { white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow: auto; }
 /* v023: the music video's storyboard board and sheets (app.js) */
@@ -684,3 +685,34 @@ html.pf-fresh body::after { content: 'Freeing memory\2026  continuing'; position
 .mv-sheet .mv-seg button[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); }
 .mv-sheet { max-height: 88dvh; overflow-y: auto; }
 .mv-sheet p { margin: 0; }
+
+/* 3.8: the Apps tab (makeapp/host.js), the app runner, app notices in the chat, Settings › Benchmark */
+.apps-make { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-4); border-radius: var(--r-md); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--hairline); }
+.apps-make textarea { width: 100%; min-height: 64px; resize: vertical; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-1); border: 0;
+  box-shadow: inset 0 0 0 1px var(--hairline); padding: 10px 12px; font: inherit; font-size: 16px; }
+.apps-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); color: var(--text-2); }
+.apps-status.warn { color: var(--warn); } .apps-status.good { color: var(--ok); }
+.app-row .app-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.app-row .app-txt .footnote { overflow-wrap: anywhere; }
+.app-row .li-end.col { flex-direction: column; align-items: stretch; gap: 0; }
+.app-row + .app-row { box-shadow: inset 0 1px 0 var(--hairline); }
+.perm-list { display: flex; flex-direction: column; gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
+.perm-list li { display: flex; flex-direction: column; gap: 2px; }
+.app-run { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--bg); }
+.app-bar { display: flex; align-items: center; gap: var(--s-3); padding: calc(var(--safe-t) + 4px) var(--gutter-r) 4px var(--gutter-l); min-height: 44px; box-shadow: inset 0 -1px 0 var(--hairline); }
+.app-bar .app-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-body { position: relative; flex: 1; min-height: 0; }
+.app-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+.app-checks { position: fixed; left: -10px; top: -10px; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.app-frame.hidden { width: 1px; height: 1px; }
+.app-selftest { position: fixed; inset: 0; opacity: 0; pointer-events: none; z-index: -1; overflow: hidden; }   /* the benchmark's Apps check: real size, unseen */
+html.app-open, html.app-open body { overflow: hidden; }
+.msg.bot.k-notice { box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--hairline); }
+.msg.bot.k-notice.sev-warning { box-shadow: inset 3px 0 0 var(--danger), inset 0 0 0 1px var(--hairline); }
+.msg.bot.k-notice.sev-watch { box-shadow: inset 3px 0 0 var(--warn), inset 0 0 0 1px var(--hairline); }
+.msg-notice-title { display: flex; align-items: center; gap: var(--s-2); font-weight: 600; }
+.msg.bot.k-notice.sev-warning .msg-ic { color: var(--danger); } .msg.bot.k-notice.sev-watch .msg-ic { color: var(--warn); }
+.msg-from { margin-top: 4px; }
+.bench-row { justify-content: flex-start; flex-wrap: wrap; }
+.bench-out { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3) var(--s-4); }
+.bench-text { white-space: pre-wrap; margin: 0; }

@@ -22,3 +22,7 @@
 16. Songs (p0pc0rn v019): `music/music.js` - `createEngine({ model: 'acestep15-turbo', packUrl: P0_CONFIG.packs['acestep15-turbo'] })`, then
     `textToMusic({tags, lyrics, seconds, seed, bpm, keyscale, timesignature, lm})`; the lyrics planner via `lmStatus / downloadLM / deleteLM`
     (ENGINE_API.md section 10). Both trees are the probes' files byte for byte (+ the `prefix` option in llm/llm.js).
+17. The assistant's Bigger brain (p0pc0rn 3.8): the same `llm/llm_engine.js` with `createEngine({ model: 'bolt-e4b', split: 'required' })`
+    (NVIDIA Nemotron 3.5 Bolt E4B, text only). `split` runs the first layers in a module SharedWorker (`llm/lworker.js`, served with
+    COEP require-corp by the app's service worker; `llm/split.js` is the page's side): on iOS 27 a process of its own. Juli's E2B uses
+    `split: true` with `splitFallback` (ENGINE_API.md section 9).

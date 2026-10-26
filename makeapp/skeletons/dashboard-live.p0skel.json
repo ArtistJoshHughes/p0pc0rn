@@ -1,0 +1,298 @@
+{
+ "p0skel": 1,
+ "manifest": {
+  "id": "dashboard-live",
+  "name": "Price dashboard",
+  "description": "A dashboard of things whose value changes: a big number with its change (day / week / month / year; real 1-day and 1-week charts for crypto), a watchlist, a detail page and 4 stat tiles. Live crypto prices from CoinGecko. Fits: crypto prices, savings, scores. Prices only, no advice.",
+  "category": "non-agentic",
+  "version": "1.1",
+  "author": "p0pc0rn",
+  "runtime": "p5-kit@1",
+  "entry": "sketch.js",
+  "permissions": {
+   "storage": true,
+   "online": [
+    "prices.coingecko"
+   ]
+  },
+  "triggers": [
+   {
+    "type": "manual"
+   }
+  ],
+  "slots": {
+   "title": {
+    "type": "string",
+    "max": 22,
+    "required": true,
+    "desc": "page title"
+   },
+   "accent": {
+    "type": "color",
+    "required": true
+   },
+   "currency": {
+    "type": "string",
+    "max": 3,
+    "required": true,
+    "desc": "symbol before values, e.g. $ or EUR sign, or empty string for plain numbers"
+   },
+   "items": {
+    "type": "array",
+    "min": 2,
+    "max": 8,
+    "required": true,
+    "item": {
+     "sym": {
+      "type": "string",
+      "max": 5,
+      "required": true,
+      "desc": "short code, capitals"
+     },
+     "name": {
+      "type": "string",
+      "max": 28,
+      "required": true
+     },
+     "kind": {
+      "type": "string",
+      "max": 14,
+      "required": true,
+      "desc": "group label"
+     },
+     "color": {
+      "type": "color",
+      "required": true
+     },
+     "price": {
+      "type": "number",
+      "required": true,
+      "desc": "current value; for a coin with cg put 0 (the live feed fills it)"
+     },
+     "chg": {
+      "type": "object",
+      "required": true,
+      "desc": "% change; for a coin with cg put 0s (the live feed fills them)",
+      "item": {
+       "D": {
+        "type": "number",
+        "required": true
+       },
+       "W": {
+        "type": "number",
+        "required": true
+       },
+       "M": {
+        "type": "number",
+        "required": true
+       },
+       "Y": {
+        "type": "number",
+        "required": true
+       }
+      }
+     },
+     "about": {
+      "type": "string",
+      "max": 220,
+      "required": true,
+      "desc": "one sentence"
+     },
+     "cg": {
+      "type": "string",
+      "max": 60,
+      "required": false,
+      "desc": "CoinGecko coin id for live prices (e.g. avalanche-2, bitcoin); leave out for anything else"
+     },
+     "held": {
+      "type": "number",
+      "min": 0,
+      "required": false,
+      "desc": "units held; leave out for a plain watchlist"
+     }
+    }
+   },
+   "stats": {
+    "type": "array",
+    "min": 4,
+    "max": 4,
+    "required": true,
+    "desc": "the 4 tiles on top (for crypto with live_stats true they show the first coin’s live facts instead: put \"–\" values)",
+    "item": {
+     "label": {
+      "type": "string",
+      "max": 16,
+      "required": true
+     },
+     "value": {
+      "type": "string",
+      "max": 10,
+      "required": true
+     },
+     "sub": {
+      "type": "string",
+      "max": 22,
+      "required": true
+     },
+     "tone": {
+      "type": "enum",
+      "enum": [
+       "up",
+       "down",
+       ""
+      ],
+      "required": true
+     },
+     "icon": {
+      "type": "icon",
+      "required": true
+     }
+    }
+   },
+   "hero_label": {
+    "type": "string",
+    "max": 22,
+    "required": false,
+    "desc": "label of the big number on top"
+   },
+   "live_stats": {
+    "type": "bool",
+    "required": false,
+    "desc": "true: the 4 tiles show the first item’s live facts"
+   }
+  }
+ },
+ "slots_default": {
+  "title": "Markets",
+  "accent": "#e84142",
+  "currency": "$",
+  "hero_label": "AVAX PRICE",
+  "live_stats": true,
+  "items": [
+   {
+    "sym": "AVAX",
+    "name": "Avalanche",
+    "kind": "Crypto",
+    "color": "#e84142",
+    "price": 0,
+    "chg": {
+     "D": 0,
+     "W": 0,
+     "M": 0,
+     "Y": 0
+    },
+    "about": "A fast, low-fee smart-contract platform: a primary network plus custom Layer 1 chains that each set their own rules.",
+    "cg": "avalanche-2"
+   },
+   {
+    "sym": "BTC",
+    "name": "Bitcoin",
+    "kind": "Crypto",
+    "color": "#f7931a",
+    "price": 0,
+    "chg": {
+     "D": 0,
+     "W": 0,
+     "M": 0,
+     "Y": 0
+    },
+    "about": "The first cryptocurrency: a fixed supply of 21 million coins, secured by proof-of-work mining since 2009.",
+    "cg": "bitcoin"
+   },
+   {
+    "sym": "ETH",
+    "name": "Ethereum",
+    "kind": "Crypto",
+    "color": "#8c9bff",
+    "price": 0,
+    "chg": {
+     "D": 0,
+     "W": 0,
+     "M": 0,
+     "Y": 0
+    },
+    "about": "A programmable blockchain for smart contracts, stablecoins and decentralised apps.",
+    "cg": "ethereum"
+   },
+   {
+    "sym": "SOL",
+    "name": "Solana",
+    "kind": "Crypto",
+    "color": "#b36bff",
+    "price": 0,
+    "chg": {
+     "D": 0,
+     "W": 0,
+     "M": 0,
+     "Y": 0
+    },
+    "about": "A high-throughput blockchain built for fast, low-fee payments and consumer apps.",
+    "cg": "solana"
+   },
+   {
+    "sym": "XRP",
+    "name": "XRP",
+    "kind": "Crypto",
+    "color": "#c9d1dc",
+    "price": 0,
+    "chg": {
+     "D": 0,
+     "W": 0,
+     "M": 0,
+     "Y": 0
+    },
+    "about": "The token of the XRP Ledger, a network built for fast cross-border payments.",
+    "cg": "ripple"
+   },
+   {
+    "sym": "LINK",
+    "name": "Chainlink",
+    "kind": "Crypto",
+    "color": "#375bd2",
+    "price": 0,
+    "chg": {
+     "D": 0,
+     "W": 0,
+     "M": 0,
+     "Y": 0
+    },
+    "about": "An oracle network that brings outside data, such as prices and weather, onto blockchains.",
+    "cg": "chainlink"
+   }
+  ],
+  "stats": [
+   {
+    "label": "AVAX RANK",
+    "value": "–",
+    "sub": "by market cap",
+    "tone": "",
+    "icon": "trophy"
+   },
+   {
+    "label": "MARKET CAP",
+    "value": "–",
+    "sub": "Avalanche",
+    "tone": "",
+    "icon": "globe"
+   },
+   {
+    "label": "24H VOLUME",
+    "value": "–",
+    "sub": "traded in 24 h",
+    "tone": "",
+    "icon": "bolt"
+   },
+   {
+    "label": "SUPPLY",
+    "value": "–",
+    "sub": "in circulation",
+    "tone": "",
+    "icon": "coin"
+   }
+  ]
+ },
+ "notes_for_juli": "Prices and facts only: never advice, predictions or buy / sell / hold words. For crypto, give each item its CoinGecko id in cg (avalanche-2, bitcoin, ethereum, solana, ripple, chainlink, dogecoin, cardano, polkadot, litecoin) and put price 0 and every chg 0: the app shows only live CoinGecko numbers for those and never the slot values. Keep AVAX first unless the person asks for other coins. For anything that is not crypto (savings, scores), leave cg out, use only numbers the person gave, set live_stats false and write 4 simple stat tiles; use currency \"\" for plain numbers. Leave held out unless the person gives amounts.",
+ "files": {
+  "sketch.js": "/* =====================================================================================\n   PULSE - a live markets dashboard. p0pc0rn skeleton \"dashboard-live\" (p0pc0rn Kit v1.3).\n   Serves: crypto prices (live from CoinGecko through p0.fetch) and any numbers the person\n           gives (savings, scores): for those, leave cg out and set live_stats false.\n\n   SCREENS\n     Markets  - large title that collapses on scroll. A hero card: the value that rolls\n                (K.count), a green / red change chip, a LIVE dot with \"Updated HH:MM:SS\", a\n                chart of real prices that draws itself on and a 1D / 1W / 1M / 1Y range\n                control. Then WATCHLIST and MORE MARKETS rows with mini sparklines and a\n                MARKET grid of stat cards. Pull the page down to refresh. Gear -> Settings.\n     Detail   - opened from a row with a 'slide'. Big price, the change for the range, a chart\n                you can scrub (hold, or drag sideways; a tap pins a point), a 2 x 3 stat grid\n                (market cap, volume, 24 h high / low, all-time high, supply), About and a\n                price alert. The star adds / removes the market from the watchlist.\n     Sheets   - Settings (live updates, simulate offline, show change as % or $) and\n                Price alert (slider, save, remove).\n   REAL DATA ONLY: every price, line and stat is CoinGecko's own (or the person's own numbers\n   for an item without a coin id). CoinGecko's free feed has about 7 days of hourly prices, so\n   1D and 1W draw real lines; 1M and 1Y show the real change with no line. A coin shows \"-\"\n   until its first live price. Nothing is made up to fill a gap, and nothing here is advice.\n   STATES: loading (shimmer on launch and during a pull-refresh), error (offline banner with\n   Retry + red toast), empty watchlist (K.empty), live ticks (prices roll and flash), a price\n   alert (a toast with a bell).\n   ===================================================================================== */\n\n// ===== THEME + LAYOUT =====\nconst ACCENT = (window.SLOTS && window.SLOTS.accent) || '#2e8bff';      // REPLACE: electric blue - buttons, LIVE dot, spinner, scrub ring\nconst NAVY = '#060c1a';        // page background (dark navy)\nconst GAIN = '#22d38a';        // green = went up\nconst LOSS = '#ff5468';        // red = went down\nconst GOLD = '#ffc94d';        // watchlist star, alert bell\nconst SIDE = 16;               // screen margin: cards sit 16 px in from each edge\nconst GAP = 12;                // gap between grid cards\nconst ROW_H = 68;              // watchlist row height\nconst STAT_H = 96;             // stat card height\nconst PULL_T = 64;             // pull this far past the top (px) to arm a refresh\nconst PULL_HOLD = 56;          // while refreshing, the page stays this far down (room for the spinner)\nconst LIVE_EVERY_S = 60;       // seconds between quiet live ticks (the host caches prices for a minute)\nconst LATENCY = { boot: 900, pull: 1800, tick: 0 };   // no live source: a short pause, so a pull still shows its spinner\nconst STORE_KEY = 'pulse-markets:v1';                   // REPLACE: one storage key per app\nconst DAY_MS = 86400000;\nconst RANGES = [\n  { key: 'D', label: '1D', caption: 'Past 24 hours', span: DAY_MS },\n  { key: 'W', label: '1W', caption: 'Past week', span: 7 * DAY_MS },\n  { key: 'M', label: '1M', caption: 'Past month', span: 30 * DAY_MS },\n  { key: 'Y', label: '1Y', caption: 'Past year', span: 365 * DAY_MS }\n];\n\n// ===== FALLBACK (only if the slots have no items): two coins and nothing else; every number comes from the live feed =====\nconst DEF_ITEMS = [\n  { sym: 'AVAX', name: 'Avalanche', kind: 'Crypto', color: '#e84142', cg: 'avalanche-2',\n    about: 'A fast, low-fee smart-contract platform: a primary network plus custom Layer 1 chains that each set their own rules.' },\n  { sym: 'BTC', name: 'Bitcoin', kind: 'Crypto', color: '#f7931a', cg: 'bitcoin',\n    about: 'The first cryptocurrency: a fixed supply of 21 million coins, secured by proof-of-work mining since 2009.' }\n];\n// the 4 tiles while the first coin's live facts are on their way (live_stats)\nconst WAIT_STATS = (a) => [\n  { label: a.sym + ' RANK', value: '–', sub: 'by market cap', tone: '', icon: 'trophy' },\n  { label: 'MARKET CAP', value: '–', sub: a.name.slice(0, 22), tone: '', icon: 'globe' },\n  { label: '24H VOLUME', value: '–', sub: 'traded in 24 h', tone: '', icon: 'bolt' },\n  { label: 'SUPPLY', value: '–', sub: 'in circulation', tone: '', icon: 'coin' }\n];\n\nconst okIcon = (n, d) => (typeof n === 'string' && (!K.ICONS || K.ICONS.includes(n)) ? n : d);\n// ----- slots -----\nconst SL = window.SLOTS || {};\nconst CUR = typeof SL.currency === 'string' ? SL.currency.slice(0, 3) : '$';\nconst PAGE_TITLE = String(SL.title || 'Markets').slice(0, 22);\nconst fin = (v) => (v == null || v === '' || !Number.isFinite(+v) ? null : +v);   // a number, or null when there is none (never a made-up 0)\n// A coin (cg) takes every number from the live feed: whatever its slots say is never shown. Anything else shows the person's own numbers.\nconst ASSETS = (Array.isArray(SL.items) && SL.items.length ? SL.items : DEF_ITEMS).slice(0, 12).map((a, i) => {\n  const sym = String(a.sym || a.symbol || a.name || 'I' + i).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'I' + i, c = a.chg || {};\n  const cg = /^[a-z0-9-]{2,60}$/.test(String(a.cg || '')) ? String(a.cg) : '', own = !cg && fin(a.price ?? a.value) != null;\n  return { sym, name: String(a.name || sym).slice(0, 28), kind: String(a.kind || 'Item').slice(0, 14), glyph: String(a.glyph || sym[0]).slice(0, 2),\n    color: a.color || '#8c9bff', cg, held: Math.max(0, fin(a.held) || 0), known: own, price: own ? fin(a.price ?? a.value) : null,\n    chg: own ? { D: fin(c.D), W: fin(c.W), M: fin(c.M), Y: fin(c.Y) } : { D: null, W: null, M: null, Y: null },\n    cap: null, volume: null, supply: null, high: null, low: null, ath: null, spark: null, at: 0, coin: null, capNote: '', about: String(a.about || '').slice(0, 220) };\n});\n// nothing held: the hero shows the FIRST item's own price (a watchlist, not a portfolio)\nif (!ASSETS.some((a) => a.held > 0)) ASSETS[0].held = 1;\nconst HERO_LABEL = String(SL.hero_label || (ASSETS.filter((a) => a.held > 0).length > 1 ? 'TOTAL VALUE' : ASSETS[0].sym + ' PRICE')).toUpperCase().slice(0, 22);\nconst LIVE_STATS = SL.live_stats !== false;   // the 4 tiles show the first coin's live facts\nconst MARKET_STATS = LIVE_STATS && ASSETS[0].cg ? WAIT_STATS(ASSETS[0]) : Array.isArray(SL.stats) && SL.stats.length ? SL.stats.slice(0, 4).map((t) => ({ label: String(t.label || '').toUpperCase().slice(0, 16),\n  value: String(t.value ?? '').slice(0, 10), sub: String(t.sub || '').slice(0, 22), tone: t.tone === 'up' || t.tone === 'down' ? t.tone : '', icon: okIcon(t.icon, 'chart') })) : WAIT_STATS(ASSETS[0]);\n\n// ===== STATE =====\n// prefs = what the user chose (saved). app = what is happening right now (not saved).\nlet prefs = { watch: ASSETS.slice(0, 4).map((a) => a.sym), range: 0, live: true, showAmount: false, alerts: {} };\nconst app = {\n  loaded: false, refreshing: false, mode: '', error: null, errorKick: -9, offline: false,\n  updatedAt: 0, bootAt: 0, dataAt: 0, chartAt: 0, lastTick: 0, pullArmed: false, pullDrop: 0,\n  sheet: null, sym: ASSETS[0].sym, homeY: 0, homeH: 1200, detailY: 0, detailH: 1200,\n  scrubId: null, scrubI: -1, pinI: -1, alertDraft: 0.05, starSpring: null\n};\n\n// ===== SETUP + FRAME =====\nfunction setup() {\n  K.setup({ mode: 'dark', accent: ACCENT, bg: NAVY, good: GAIN, bad: LOSS,\n    surface: '#0e1729', surface2: '#15203a', surface3: '#1d2a48' });   // navy cards; 2 + 3 given (derived ones are greyer)\n  restore();\n  ASSETS.forEach(buildSeries);\n  app.bootAt = K.t;\n  app.starSpring = K.spring(1, { k: 320, d: 12 });\n  K.count('hero', 0, 1);                  // WHY: seed at 0 so the first real total rolls up from zero\n  K.scene('home', drawHome);\n  K.scene('detail', drawDetail);\n  refreshData('boot');\n}\n\nfunction draw() {\n  K.render();\n  // Quiet live ticks: the same refresh path, no spinner and no toast unless something breaks.\n  if (prefs.live && app.loaded && !app.refreshing && K.t - app.lastTick > LIVE_EVERY_S) refreshData('tick');\n}\n\n// ===== STORAGE =====\nfunction restore() {\n  const saved = K.load(STORE_KEY, null);\n  if (!saved) return;\n  prefs = Object.assign(prefs, saved.prefs || {});\n  // the last live answer (with its time) shows until the next one; prices saved by older versions of this app are not used\n  const L = saved.live;\n  if (L && L.coins && L.at) { for (const a of ASSETS) if (a.cg && L.coins[a.cg]) applyCoin(a, L.coins[a.cg], L.at); app.updatedAt = L.at; }\n}\n\n// Saves choices and the last live answer, so a relaunch shows real numbers (marked with their time) before the first refresh.\n// WHY app.offline is not saved: it is a test switch; it must never survive a relaunch.\nfunction persist() {\n  const coins = {};\n  for (const a of ASSETS) if (a.cg && a.coin) coins[a.cg] = a.coin;\n  K.save(STORE_KEY, { prefs, live: app.updatedAt && Object.keys(coins).length ? { at: app.updatedAt, coins } : null });\n}\n\n// ===== SERIES (real points only) =====\n// a.series[key] = the values a range draws, a.times[key] = when each one was (ms). With CoinGecko's ~hourly 7-day prices, 1D and 1W are\n// real lines. Otherwise a range has just two real values, its start (from its % change) and now, and no line is drawn between them.\n// null = nothing known for that range.\nconst lined = (v) => !!v && v.length > 2;\nfunction buildSeries(a) {\n  a.series = {}; a.times = {};\n  if (a.flashAt == null) a.flashAt = -9;\n  for (const r of RANGES) {\n    a.series[r.key] = null; a.times[r.key] = null;\n    if (!a.known) continue;\n    const pts = a.spark && (r.key === 'D' || r.key === 'W') ? sparkPoints(a, r.span) : null;\n    if (pts) { a.series[r.key] = pts.v; a.times[r.key] = pts.t; continue; }\n    const c = a.chg[r.key];\n    if (c != null && c > -100) a.series[r.key] = [a.price / (1 + c / 100), a.price];\n  }\n}\n\n// CoinGecko's sparkline: its last 7 days, evenly spaced, oldest first, ending about when it answered; the live price is the newest point.\nfunction sparkPoints(a, span) {\n  const n = a.spark.length; if (n < 3) return null;\n  const step = 7 * DAY_MS / n, v = [], t = [];\n  for (let i = 0; i < n; i++) { const ts = a.at - (n - i) * step; if (ts >= a.at - span - 1) { v.push(a.spark[i]); t.push(ts); } }\n  v.push(a.price); t.push(a.at);\n  return v.length > 2 ? { v, t } : null;\n}\n\n// The hero's line: the sum of every holding, point by point, only when all of them have the same real points; else just start and now.\nfunction portfolioSeries(key) {\n  const held = ASSETS.filter((a) => a.held > 0);\n  if (!held.length || held.some((a) => !a.series[key])) return null;\n  const n = held[0].series[key].length;\n  if (n > 2 && held.every((a) => a.series[key].length === n)) {\n    const out = new Array(n).fill(0);\n    for (const a of held) a.series[key].forEach((v, i) => { out[i] += v * a.held; });\n    return out;\n  }\n  let s0 = 0, s1 = 0;\n  for (const a of held) { const v = a.series[key]; s0 += v[0] * a.held; s1 += v[v.length - 1] * a.held; }\n  return [s0, s1];\n}\n\n// Change from the first point of the series to point i (default: the last point).\nfunction seriesDelta(series, i) {\n  const end = series[i == null ? series.length - 1 : i], abs = end - series[0];\n  return { abs, pct: (abs / series[0]) * 100 };\n}\n\n// What a chart says when it has no line: why, in a few words.\nfunction noLine(list, key) {\n  if (list.some((a) => !a.known)) return 'Waiting for prices';\n  if (list.every((a) => a.cg)) return key === 'D' || key === 'W' ? 'No price line from CoinGecko right now' : 'A line for 1D and 1W only';\n  return 'Only the change is known';\n}\n\n// ===== LIVE DATA =====\n// fetchLive() resolves to { at, coins: { <CoinGecko id>: coin } } or null (no coin ids here). Only CoinGecko's own numbers, through the host.\nasync function fetchLive() {\n  const ids = ASSETS.map((a) => a.cg).filter(Boolean);\n  if (!ids.length || !window.p0) return null;\n  const d = await p0.fetch('prices.coingecko', { ids }), coins = {};\n  for (const c of d.coins || []) if (c && c.id && fin(c.price) != null) coins[c.id] = c;\n  return { at: d.fetchedAt || Date.now(), coins };\n}\n\n// One coin's live record onto its item (also the saved one at launch).\nfunction applyCoin(a, c, at) {\n  const g = c.chg || {};\n  a.coin = c; a.known = true; a.at = at; a.price = fin(c.price);\n  a.chg = { D: fin(g.D), W: fin(g.W), M: fin(g.M), Y: fin(g.Y) };\n  a.cap = fin(c.cap); a.volume = fin(c.volume); a.supply = fin(c.supply); a.high = fin(c.high); a.low = fin(c.low); a.ath = fin(c.ath);\n  a.spark = Array.isArray(c.spark) ? c.spark.map(fin).filter((v) => v != null) : null;\n  a.capNote = fin(c.rank) ? 'Rank #' + c.rank : '';\n  buildSeries(a);\n}\n\n// One path for every refresh. mode 'boot' = launch (shimmer), 'pull' = pull-to-refresh or Retry\n// (spinner + shimmer + toast), 'tick' = a silent live update.\nasync function refreshData(mode) {\n  if (app.refreshing) return;\n  app.refreshing = true;\n  app.mode = mode;\n  app.lastTick = K.t;\n  if (mode === 'pull') K.sfx('whoosh');\n  let live = null, failure = null;\n  try {\n    live = await fetchLive();\n    if (!live) await wait(LATENCY[mode]);\n    if (app.offline) throw new Error('No connection');   // the Settings \"Simulate offline\" switch\n  } catch (err) {\n    failure = err;\n  }\n  app.refreshing = false;\n  if (failure) onRefreshFailed(mode, failure);\n  else onRefreshed(mode, live);\n  if (!app.loaded) { app.loaded = true; app.dataAt = K.t; app.chartAt = K.t; }\n}\n\nfunction wait(ms) { return new Promise(done => setTimeout(done, ms)); }\n\nfunction onRefreshed(mode, live) {\n  const wasOffline = !!app.error;\n  for (const a of ASSETS) {\n    const c = live && a.cg ? live.coins[a.cg] : null;\n    if (!c) continue;                     // no new live price: the item keeps what it had\n    const before = a.known ? a.price : null;\n    applyCoin(a, c, live.at);\n    if (before != null && a.price !== before) {\n      a.flashAt = K.t;                    // row price flashes green / red for a moment\n      a.flashUp = a.price > before;\n      checkAlerts(a, before);\n    }\n  }\n  app.error = null;\n  app.live = !!live && Object.keys(live.coins).length > 0;\n  if (app.live) app.updatedAt = live.at;\n  const f = ASSETS[0];\n  if (app.live && LIVE_STATS && f.cg && f.coin) {\n    MARKET_STATS.splice(0, 4, { label: f.sym + ' RANK', value: fin(f.coin.rank) ? '#' + f.coin.rank : '–', sub: 'by market cap', tone: '', icon: 'trophy' },\n      { label: 'MARKET CAP', value: f.cap ? compactMoney(f.cap) : '–', sub: f.name.slice(0, 22), tone: '', icon: 'globe' },\n      { label: '24H VOLUME', value: f.volume ? compactMoney(f.volume) : '–', sub: 'traded in 24 h', tone: '', icon: 'bolt' },\n      { label: 'SUPPLY', value: f.supply ? K.fmt.compact(f.supply) : '–', sub: 'in circulation', tone: '', icon: 'coin' });\n  }\n  if (mode === 'pull') {\n    app.dataAt = K.t;                     // re-run the row entrance: fresh data slides in\n    K.sfx('success');\n    K.toast(app.live ? (wasOffline ? 'Back online - prices updated' : 'Prices updated') : ASSETS.some((a) => a.cg) ? 'No live prices right now' : 'Nothing live to refresh',\n      { tone: app.live ? 'good' : 'info' });\n  } else if (wasOffline) {\n    K.toast('Back online', { tone: 'good' });\n  }\n  persist();\n}\n\nfunction onRefreshFailed(mode, err) {\n  const first = !app.error;\n  app.error = { msg: String((err && err.message) || err), at: Date.now() };\n  app.errorKick = K.t;                    // the offline banner shakes once\n  if (mode !== 'tick' || first) {         // WHY: silent ticks only speak up the first time\n    K.sfx('error');\n    K.toast('Couldn\\'t refresh prices', { tone: 'bad', ms: 3200 });   // errors stay up longer\n  }\n}\n\n// A price alert fires once when the live price crosses its target (either direction), then clears. Information, not a celebration.\nfunction checkAlerts(a, before) {\n  const target = prefs.alerts[a.sym];\n  if (!target || before == null || (before - target) * (a.price - target) > 0) return;\n  delete prefs.alerts[a.sym];\n  K.sfx('pop');\n  K.toast(a.sym + ' crossed ' + K.fmt.money(target, CUR, dp(target)), { tone: 'info', icon: 'bell', ms: 3200 });\n}\n\n// ===== PULL TO REFRESH =====\n// K.scroll rubber-bands below 0 when the page is pulled down at the top. Past PULL_T we arm (tick),\n// on release we refresh. Returns the scroll value to draw with: while a pull-refresh runs the page\n// stays PULL_HOLD px down so the spinner has room (feed it to the content AND to K.navBar).\nfunction pullToRefresh(scrollY) {\n  const pull = Math.max(0, -scrollY);\n  if (K.ptr.down && pull > PULL_T && !app.pullArmed && !app.refreshing) { app.pullArmed = true; K.sfx('tick'); }\n  if (K.ptr.down && app.pullArmed && pull < PULL_T * 0.5) app.pullArmed = false;   // pushed back up = cancel\n  if (!K.ptr.down && app.pullArmed) { app.pullArmed = false; refreshData('pull'); }\n  const hold = K.anim('pullHold', app.refreshing && app.mode === 'pull' ? PULL_HOLD : 0, 12);\n  app.pullDrop = Math.max(pull, hold);\n  return scrollY >= 0 ? scrollY - hold : -app.pullDrop;\n}\n\n// iOS-style activity indicator: 8 spokes appear one by one while pulling, then rotate while loading.\nfunction drawSpinner(drop) {\n  const spinning = app.refreshing && app.mode === 'pull';\n  if (drop < 4 || (!spinning && !K.ptr.down)) return;   // hidden while the page settles back up\n  const cx = K.W / 2, cy = K.safe.top + 50 + drop / 2;\n  const shown = spinning ? 8 : Math.floor(K.clamp(drop / PULL_T, 0, 1) * 8);\n  const head = Math.floor(K.t * 12) % 8;\n  for (let i = 0; i < shown; i++) {\n    const ang = -Math.PI / 2 + (i / 8) * Math.PI * 2;\n    const fade = spinning ? 1 - (((head - i) + 8) % 8) / 8 * 0.8 : 0.75;\n    K.line(cx + Math.cos(ang) * 5.5, cy + Math.sin(ang) * 5.5, cx + Math.cos(ang) * 11, cy + Math.sin(ang) * 11,\n      K.alpha(K.C.text, fade), 2.6);\n  }\n}\n\n// ===== SCREEN: MARKETS (home) =====\n// No sheet checks on the page: an open K.sheet makes everything drawn outside it inert (kit v1.1), K.scroll included.\nfunction drawHome() {\n  const ds = portfolioSeries('D'), dayUp = !ds || seriesDelta(ds).abs >= 0, sub = todayLabel();\n  K.backdrop({ top: '#0b1630', bottom: '#050a15', vignette: 0.4, grain: 0.04, glow: [\n    { x: K.W * 0.92, y: 20, r: 360, color: ACCENT, s: 0.2 },\n    { x: K.W * 0.08, y: 420, r: 320, color: dayUp ? GAIN : LOSS, s: 0.07 }] });   // the page glows with the day\n  app.homeY = K.scroll('home', 0, 0, K.W, K.H, app.homeH);\n  const viewY = pullToRefresh(app.homeY);\n  const watched = ASSETS.filter(a => prefs.watch.includes(a.sym));\n  const others = ASSETS.filter(a => !prefs.watch.includes(a.sym));\n  pageClip(() => {\n    let y = K.navBar.top(sub) - viewY;             // known before the bar draws: no first-frame jump\n    y = drawErrorBanner(SIDE, y, K.W - 2 * SIDE);\n    y = drawHeroCard(SIDE, y, K.W - 2 * SIDE) + 28;\n    y = drawAssetSection('WATCHLIST', watched, y, 1) + 28;\n    if (others.length) y = drawAssetSection('MORE MARKETS', others, y, 2) + 28;\n    const liveTiles = LIVE_STATS && ASSETS[0].cg;\n    y = sectionLabel('MARKET', !liveTiles ? '' : app.live ? 'by CoinGecko' : app.updatedAt ? 'from ' + stamp(app.updatedAt) : 'waiting for prices', y);\n    y = drawStatGrid(MARKET_STATS, SIDE, y, K.W - 2 * SIDE, i => K.since(app.bootAt, (i + 3) * 70, 500), busy()) + 24;\n    K.text(ASSETS.some((a) => a.cg) ? 'Prices by CoinGecko. Pull down to refresh.' : 'Pull down to refresh.', K.W / 2, y + 8, 'footnote', K.C.text3, { align: 'center' });\n    app.homeH = y + viewY + 40 + K.safe.bottom;    // measured this frame, used by K.scroll next frame\n  });\n  drawSpinner(app.pullDrop);\n  const hit = K.navBar(PAGE_TITLE, viewY, { sub, right: { id: 'settings', icon: 'settings' } });\n  if (hit === 'settings') app.sheet = 'settings';\n  drawSettingsSheet();                             // sheets LAST, so nothing paints over them\n}\n\n// Hero: the one big number of the screen, its delta for the chosen range, the chart and the range control.\nfunction drawHeroCard(x, y, w) {\n  const h = 318, r = RANGES[prefs.range], series = portfolioSeries(r.key), held = ASSETS.filter((a) => a.held > 0);\n  const value = held.every((a) => a.known) ? held.reduce((t, a) => t + a.price * a.held, 0) : null;\n  const d = series ? seriesDelta(series) : null, col = !d || d.abs >= 0 ? GAIN : LOSS;\n  const e = K.since(app.bootAt, 0, 500);           // launch entrance, counted from app.bootAt (Back does not replay it)\n  enterGroup(e, () => {\n    K.card(x, y, w, h);\n    K.rect(x, y, w, h * 0.6, { r: K.R.l, grad: [K.alpha(ACCENT, 0.1), K.alpha(ACCENT, 0)] });   // soft blue sheen\n    K.text(HERO_LABEL, x + 16, y + 32, 'label', K.C.text2);\n    drawLiveStatus(x + w - 16, y + 28);\n    if (!app.loaded) {                    // LOADING: shimmer exactly where the numbers will land\n      K.shimmer(x + 16, y + 50, 220, 38, 10);\n      K.shimmer(x + 16, y + 100, 170, 24, 12);\n      K.shimmer(x + 16, y + 144, w - 32, 100, 12);\n    } else {\n      // Fit the hero number to its card: a seven-figure value at 40 px would overflow a narrow phone.\n      const heroStr = value == null ? '–' : K.fmt.money(K.count('hero', value, 900));\n      const heroSize = Math.min(40, 40 * (w - 32) / K.measureNum(heroStr, 'display', { size: 40 }));\n      K.num(heroStr, x + 16, y + 84, 'display', K.C.text, { size: heroSize });\n      if (d) {\n        const label = signedMoney(K.count('heroDelta', d.abs, 700)) + ' (' + K.fmt.pct(d.pct) + ')';\n        const cw = K.chip(x + 16, y + 98, label, { color: col, icon: d.abs >= 0 ? 'arrowUp' : 'arrowDown' });\n        K.text(r.caption, x + 26 + cw, y + 110.5, 'footnote', K.C.text2, { base: 'middle' });\n      } else K.text(value == null ? 'Waiting for the first live price' : 'No change known for this range', x + 16, y + 110.5, 'footnote', K.C.text2, { base: 'middle' });\n      drawChart(series, { x: x + 16, y: y + 144, w: w - 32, h: 100 }, col, -1, false, noLine(held, r.key));\n    }\n  });\n  // A kit control never goes inside enterGroup's transform: it takes { alpha } and the lifted y itself.\n  K.inert(!reachable(y + 264, 34), () => {\n    const idx = K.segmented('range', x + 16, y + 264 + lift(e), w - 32, RANGES.map(q => q.label), prefs.range, { alpha: e });\n    if (idx !== prefs.range) setRange(idx);\n  });\n  return y + h;\n}\n\n// LIVE dot + wall-clock stamp (K.fmt.time takes Date.now() values, never millis()).\nfunction drawLiveStatus(xr, cy) {\n  const off = !!app.error, working = app.refreshing && app.mode !== 'tick';\n  const label = off ? 'Offline' : working ? 'Updating…' : app.live ? 'Updated ' + K.fmt.time(app.updatedAt)\n    : app.updatedAt ? 'Prices from ' + stamp(app.updatedAt) : ASSETS.some((a) => a.cg) ? 'Waiting for prices' : 'Your numbers';\n  const col = off ? LOSS : ACCENT;\n  const tw = K.text(label, xr, cy, 'caption', off ? LOSS : K.C.text2, { align: 'right', base: 'middle' });\n  K.circle(xr - tw - 10, cy, 4 + 4 * K.pulse(4), { fill: K.alpha(col, 0.28) });\n  K.circle(xr - tw - 10, cy, 3.5, { fill: col });\n}\n\n// ERROR state: a banner that grows in above the hero, shakes on each failure and offers Retry.\nfunction drawErrorBanner(x, y, w) {\n  const k = K.anim('banner', app.error ? 1 : 0, 10);\n  if (k < 0.01) return y;\n  const age = K.t - app.errorKick, wob = Math.sin(age * 38) * 10 * Math.max(0, 1 - age / 0.45);\n  enterGroup(k, () => {\n    K.card(x + wob, y, w, 72, { fill: K.mix(K.C.surface, LOSS, 0.1), stroke: K.alpha(LOSS, 0.35) });\n    K.circle(x + wob + 34, y + 36, 18, { fill: K.alpha(LOSS, 0.16) });\n    K.icon('alert', x + wob + 34, y + 36, 18, LOSS, { weight: 2.2 });\n    K.text('You\\'re offline', x + wob + 64, y + 32, 'headline', K.C.text);\n    const since = app.updatedAt ? 'Prices from ' + stamp(app.updatedAt) : 'No live prices yet';\n    K.text(since, x + wob + 64, y + 52, 'footnote', K.C.text2);\n  });\n  K.inert(!reachable(y + 20, 32), () => {\n    if (K.button('retry', x + w - 86 + wob, y + 20 + lift(k), 70, 32, 'Retry', { style: 'tinted', color: LOSS, alpha: k })) refreshData('pull');\n  });\n  return y + 84 * k;\n}\n\n// ===== WATCHLIST ROWS =====\nfunction drawAssetSection(title, list, y, order) {\n  y = sectionLabel(title, list.length ? list.length + (list.length === 1 ? ' market' : ' markets') : '', y);\n  const x = SIDE, w = K.W - 2 * SIDE, e = K.since(app.bootAt, order * 70, 500);\n  if (!list.length) {                     // EMPTY state: explain how to fill it\n    enterGroup(e, () => {\n      K.card(x, y, w, 184);\n      K.empty(K.W / 2, y + 8, 'star', 'No favourites yet', 'Open any market below and tap the star to pin it here.');\n    });\n    return y + 184;\n  }\n  const h = list.length * ROW_H;\n  enterGroup(e, () => {\n    K.card(x, y, w, h);\n    K.clip(x, y, w, h, () => {\n      list.forEach((a, i) => drawAssetRow(a, x, y + i * ROW_H, w, i, i < list.length - 1));\n    }, K.R.l);\n  });\n  return y + h;\n}\n\n// One row: brand badge, ticker + name, mini sparkline, price (rolls + flashes on change), delta pill.\nfunction drawAssetRow(a, x, y, w, i, divider) {\n  const id = 'row:' + a.sym;\n  K.inert(!reachable(y, ROW_H), () => {          // hidden rows: no taps, not in the tester's map\n    const pressed = K.anim(id, K.holdIn(x, y, w, ROW_H) ? 1 : 0, 24);\n    if (pressed > 0.01) K.rect(x, y, w, ROW_H, { r: 0, fill: K.alpha(K.C.text, 0.06 * pressed) });\n    K.registerControl(id, x, y, w, ROW_H);      // custom hit area: register it every frame it is shown\n    const tap = K.tapIn(x, y, w, ROW_H);\n    if (tap) openDetail(a.sym, tap);\n  });\n  drawBadge(a, x + 36, y + ROW_H / 2, 20);\n  K.text(a.sym, x + 68, y + 31, 'headline', K.C.text);\n  if (prefs.alerts[a.sym]) K.icon('bell', x + 80 + K.measure(a.sym, 'headline'), y + 26, 13, GOLD, { weight: 2.2 });\n  K.text(a.name, x + 68, y + 50, 'footnote', K.C.text2, { maxW: 88 });\n  const right = x + w - 16;\n  if (busy()) {                           // LOADING: keep the identity, shimmer the numbers\n    K.shimmer(right - 176, y + 20, 64, 28, 6);\n    K.shimmer(right - 92, y + 16, 92, 18, 6);\n    K.shimmer(right - 68, y + 40, 68, 18, 8);\n  } else {\n    const s = a.series.D, d = s ? seriesDelta(s) : null, col = !d || d.abs >= 0 ? GAIN : LOSS;\n    const e = K.since(app.dataAt, i * 70, 500), dx = 24 * (1 - e);   // fresh data slides in (app.dataAt = K.t on arrival)\n    withAlpha(e, () => {\n      if (lined(s)) K.spark(s, right - 176 + dx, y + 20, 64, 28, { color: col, dot: false, width: 1.8, t: e });\n      const txt = a.known ? K.fmt.money(K.count('rowpx:' + a.sym, a.price, 600), CUR, dp(a.price)) : '–';\n      // TICK FLASH: the number turns green / red when it changes, then fades back to white over 1.2 s.\n      const flash = Math.max(0, 1 - (K.t - a.flashAt) / 1.2);\n      const pxCol = flash > 0 ? K.mix(K.C.text, a.flashUp ? GAIN : LOSS, flash) : K.C.text;\n      K.num(txt, right + dx, y + 30, 'headline', pxCol, { align: 'right' });\n      if (d) drawDeltaPill(right + dx, y + 38, d, col);\n    });\n  }\n  if (divider) K.line(x + 68, y + ROW_H, x + w, y + ROW_H, K.C.line, 1);\n}\n\nfunction drawBadge(a, cx, cy, r) {\n  K.circle(cx, cy, r, { fill: K.alpha(a.color, 0.16) });\n  K.circle(cx, cy, r - 0.5, { fill: 'none', stroke: K.alpha(a.color, 0.5), sw: 1.2 });\n  K.text(a.glyph, cx, cy + 1, 'headline', a.color, { align: 'center', base: 'middle', weight: 800 });\n}\n\n// Fixed-minimum width pill, right-aligned, so every row's column lines up.\nfunction drawDeltaPill(xr, y, d, col) {\n  const label = prefs.showAmount ? signedMoney(d.abs) : K.fmt.pct(d.pct);\n  const w = Math.max(68, K.measure(label, 'caption', { weight: 700 }) + 16);\n  K.rect(xr - w, y, w, 21, { r: 7, fill: K.alpha(col, 0.16) });\n  K.text(label, xr - w / 2, y + 11, 'caption', col, { align: 'center', base: 'middle', weight: 700 });\n}\n\n// ===== STAT GRID (Markets and Detail) =====\n// stats: [{ label, value, sub, tone: 'up' | 'down' | '', icon }]. Two columns; returns the y below the grid.\nfunction drawStatGrid(stats, x, y, w, enter, loading) {\n  const cw = (w - GAP) / 2;\n  stats.forEach((s, i) => {\n    const cx = x + (i % 2) * (cw + GAP), cy = y + Math.floor(i / 2) * (STAT_H + GAP);\n    const tint = s.tone === 'up' ? GAIN : s.tone === 'down' ? LOSS : ACCENT;\n    enterGroup(enter(i), () => {\n      K.card(cx, cy, cw, STAT_H, { r: 16 });\n      K.circle(cx + cw - 26, cy + 26, 14, { fill: K.alpha(tint, 0.16) });\n      K.icon(s.icon, cx + cw - 26, cy + 26, 15, tint, { weight: 2.2 });\n      K.text(s.label, cx + 16, cy + 30, 'label', K.C.text3, { maxW: cw - 60 });\n      if (loading) K.shimmer(cx + 16, cy + 44, cw * 0.55, 22, 6);\n      else K.num(s.value, cx + 16, cy + 63, 'title3', K.C.text);\n      K.text(s.sub, cx + 16, cy + 82, 'footnote', s.tone ? tint : K.C.text3, { maxW: cw - 32 });\n    });\n  });\n  return y + Math.ceil(stats.length / 2) * (STAT_H + GAP) - GAP;\n}\n\n// ===== SCREEN: DETAIL =====\nfunction drawDetail() {\n  const a = assetBySym(app.sym), r = RANGES[prefs.range], series = a.series[r.key];\n  const watched = prefs.watch.includes(a.sym), sub = a.sym + ' · ' + a.kind;\n  K.backdrop({ top: '#0b1630', bottom: '#050a15', vignette: 0.4, grain: 0.04, glow: [\n    { x: K.W * 0.1, y: 60, r: 340, color: a.color, s: 0.15 },      // each market tints its own page\n    { x: K.W, y: 460, r: 300, color: ACCENT, s: 0.1 }] });\n  app.detailY = K.scroll('detail', 0, 0, K.W, K.H, app.detailH);\n  const sy = app.detailY;\n  pageClip(() => {\n    let y = K.navBar.top(sub) - sy;\n    y = drawPriceHeader(a, series, r, y);\n    y = drawChartCard(a, series, SIDE, y, K.W - 2 * SIDE) + 28;\n    y = sectionLabel('STATS', a.sym, y);\n    y = drawStatGrid(assetStats(a), SIDE, y, K.W - 2 * SIDE, i => K.stagger(i + 2, 60, 460), false) + 28;\n    y = drawAbout(a, y) + 24;\n    y = drawAlertButton(a, y);\n    app.detailH = y + sy + 40 + K.safe.bottom;\n  });\n  const hit = K.navBar(a.name, sy, { sub,\n    left: { id: 'back', icon: 'chevronLeft', label: PAGE_TITLE },\n    right: { id: 'star', icon: 'star', color: watched ? GOLD : K.C.text2 } });\n  // Saved: the kit's filled star over the bar's outline star (its 34 px button at K.W - 30 has a 17 px icon), springing in.\n  if (watched) K.icon('star', K.W - 30, K.safe.top + 25, 17 * app.starSpring.v, GOLD, { fill: true });\n  if (hit === 'back' || swipedBack()) goBack();\n  if (hit === 'star') toggleWatch(a);\n  drawAlertSheet(a);                               // sheets LAST\n}\n\n// Big price (or the scrubbed point's price), delta chip for the range, alert chip on the right.\nfunction drawPriceHeader(a, series, r, y) {\n  const scrub = app.scrubI >= 0 && lined(series), i = scrub ? Math.min(app.scrubI, series.length - 1) : series ? series.length - 1 : -1;\n  const d = series ? seriesDelta(series, i) : null, col = !d || d.abs >= 0 ? GAIN : LOSS;\n  const price = scrub ? series[i] : a.known ? K.count('dpx:' + a.sym, a.price, 700) : null;\n  enterGroup(K.stagger(0, 60, 460), () => {\n    K.num(price == null ? '–' : K.fmt.money(price, CUR, dp(price)), SIDE, y + 40, 'display', K.C.text, { size: 42 });\n    if (d) {\n      const label = signedMoney(d.abs) + ' (' + K.fmt.pct(d.pct) + ')';\n      const cw = K.chip(SIDE, y + 54, label, { color: col, icon: d.abs >= 0 ? 'arrowUp' : 'arrowDown' });\n      K.text(scrub ? pointLabel(a.times[r.key], r, i) : r.caption, SIDE + cw + 10, y + 66.5, 'footnote', K.C.text2, { base: 'middle' });\n    } else K.text(a.known ? 'No change known for this range' : 'Waiting for the first live price', SIDE, y + 66.5, 'footnote', K.C.text2, { base: 'middle' });\n    const alert = prefs.alerts[a.sym];\n    if (alert) {\n      const txt = K.fmt.money(alert, CUR, dp(alert));\n      K.chip(K.W - SIDE - K.chipWidth(txt, { icon: 'bell' }), y + 54, txt, { color: GOLD, icon: 'bell' });\n    }\n  });\n  return y + 96;\n}\n\nfunction drawChartCard(a, series, x, y, w) {\n  const h = 280, col = !series || seriesDelta(series).abs >= 0 ? GAIN : LOSS, e = K.stagger(1, 60, 460);\n  const plot = { x: x + 16, y: y + 48, w: w - 32, h: 160 };\n  enterGroup(e, () => {\n    K.card(x, y, w, h);\n    K.text(RANGES[prefs.range].caption.toUpperCase(), x + 16, y + 28, 'label', K.C.text3);\n    drawLiveStatus(x + w - 16, y + 24);\n    K.inert(!reachable(plot.y, plot.h), () => {\n      K.registerControl('chart', plot.x, plot.y, plot.w, plot.h);\n      drawChart(series, plot, col, lined(series) ? updateScrub(plot, series) : (app.scrubI = -1), true, noLine([a], RANGES[prefs.range].key));\n    });\n  });\n  K.inert(!reachable(y + h - 50, 34), () => {\n    const idx = K.segmented('drange', x + 16, y + h - 50 + lift(e), w - 32, RANGES.map(q => q.label), prefs.range, { alpha: e });\n    if (idx !== prefs.range) setRange(idx);\n  });\n  return y + h;\n}\n\n// ===== CHART =====\n// Area chart with a dashed \"start of range\" line, high / low marks and an optional scrub cursor. Real points only: a range\n// without them shows a short note instead of a line.\n// We pass min / max to K.spark so our own overlay maths (yOf) matches its line exactly.\nfunction drawChart(series, p, col, scrub, marks, note) {\n  if (!lined(series)) { K.text(note || 'No chart for this range', p.x + p.w / 2, p.y + p.h / 2, 'footnote', K.C.text3, { align: 'center', base: 'middle' }); return; }\n  const lo = Math.min(...series), hi = Math.max(...series), pad = (hi - lo) * 0.12 || 1;\n  const yOf = v => p.y + p.h - ((v - (lo - pad)) / (hi - lo + 2 * pad)) * p.h;\n  const xOf = i => p.x + (i / (series.length - 1)) * p.w;\n  const t = K.since(app.chartAt, 0, 900);         // draw-on progress: 0.9 s from app.chartAt\n  K.line(p.x, yOf(series[0]), p.x + p.w, yOf(series[0]), K.alpha(K.C.text, 0.22), 1, { dash: [2, 5] });\n  K.spark(series, p.x, p.y, p.w, p.h, { color: col, t, min: lo - pad, max: hi + pad, dot: scrub < 0 });\n  if (marks && t > 0.8) {\n    const fade = (t - 0.8) / 0.2, iHi = series.indexOf(hi), iLo = series.indexOf(lo);\n    const cx = i => K.clamp(xOf(i), p.x + 36, p.x + p.w - 36);\n    K.text('H ' + K.fmt.money(hi, CUR, dp(hi)), cx(iHi), yOf(hi) - 10, 'caption', K.C.text2, { align: 'center', alpha: fade });\n    K.text('L ' + K.fmt.money(lo, CUR, dp(lo)), cx(iLo), yOf(lo) + 20, 'caption', K.C.text2, { align: 'center', alpha: fade });\n  }\n  if (scrub >= 0) {\n    const sx = xOf(scrub), sy = yOf(series[scrub]);\n    K.line(sx, p.y - 4, sx, p.y + p.h, K.alpha(K.C.text, 0.35), 1);\n    K.glow(sx, sy, 24, col, 0.5);\n    K.circle(sx, sy, 5.5, { fill: col, stroke: K.C.surface, sw: 2.5 });\n  }\n}\n\n// Chart scrubbing: hold still or drag sideways to read any point; a quick tap pins / unpins one.\n// WHY claim the finger: once we own it, K.scroll will not also scroll the page with it.\nfunction updateScrub(p, series) {\n  let f = app.scrubId != null ? K.pointers.find(q => q.id === app.scrubId) : null;\n  if (!f) {\n    app.scrubId = null;\n    const q = K.holdIn(p.x, p.y, p.w, p.h);\n    const sideways = q && Math.abs(q.x - q.sx) > 6 && Math.abs(q.x - q.sx) > Math.abs(q.y - q.sy);\n    const still = q && q.dist < 8 && performance.now() - q.t0 > 220;\n    if (sideways || still) { q.claimed = 'scrub'; app.scrubId = q.id; app.pinI = -1; f = q; }\n  }\n  const tap = K.tapIn(p.x, p.y, p.w, p.h);\n  if (tap) {\n    app.pinI = app.pinI >= 0 ? -1 : indexAt(p, tap.x, series.length);\n    K.sfx('tick');\n    K.ring(tap.x, tap.y, { color: ACCENT, r1: 30 });\n  }\n  const i = f ? indexAt(p, f.x, series.length) : app.pinI;\n  if (f && i !== app.scrubI) K.sfx('tick', { vol: 0.25 });\n  app.scrubI = i;\n  return i;\n}\n\nfunction indexAt(p, px, n) { return Math.round(K.clamp((px - p.x) / p.w, 0, 1) * (n - 1)); }\n\n// The time a chart point stands for (CoinGecko's points are about an hour apart, so \"about\").\nfunction pointLabel(times, r, i) {\n  const ts = times && times[i] != null ? times[i] : Date.now();\n  if (r.key === 'D') return 'about ' + K.fmt.time12(ts);\n  return 'about ' + K.fmt.date(ts, { month: 'short', day: 'numeric' }) + ', ' + K.fmt.time12(ts);\n}\n\n// Detail stats: CoinGecko's own numbers (\"–\" when it sent none), so they re-compute after every refresh.\nfunction assetStats(a) {\n  const m = (v) => (v != null && v > 0 ? K.fmt.money(v, CUR, dp(v)) : '–');\n  const vsNow = (v) => (v == null || !(v > 0) || !a.known ? (a.cg ? 'from CoinGecko' : 'not known')\n    : Math.abs(v - a.price) < 0.005 ? 'Right now' : K.fmt.pct((v / a.price - 1) * 100) + ' vs now');\n  return [\n    { label: 'MARKET CAP', value: a.cap ? compactMoney(a.cap) : '–', sub: a.capNote || (a.cg ? 'from CoinGecko' : 'not known'), icon: 'globe' },\n    { label: 'VOLUME 24H', value: a.volume ? compactMoney(a.volume) : '–', sub: 'Last 24 hours', icon: 'bolt' },\n    { label: '24H HIGH', value: m(a.high), sub: vsNow(a.high), tone: a.high ? 'up' : '', icon: 'arrowUp' },\n    { label: '24H LOW', value: m(a.low), sub: vsNow(a.low), tone: a.low ? 'down' : '', icon: 'arrowDown' },\n    { label: 'ALL-TIME HIGH', value: m(a.ath), sub: vsNow(a.ath), icon: 'trophy' },\n    { label: 'SUPPLY', value: a.supply ? K.fmt.compact(a.supply) : '–', sub: 'Coins in circulation', icon: 'coin' }\n  ];\n}\n\nfunction drawAbout(a, y) {\n  y = sectionLabel('ABOUT', a.kind, y);\n  const w = K.W - 2 * SIDE, lines = K.wrap(a.about, w - 32, 'callout').length;\n  const h = 24 + lines * 21.6;\n  enterGroup(K.stagger(8, 60, 460), () => {\n    K.card(SIDE, y, w, h);\n    K.para(a.about, SIDE + 16, y + 10, w - 32, 'callout', K.C.text2);\n  });\n  return y + h;\n}\n\nfunction drawAlertButton(a, y) {\n  const has = prefs.alerts[a.sym], e = K.stagger(9, 60, 460);\n  const label = has ? 'Alert at ' + K.fmt.money(has, CUR, dp(has)) : 'Set price alert';\n  K.inert(!reachable(y, 50), () => {\n    if (K.button('alert', SIDE, y + lift(e), K.W - 2 * SIDE, 50, label, { icon: 'bell', style: has ? 'secondary' : 'primary', alpha: e })) openAlertSheet(a);\n  });\n  return y + 50;\n}\n\n// ===== ACTIONS =====\nfunction openDetail(sym, tap) {\n  app.sym = sym;\n  app.chartAt = K.t + 0.2;                // start drawing the chart as the slide lands\n  app.scrubI = -1; app.pinI = -1; app.scrubId = null;\n  K.scrollTo('detail', 0);\n  K.ring(tap.x, tap.y, { color: ACCENT, r1: 44 });\n  K.sfx('select');\n  K.go('detail', 'slide');\n}\n\n// Swipe right anywhere to go back. ONE path, by distance while the finger is still down: no time limit, so a slow,\n// deliberate drag counts (K.swipe drops gestures over 1.3 s, and is NOT also read, so a swipe never moves twice).\n// Fingers the chart scrub, the scroll or the slider claimed never count; we claim ours so nothing else reacts to it.\n// K.isBlocked() = an open sheet, or the outgoing screen of a transition.\nfunction swipedBack() {\n  if (K.isBlocked()) return false;\n  for (const p of K.pointers) {\n    const dx = p.x - p.sx, dy = p.y - p.sy;\n    if (!p.claimed && dx > 50 && dx > Math.abs(dy) * 1.3) { p.claimed = 'back'; return true; }\n  }\n  return false;\n}\n\nfunction goBack() {\n  app.chartAt = K.t + 0.15;\n  K.sfx('back');\n  K.go('home', 'back');\n}\n\nfunction setRange(i) {\n  prefs.range = i;\n  app.chartAt = K.t;                      // the new series draws itself on\n  app.pinI = -1;\n  persist();\n}\n\nfunction toggleWatch(a) {\n  const on = !prefs.watch.includes(a.sym);\n  prefs.watch = on ? prefs.watch.concat(a.sym) : prefs.watch.filter(s => s !== a.sym);\n  persist();\n  const bx = K.W - 30, by = K.safe.top + 25;\n  if (on) {\n    app.starSpring.kick(14);\n    K.burst(bx, by, { n: 16, shape: 'star', colors: [GOLD, '#ffffff'], speed: 260, gravity: 380, size: 7 });\n    K.sfx('coin');\n    K.toast(a.sym + ' added to Watchlist', { tone: 'good', icon: 'star' });\n  } else {\n    K.ring(bx, by, { color: K.C.text2, r1: 30 });\n    K.sfx('back');\n    K.toast(a.sym + ' removed from Watchlist', { icon: 'star' });\n  }\n}\n\nfunction openAlertSheet(a) {\n  if (!a.known) { K.toast('Waiting for a live price', { icon: 'clock' }); return; }\n  const has = prefs.alerts[a.sym];\n  app.alertDraft = has ? K.clamp(has / a.price - 1, -0.2, 0.2) : 0.05;\n  app.sheet = 'alert';\n}\n\nfunction saveAlert(a, target) {\n  prefs.alerts[a.sym] = target;\n  persist();\n  K.sfx('success');\n  K.toast('Alert set at ' + K.fmt.money(target, CUR, dp(target)), { tone: 'good', icon: 'bell' });\n  K.burst(K.W / 2, K.H - 140, { n: 22, shape: 'spark', colors: [GOLD, ACCENT, '#ffffff'], speed: 360, gravity: 0 });\n}\n\nfunction removeAlert(a) {\n  delete prefs.alerts[a.sym];\n  persist();\n  K.sfx('back');\n  K.toast('Alert removed', { icon: 'trash' });\n}\n\n// ===== SHEETS =====\n// A button inside closes its sheet with close() (a backdrop tap or a swipe down closes it too); the line after\n// K.sheet maps the kit's open flag back onto app.sheet, which names the one sheet that is open.\nfunction drawSettingsSheet() {\n  const open = K.sheet('settings', app.sheet === 'settings', 384 + K.safe.bottom, (x, y, w, h, close) => {\n    K.text('Settings', 24, y + 48, 'title2', K.C.text);\n    K.text(ASSETS.length + ' items · ' + (ASSETS.some((a) => a.cg) ? 'prices by CoinGecko' : 'your own numbers'), 24, y + 72, 'subhead', K.C.text2);\n    K.card(16, y + 92, w - 32, 124, { fill: K.C.surface2, elev: 0 });\n    const live = K.listRow('live', 16, y + 94, w - 32, 60,\n      { title: 'Live updates', sub: 'Every ' + LIVE_EVERY_S + ' seconds', icon: 'bolt', iconColor: ACCENT, toggle: prefs.live }).toggle;\n    K.line(74, y + 154, w - 16, y + 154, K.C.line, 1);\n    // REPLACE: delete this test switch (and app.offline) in a real app; it only exists so the error state can be seen.\n    const off = K.listRow('offline', 16, y + 154, w - 32, 60,\n      { title: 'Simulate offline', sub: 'Test the error state', icon: 'alert', iconColor: LOSS, toggle: app.offline }).toggle;\n    if (live !== prefs.live) {\n      prefs.live = live;\n      persist();\n      K.toast(live ? 'Live updates on' : 'Live updates paused', { icon: live ? 'bolt' : 'pause' });\n    }\n    if (off !== app.offline) {\n      app.offline = off;\n      K.toast(off ? 'Offline: the next refresh will fail' : 'Connection restored', { tone: off ? 'warn' : 'good' });\n    }\n    K.text('SHOW CHANGE AS', 24, y + 246, 'label', K.C.text3);\n    const seg = K.segmented('changeAs', 16, y + 258, w - 32, ['Percent', 'Amount'], prefs.showAmount ? 1 : 0);\n    if (seg !== (prefs.showAmount ? 1 : 0)) { prefs.showAmount = seg === 1; persist(); }\n    if (K.button('settingsDone', 16, y + 312, w - 32, 50, 'Done')) close();\n  });\n  if (!open && app.sheet === 'settings') app.sheet = null;\n}\n\nfunction drawAlertSheet(a) {\n  const open = K.sheet('alert', app.sheet === 'alert', 392 + K.safe.bottom, (x, y, w, h, close) => {\n    const target = Math.round(a.price * (1 + app.alertDraft) * 100) / 100;\n    const col = app.alertDraft >= 0 ? GAIN : LOSS;\n    K.text('Price alert', 24, y + 48, 'title2', K.C.text);\n    K.text('Notify me when ' + a.name + ' crosses', 24, y + 72, 'subhead', K.C.text2);\n    K.num(K.fmt.money(target, CUR, dp(target)), w / 2, y + 136, 'largeTitle', K.C.text, { align: 'center' });\n    const chip = K.fmt.pct(app.alertDraft * 100, 1) + ' from now', icon = app.alertDraft >= 0 ? 'arrowUp' : 'arrowDown';\n    K.chip(w / 2 - K.chipWidth(chip, { icon }) / 2, y + 152, chip, { color: col, icon });\n    app.alertDraft = K.slider('alertPct', 32, y + 212, w - 64, app.alertDraft, -0.2, 0.2, { step: 0.005 });   // ticks as it moves\n    K.text('-20%', 32, y + 246, 'caption', K.C.text3);\n    K.text('Now', w / 2, y + 246, 'caption', K.C.text3, { align: 'center' });\n    K.text('+20%', w - 32, y + 246, 'caption', K.C.text3, { align: 'right' });\n    if (K.button('saveAlert', 24, y + 268, w - 48, 50, 'Save alert', { icon: 'bell' })) { saveAlert(a, target); close(); }\n    if (prefs.alerts[a.sym]) {\n      if (K.button('removeAlert', 24, y + 326, w - 48, 44, 'Remove alert', { style: 'ghost', color: LOSS, icon: 'trash' })) { removeAlert(a); close(); }\n    } else if (K.button('cancelAlert', 24, y + 326, w - 48, 44, 'Cancel', { style: 'ghost' })) close();\n  });\n  if (!open && app.sheet === 'alert') app.sheet = null;\n}\n\n// ===== HELPERS =====\n// Scrolled page content is drawn inside K.clip below the collapsed nav bar: rows never ghost through the\n// (94 % opaque) bar, and kit hit tests (buttons, segmented, K.tapIn rows) only accept taps inside the clip.\nfunction pageClip(fn) { const top = barBottom(); K.clip(0, top, K.W, K.H - top, fn); }\n\n// WHY the fallback: K.navBar.barH is only set once the bar has drawn, and the bar draws after the content.\nfunction barBottom() { return K.navBar.barH || K.safe.top + 50; }\n\n// True when a hit area is fully visible: below the nav bar and above the bottom edge.\n// WHY still needed with K.clip: a control clipped away (or half hidden) still shows up in the tester's controls\n// map at its full size, so K.inert(!reachable(y, h), fn) takes it out of the map and out of reach.\nfunction reachable(y, h) { return y >= barBottom() + 6 && y + h <= K.H - K.safe.bottom; }\n\n// Fade + lift a whole group of DRAWING (card, text, chart, shimmer) as one; e = 0..1 entrance progress.\n// Decoration only (K.spark / K.shimmer / K.para / K.empty take no alpha). Kit controls take { alpha: e } and\n// y + lift(e) themselves, because kit hit areas ignore transforms.\nfunction enterGroup(e, fn) { if (e > 0.001) withAlpha(e, fn, lift(e)); }\nfunction lift(e) { return 18 * (1 - e); }\n\n// Multiplies the opacity of everything drawn inside fn (shifted down by dy), on the kit's raw 2D context.\nfunction withAlpha(a, fn, dy) { K.with(ctx => { if (dy) ctx.translate(0, dy); ctx.globalAlpha *= a; fn(); }); }\n\nfunction sectionLabel(title, right, y) {\n  K.text(title, SIDE + 4, y + 14, 'label', K.C.text2);\n  if (right) K.text(right, K.W - SIDE - 4, y + 14, 'caption', K.C.text3, { align: 'right' });\n  return y + 26;\n}\n\nfunction busy() { return !app.loaded || (app.refreshing && app.mode === 'pull'); }\nfunction assetBySym(sym) { return ASSETS.find(a => a.sym === sym) || ASSETS[0]; }\nfunction dp(v) { return Math.abs(v) < 1 ? 4 : 2; }\nfunction signedMoney(n) { return (n >= 0 ? '+' : '-') + K.fmt.money(Math.abs(n)); }\nfunction todayLabel() { return K.fmt.date(Date.now(), { weekday: 'long', month: 'long', day: 'numeric' }); }\n// a time from today as HH:MM:SS; an older one with its date\nfunction stamp(t) { return new Date(t).toDateString() === new Date().toDateString() ? K.fmt.time(t) : K.fmt.date(t, { month: 'short', day: 'numeric' }) + ' ' + K.fmt.time12(t); }\n\n// WHY: K.fmt.compact stops at B, so trillions need their own tier ($1.34T, not $1340.6B).\nfunction compactMoney(n) {\n  if (Math.abs(n) >= 1e12) return CUR + (n / 1e12).toFixed(2) + 'T';\n  return CUR + K.fmt.compact(n);\n}\n"
+ }
+}

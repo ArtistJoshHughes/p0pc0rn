@@ -1,0 +1,69 @@
+{
+ "p0skel": 1,
+ "manifest": {
+  "id": "weather-alerts",
+  "name": "Weather Alerts",
+  "description": "Checks US National Weather Service alerts for one place on its own and posts each new warning (and, if chosen, watches) into Juli’s chat; shows the forecast. US only. Fits: storm, heat, flood, winter weather alerts for a town.",
+  "category": "non-agentic",
+  "version": "1.0",
+  "author": "p0pc0rn",
+  "runtime": "p5-kit@1",
+  "entry": "sketch.js",
+  "permissions": {
+   "storage": true,
+   "online": [
+    "alerts.nws",
+    "weather.nws",
+    "geocode.openmeteo"
+   ],
+   "chat.post": true,
+   "location": "place"
+  },
+  "triggers": [
+   {
+    "type": "on-open"
+   },
+   {
+    "type": "interval",
+    "minMinutes": 90,
+    "calmMinutes": 720
+   }
+  ],
+  "slots": {
+   "title": {
+    "type": "string",
+    "max": 22,
+    "required": true
+   },
+   "accent": {
+    "type": "color",
+    "required": true
+   },
+   "post_level": {
+    "type": "enum",
+    "enum": [
+     "warnings",
+     "watches",
+     "all"
+    ],
+    "required": true,
+    "desc": "what to post: warnings only, warnings and watches, or every alert"
+   },
+   "place_hint": {
+    "type": "string",
+    "max": 60,
+    "required": false,
+    "desc": "a town the person named, to pre-fill the search (they still confirm it)"
+   }
+  }
+ },
+ "slots_default": {
+  "title": "Weather Alerts",
+  "accent": "#ff9f0a",
+  "post_level": "watches"
+ },
+ "notes_for_juli": "Keep the title short. post_level: warnings when the person wants only serious alerts, all when they want everything, otherwise watches. place_hint = the town if the person named one, else leave it out. Never invent a location.",
+ "files": {
+  "sketch.js": "/* WEATHER ALERTS - a live p0pc0rn app (non-agentic: it checks on its own; Juli does not work in it). It watches the US National Weather Service's active alerts for ONE place the person types\n   in, and posts each new warning into Juli's chat (once per alert). It also shows the forecast. Checks run only while p0pc0rn is open:\n   every 90 minutes while an alert is active, every 12 hours when it is calm (and when p0pc0rn opens).\n   Data: api.weather.gov through the host (p0.fetch). The place is kept on this phone only. */\n\n// ===== SLOTS =====\nconst SL = window.SLOTS || {};\nconst TITLE = String(SL.title || 'Weather Alerts').slice(0, 22);\nconst ACCENT = /^#[0-9a-fA-F]{6}$/.test(SL.accent || '') ? SL.accent : '#ff9f0a';\nconst LEVELS = ['warnings', 'watches', 'all'];\nconst LEVEL0 = LEVELS.includes(SL.post_level) ? SL.post_level : 'watches';\nconst PLACE0 = String(SL.place_hint || '').slice(0, 60);\n\n// ===== STATE (saved) =====\nconst KEY = 'wx.v1';\nlet st = { place: null, seen: [], level: LEVEL0, lastCheck: 0 };   // place = { name, lat, lon }\nlet data = { alerts: null, periods: null, err: null, at: 0, busy: false };\nlet ui = { query: PLACE0, results: null, searching: false, editing: false, contentH: 900 };\nfunction loadSt() { st = Object.assign({ place: null, seen: [], level: LEVEL0, lastCheck: 0 }, K.load(KEY, {})); }\nfunction saveSt() { K.save(KEY, st); }\nloadSt();\n\n// ===== THE CHECK (the host calls it on a timer and when p0pc0rn opens) =====\nconst sevOf = (a) => (a.severity === 'Extreme' || a.severity === 'Severe' || /warning|emergency/i.test(a.event) ? 'warning' : /watch/i.test(a.event) ? 'watch' : 'info');\nfunction worthPosting(a) {\n  const s = sevOf(a);\n  if (s === 'warning') return true;\n  if (s === 'watch') return st.level !== 'warnings';\n  return st.level === 'all';\n}\nasync function check() {\n  loadSt();\n  if (!st.place) return { active: false };\n  const d = await p0.fetch('alerts.nws', { lat: st.place.lat, lon: st.place.lon });\n  const list = d.alerts || [];\n  let posted = 0;\n  for (const a of list) {\n    if (!a.id || st.seen.includes(a.id) || !worthPosting(a)) continue;\n    try { await p0.chat.post({ title: a.event + ' · ' + st.place.name, severity: sevOf(a), text: a.headline || a.event }); }\n    catch (e) { break; }   // the hour's notices are used up: the rest wait for the next check\n    st.seen.push(a.id); st.seen = st.seen.slice(-200); saveSt(); posted++;   // remembered at once: never posted twice\n  }\n  st.lastCheck = Date.now(); saveSt();\n  if (p0.mode === 'run') { data.alerts = list; data.at = Date.now(); }\n  return { active: list.some((a) => sevOf(a) !== 'info'), posted };\n}\nif (window.p0) p0.onCheck(check);\n\n// ===== DATA =====\nasync function refresh(quiet) {\n  if (!st.place || data.busy || !window.p0) return;\n  data.busy = true; data.err = null;\n  try {\n    const [al, fc] = await Promise.all([p0.fetch('alerts.nws', { lat: st.place.lat, lon: st.place.lon }), p0.fetch('weather.nws', { lat: st.place.lat, lon: st.place.lon }).catch(() => null)]);\n    data.alerts = al.alerts || []; data.periods = fc ? fc.periods : null; data.at = Date.now();\n    if (!quiet) K.toast('Updated', { tone: 'good', icon: 'refresh', ms: 1200 });\n  } catch (e) { data.err = String((e && e.message) || e); if (!quiet) K.toast(\"Couldn't reach the weather service\", { tone: 'bad', icon: 'cloud' }); }\n  data.busy = false;\n}\nasync function search() {\n  const q = ui.query.trim();\n  if (q.length < 2 || ui.searching) return;\n  ui.searching = true; ui.results = null;\n  try { ui.results = (await p0.fetch('geocode.openmeteo', { name: q })).results || []; if (!ui.results.length) K.toast('No place with that name', { tone: 'warn' }); }\n  catch (e) { K.toast(\"Couldn't search for places\", { tone: 'bad' }); }\n  ui.searching = false;\n}\nfunction choose(r) {\n  if (r.cc !== 'US') { K.toast('The National Weather Service covers the US only', { tone: 'warn', icon: 'alert', ms: 3000 }); return; }\n  st.place = { name: [r.name, r.region].filter(Boolean).join(', ').slice(0, 60), lat: r.lat, lon: r.lon };\n  st.seen = []; saveSt(); ui.results = null; ui.editing = false; K.blurInputs();\n  K.sfx('success'); data.alerts = null; data.periods = null; refresh(true);\n}\n\n// ===== DRAWING =====\nfunction setup() {\n  K.setup({ mode: 'dark', accent: ACCENT });\n  K.scene('main', drawMain);\n  if (st.place && window.p0 && p0.mode === 'run') refresh(true);\n}\nfunction draw() { K.render(); }\n\nfunction drawMain() {\n  K.backdrop({ top: K.C.bg, bottom: K.darken(ACCENT, 0.82), glow: [{ x: K.W * 0.85, y: 80, r: 260, color: K.alpha(ACCENT, 0.18) }] });\n  const sub = st.place ? 'Watching ' + st.place.name : 'Pick a place to watch';\n  const top = K.navBar.top(sub) + 8, clipY = K.navBar.bottom(), w = K.W - 2 * K.S.l, x = K.S.l;\n  const off = K.scroll('main', 0, clipY, K.W, K.H - clipY, ui.contentH);\n  K.clip(0, clipY, K.W, K.H - clipY, () => { ui.contentH = body(x, top - off, w) + off - top + 40; });\n  const tap = K.navBar(TITLE, off, { sub, right: st.place ? { id: 'refresh', icon: 'refresh' } : undefined });\n  if (tap === 'refresh') refresh(false);\n}\n\nfunction body(x, y, w) {\n  const y0 = y;\n  if (!st.place || ui.editing) y = placePicker(x, y, w);\n  else {\n    K.card(x, y, w, 64, { r: 16 });\n    K.icon('pin', x + 30, y + 32, 20, ACCENT);\n    K.text(st.place.name, x + 54, y + 28, 'headline', K.C.text, { maxW: w - 150 });\n    K.text(st.lastCheck ? 'Last check ' + K.fmt.ago(st.lastCheck) : 'Not checked yet', x + 54, y + 48, 'footnote', K.C.text3);\n    if (K.button('change', x + w - 92, y + 14, 80, 36, 'Change', { style: 'tinted' })) { ui.editing = true; ui.query = ''; ui.results = null; }\n    y += 80;\n  }\n  if (st.place && !ui.editing) {\n    K.text('ACTIVE ALERTS', x, y + 14, 'label', K.C.text2); y += 26;\n    if (data.busy && !data.alerts) { K.shimmer(x, y, w, 72, 16); y += 84; }\n    else if (data.err && !data.alerts) { y += K.empty(K.W / 2, y + 10, 'cloud', 'Offline', 'The alerts will show when the weather service answers.', { w }) + 16; }\n    else if (data.alerts && !data.alerts.length) { K.card(x, y, w, 64, { r: 16 }); K.icon('checkCircle', x + 30, y + 32, 20, K.C.good); K.text('No active alerts', x + 54, y + 37, 'body', K.C.text); y += 76; }\n    else for (const [i, a] of (data.alerts || []).entries()) {\n      const s = sevOf(a), col = s === 'warning' ? K.C.bad : s === 'watch' ? K.C.warn : ACCENT, hl = a.headline || a.area;\n      const h = 64 + K.paraHeight(hl, w - 32, 'footnote', { maxLines: 4 });\n      K.card(x, y, w, h, { r: 16 });\n      K.rect(x, y + 12, 4, h - 24, { fill: col, r: 2 });\n      K.text(a.event, x + 16, y + 28, 'headline', K.C.text, { maxW: w - 32 });\n      K.text((a.ends ? 'Until ' + K.fmt.date(Date.parse(a.ends)) + ' ' + K.fmt.time12(Date.parse(a.ends)) : a.severity) + (a.sender ? ' · ' + a.sender : ''), x + 16, y + 48, 'caption', K.C.text3, { maxW: w - 32 });\n      K.para(hl, x + 16, y + 60, w - 32, 'footnote', K.C.text2, { maxLines: 4 });\n      y += h + 10; if (i > 12) break;\n    }\n    if (data.periods && data.periods.length) {\n      K.text('FORECAST', x, y + 18, 'label', K.C.text2); y += 30;\n      const rows = data.periods.slice(0, 6), rh = 52;\n      K.card(x, y, w, rows.length * rh, { r: 16 });\n      rows.forEach((p, i) => {\n        const ry = y + i * rh;\n        if (i) K.line(x + 16, ry, x + w - 16, ry, K.C.line, 1);\n        K.icon(/rain|shower|storm/i.test(p.short) ? 'rain' : /cloud|fog/i.test(p.short) ? 'cloud' : p.day ? 'sun' : 'moon', x + 26, ry + rh / 2, 18, ACCENT);\n        K.text(p.name, x + 48, ry + 22, 'subhead', K.C.text, { maxW: w * 0.45 });\n        K.text(p.short, x + 48, ry + 40, 'caption', K.C.text3, { maxW: w - 140 });\n        K.text(p.temp + '°' + p.unit, x + w - 16, ry + rh / 2 + 6, 'headline', K.C.text, { align: 'right' });\n      });\n      y += rows.length * rh + 12;\n    }\n    K.text('POST TO JULI’S CHAT', x, y + 18, 'label', K.C.text2); y += 30;\n    const li = K.segmented('level', x, y, w, ['Warnings', '+ Watches', 'Everything'], LEVELS.indexOf(st.level));\n    if (LEVELS[li] !== st.level) { st.level = LEVELS[li]; saveSt(); }\n    y += 48;\n    y += K.para('New alerts are posted to the chat once each. Checks run while p0pc0rn is open: every 90 minutes on active days, every 12 hours when calm.', x, y + 6, w, 'footnote', K.C.text3) + 10;\n  }\n  K.text('Data: US National Weather Service', x, y + 16, 'caption', K.C.text3);\n  return y + 30 - y0;\n}\n\nfunction placePicker(x, y, w) {\n  K.text('PLACE TO WATCH (US)', x, y + 14, 'label', K.C.text2); y += 24;\n  ui.query = K.input('place', x, y, w - 96, 48, ui.query, { placeholder: 'Town or city', icon: 'pin', onEnter: search });\n  if (K.button('find', x + w - 86, y, 86, 48, ui.searching ? '…' : 'Find', { style: 'primary', disabled: ui.searching })) search();\n  y += 60;\n  if (ui.results) for (const [i, r] of ui.results.entries()) {\n    const row = K.listRow('res' + i, x, y, w, 56, { title: r.name, sub: [r.region, r.country].filter(Boolean).join(', '), icon: 'pin', iconColor: r.cc === 'US' ? ACCENT : K.C.text3, chevron: true, r: 14 });\n    if (row.tap) choose(r);\n    y += 62;\n  }\n  if (st.place && K.button('cancel', x, y + 4, w, 44, 'Keep ' + st.place.name, { style: 'ghost' })) { ui.editing = false; ui.results = null; K.blurInputs(); }\n  return y + (st.place ? 60 : 12);\n}\n"
+ }
+}

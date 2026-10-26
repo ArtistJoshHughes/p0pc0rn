@@ -240,6 +240,132 @@
       ]
     },
     {
+      "pack": "assistant-drafter",
+      "app_key": "drafter",
+      "app_model": "gemma4-e2b-drafter",
+      "feature": "Faster replies (the assistant's add-on)",
+      "label": "Gemma 4 E2B-it MTP drafter (q8 layers + q4 cluster-major head)",
+      "status": "default",
+      "bytes": 53962752,
+      "hf_repo": "JoshHughes/p0pc0rn-assistant-drafter-gemma4-e2b",
+      "repo_type": "model",
+      "revision": "a75bfc34f451b907ae89d105e6ab8053b8dbbb62",
+      "manifest": "manifest.json",
+      "manifest_sha256": "3834b7b78894228705895dee051605c1b29237a4e36a7972420245ab01652798",
+      "licence_id": "Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-Gemma-4-Apache-2.0.txt",
+        "licenses/NOTICE-Gemma-4.md"
+      ],
+      "terms": [
+        {
+          "sheet": "apache-2.0",
+          "licence_version": "2.0"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Apache-2.0 text + NOTICE-Gemma-4.md; modified-files notice (derivative under Apache-2.0 section 4: converted and quantized).",
+        "'Gemma' is a Google trademark; no trademark rights are granted.",
+        "Used only with the assistant pack: every token of an answer is still the assistant's own choice (speculative decoding)."
+      ],
+      "components": [
+        {
+          "part": "Gemma 4 E2B-it MTP drafter (assistant)",
+          "source": "google/gemma-4-E2B-it-assistant",
+          "source_revision": "2d874ef7d29f9a30599a1e4b3c1cbc9595f005df",
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
+      "pack": "bigger-brain",
+      "app_key": "brain4",
+      "app_model": "bolt-e4b",
+      "feature": "Juli's Bigger brain: writing and agent tasks (optional; iOS 27 on an iPhone, or a computer: Chrome or Edge, or Safari 27 on a Mac)",
+      "label": "NVIDIA Nemotron 3.5 Bolt E4B (4-bit)",
+      "status": "optional",
+      "bytes": 4675838692,
+      "hf_repo": "JoshHughes/p0pc0rn-assistant-nemotron-bolt-e4b-q4",
+      "repo_type": "model",
+      "revision": "55c29c2e59c5a5b9dbf76b458373e448ed7563a5",
+      "manifest": "manifest.json",
+      "manifest_sha256": "af9919d7bb4a5817820ce8acb1616694c43e572b862bebac30ccc7b284cfc7f1",
+      "licence_id": "LicenseRef-OpenMDW-1.1",
+      "licence_files": [
+        "licenses/LICENSE-OpenMDW-1.1.txt",
+        "licenses/NOTICE-Nemotron-Bolt-E4B.md",
+        "licenses/LICENSE-Gemma-4-Apache-2.0.txt"
+      ],
+      "terms": [
+        {
+          "sheet": "openmdw-1.1",
+          "licence_version": "1.1"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Keep a copy of the OpenMDW License Agreement 1.1 and NVIDIA's notices with any copy of the model; the pack carries both.",
+        "NVIDIA post-trained it from Google's Gemma 4 E4B-it, which is Apache-2.0.",
+        "Modified files: 4-bit group-wise re-quantised, row-fused and re-laid-out by the p0pc0rn packer; not the original files, not an official NVIDIA product.",
+        "'NVIDIA' and 'Nemotron' are NVIDIA trademarks; no trademark rights are granted.",
+        "Text only. The agreement puts no limits on outputs; its rights end for anyone who sues claiming the model infringes a patent or copyright."
+      ],
+      "components": [
+        {
+          "part": "NVIDIA Nemotron 3.5 Bolt E4B",
+          "source": "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
+          "source_revision": "49843eed8db1f1c616c47af75cfd36e07aec0667",
+          "licence_id": "LicenseRef-OpenMDW-1.1"
+        }
+      ]
+    },
+    {
+      "pack": "bigger-brain-drafter",
+      "app_key": "drafter4",
+      "app_model": "bolt-e4b-drafter",
+      "feature": "Faster replies for the Bigger brain (comes with it)",
+      "label": "Gemma 4 E4B-it MTP drafter (q8 layers + q4 cluster-major head)",
+      "status": "optional",
+      "needs": [
+        "bigger-brain"
+      ],
+      "bytes": 54773760,
+      "hf_repo": "JoshHughes/p0pc0rn-assistant-drafter-gemma4-e4b",
+      "repo_type": "model",
+      "revision": "e34437d0aa7c1f922a64bc3057d791b240fea45e",
+      "manifest": "manifest.json",
+      "manifest_sha256": "43526ef2f5df776d7ad37a8dcdec6e1ab51a3102635ea10ce2b70dcbeef2a4ff",
+      "licence_id": "Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-Gemma-4-Apache-2.0.txt",
+        "licenses/NOTICE-Gemma-4.md"
+      ],
+      "terms": [
+        {
+          "sheet": "apache-2.0",
+          "licence_version": "2.0"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Apache-2.0 text + NOTICE-Gemma-4.md; modified-files notice (derivative under Apache-2.0 section 4: converted and quantized).",
+        "'Gemma' is a Google trademark; no trademark rights are granted.",
+        "Used only with the Bigger brain: every token of an answer is still the Bigger brain's own choice (speculative decoding)."
+      ],
+      "components": [
+        {
+          "part": "Gemma 4 E4B-it MTP drafter (assistant)",
+          "source": "google/gemma-4-E4B-it-assistant",
+          "source_revision": "8d0031ea8c2109e2b1e86bb9368a4539b537f80a",
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
       "pack": "music",
       "app_key": "music",
       "app_model": "acestep15-turbo",
