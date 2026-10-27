@@ -49,7 +49,7 @@
  ],
  "sources": {
   "ace_song": "Sources: ACE-Step 1.5 Hugging Face card, huggingface.co/ACE-Step/Ace-Step1.5, and GitHub README, github.com/ace-step/ACE-Step-1.5 (MIT; turbo DiT + Qwen3-Embedding-0.6B + VAE + optional 5 Hz lyrics LM; 10 s to 10 min; 50+ languages; training data licensed / royalty-free / synthetic MIDI; caveat: unintentional similarity to existing styles), read through a research agent, Oct 12 2026. Line budget, tempo defaults and structure: p0pc0rn music probe v002 (Oct 12 2026, the 5 Hz LM 0.6B planner on: lines heard 21 to 35 of 40; back-to-back identical choruses scored worse). Marker and end-on-chorus rules: the song-lane measurements (Sep 23 2026), rewritten. No-coffee rule: Josh, Oct 8 2026.",
-  "faq": "Sources: p0pc0rn's model-download design (Oct 12 2026: the video model's Gemma 2 text encoder is gated, so each person logs in once); the Gemma Terms of Use shipped in licenses/GEMMA_TERMS_OF_USE.txt; the video pack notice (licenses/NOTICE-video.md: SANA-Video reads prompts with Gemma-2-2B-it); the Bigger brain: NVIDIA's model card for NVIDIA-Nemotron-3.5-Bolt-E4B-BF16 (text in, text out; OpenMDW-1.1) and p0pc0rn 3.8's design (Oct 24 2026: chat and pictures on Juli's own model; writing and making planned and written by the Bigger brain).",
+  "faq": "Sources: p0pc0rn's model-download design (Oct 12 2026: the video model's Gemma 2 text encoder is gated, so each person logs in once); the Gemma Terms of Use shipped in licenses/GEMMA_TERMS_OF_USE.txt; the video pack notice (licenses/NOTICE-video.md: SANA-Video reads prompts with Gemma-2-2B-it); the Bigger brain: NVIDIA's model card for NVIDIA-Nemotron-3.5-Bolt-E4B-BF16 (text in, text out; OpenMDW-1.1) and p0pc0rn 3.8's design (Oct 24 2026: chat and pictures on Juli's own model; writing and making planned and written by the Bigger brain). How to ask Juli: p0pc0rn 3.9's own screens and README (Oct 26 2026: Create, the chat's photo button and option bubbles, Library, Music, Settings, Chats, Apps, the home screen). Games, Wallet Watch (beta), the home screen and your apps: p0pc0rn 3.9's own screens and README (Oct 27 2026: Four in a Row, Wallet Watch with its Routescan credit, the dock and cards, Browser, Cast, Skills, Change an app, Routines, Connection, Benchmark).",
   "foley": "Sources: MMAudio GitHub README, github.com/hkchengrex/MMAudio (code MIT; checkpoints CC BY-NC 4.0; video-to-audio; trained length 8 s; limits: speech-like mumbling, weak background music, unfamiliar concepts), and the Hugging Face card hkchengrex/MMAudio (licence tag cc-by-nc-4.0), read through a research agent, Oct 12 2026. Image-encoder licence: the p0pc0rn audio probe notes (Apple DFN5B CLIP, research only).",
   "klein4b": "Sources: FLUX.2 [klein] 4B model card, huggingface.co/black-forest-labs/FLUX.2-klein-4B (Apache-2.0; 3.876 B parameters; text-to-image and editing; card caveats on text rendering and prompt style), read through a research agent, Oct 12 2026. Phone timings and the 4-bit text finding: p0pc0rn engine measurements (iPhone 16 Pro Max, Oct 11 2026). Skin, text-on-screens and prompt-bleed rules: lessons from the picture lane, rewritten.",
   "musicvideo": "Sources: Josh's standing rules: the vertical hook in the first 15 seconds (Oct 5 2026), b-roll carries the arc (Oct 6 2026), visual variety and a strict arc (Oct 4-5 2026), no coffee cliche (Oct 8 2026), \"the clip ends with\" (Sep 23 2026), never compute times in the model (lip-sync cookbook); rewritten for a phone with no lip-sync. Clip timing: p0pc0rn estimate (about 6 minutes per 5-second 832x480 clip).",
@@ -297,6 +297,86 @@
     "nvidia",
     "second model",
     "smarter model"
+   ],
+   "tools": []
+  },
+  {
+   "id": "faq#how-to-ask-juli",
+   "file": "faq.md",
+   "book": "FAQ: questions people ask about p0pc0rn",
+   "heading": "How to ask Juli (making things, finding things)",
+   "tokens": 551,
+   "keywords": [],
+   "tools": []
+  },
+  {
+   "id": "faq#games-four-in-a-row",
+   "file": "faq.md",
+   "book": "FAQ: questions people ask about p0pc0rn",
+   "heading": "Games: Four in a Row",
+   "tokens": 162,
+   "keywords": [
+    "four in a row",
+    "connect four",
+    "connect 4",
+    "game",
+    "games",
+    "play against",
+    "opponent",
+    "unlock",
+    "beat you",
+    "beat juli",
+    "hint"
+   ],
+   "tools": []
+  },
+  {
+   "id": "faq#wallet-watch-beta",
+   "file": "faq.md",
+   "book": "FAQ: questions people ask about p0pc0rn",
+   "heading": "Wallet Watch (beta)",
+   "tokens": 238,
+   "keywords": [
+    "wallet",
+    "wallets",
+    "wallet watch",
+    "avalanche",
+    "avax",
+    "snowtrace",
+    "routescan",
+    "blockchain",
+    "smart contract",
+    "contract address",
+    "wallet address",
+    "crypto"
+   ],
+   "tools": []
+  },
+  {
+   "id": "faq#the-home-screen-and-your-apps",
+   "file": "faq.md",
+   "book": "FAQ: questions people ask about p0pc0rn",
+   "heading": "The home screen and your apps",
+   "tokens": 272,
+   "keywords": [
+    "home screen",
+    "dock",
+    "icon",
+    "icons",
+    "card at the top",
+    "widget",
+    "browser",
+    "cast",
+    "skill",
+    "skills",
+    "routine",
+    "routines",
+    "change an app",
+    "change my app",
+    "connection",
+    "benchmark",
+    "pill",
+    "swipe"
    ],
    "tools": []
   },

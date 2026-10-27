@@ -3,6 +3,7 @@
  "manifest": {
   "id": "wildfire-watch",
   "name": "Wildfire Watch",
+  "plain": "Checks for wildfires near one place you pick, on its own when p0pc0rn opens and every few hours while it is open, and posts the notable ones in Juli’s chat once. It reads only the place you add here; online it looks up that place (Open-Meteo) and the fires near it (US wildfire service), never your phone’s location.",
   "description": "Checks current US wildfire incidents within 25, 50 or 100 miles of one place on its own and posts each notable fire (100 acres or more, or within 25 miles) into Juli’s chat once. US only.",
   "category": "non-agentic",
   "version": "1.0",

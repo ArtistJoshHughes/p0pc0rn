@@ -3,6 +3,7 @@
  "manifest": {
   "id": "weather-alerts",
   "name": "Weather Alerts",
+  "plain": "Checks US weather alerts for one place you pick, on its own when p0pc0rn opens and every few hours while it is open, and posts new warnings in Juli’s chat. It reads only the place you add here; online it looks up that place (Open-Meteo) and its alerts and forecast (US weather service), never your phone’s location.",
   "description": "Checks US National Weather Service alerts for one place on its own and posts each new warning (and, if chosen, watches) into Juli’s chat; shows the forecast. US only. Fits: storm, heat, flood, winter weather alerts for a town.",
   "category": "non-agentic",
   "version": "1.0",

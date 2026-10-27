@@ -76,7 +76,7 @@ export function polOf(model) {
   return P;
 }
 
-export function specAlloc(model, Mmax, lend = null) {
+export function specAlloc(model, Mmax, lend = null, { head = true } = {}) {   // 3.9 (E4B room): head false = a worker part (it never runs the head)
   const g = model.g, D = model.D, NT = model.NL * 256, V = model.m.vocab, maxHd = model.m.global_head_dim, NH = model.NH, maxInter = Math.max(...model.m.intermediate);
   const B = (n, l) => g.buffer(S.PAD(n), l);
   const L = (name, n, l) => { const b = lend && lend[name]; return b && b._pf >= S.PAD(n) ? b : B(n, l); };   // 3.8: a kept read-in buffer lent to the loop
@@ -85,7 +85,7 @@ export function specAlloc(model, Mmax, lend = null) {
     nst: B(Mmax * 4, 'v.nst'), proj: B(Mmax * NT * 4, 'v.proj'), ple: B(Mmax * NT * 4, 'v.ple'), qkv: B(Mmax * (NH * maxHd + 2 * (model.NKV || 1) * maxHd) * 4, 'v.qkv'),
     q: B(Mmax * NH * maxHd * 4, 'v.q'), ao: B(Mmax * NH * maxHd * 4, 'v.ao'), apart: L('apart', (Math.ceil(model.ctxCap / 64) + 2) * Mmax * NH * (2 + maxHd) * 4, 'v.apart'),
     tpart: B(Math.ceil(maxInter / 2048) * Mmax * D * 4, 'v.tpart'), mbuf: B(Mmax * maxInter * 4, 'v.m'), gate: B(Mmax * 256 * 4, 'v.gate'),
-    logits: L('logits', Mmax * V * 4, 'v.logits'), mx: B(Mmax * (V / 64) * 2 * 4, 'v.mx'), arg: B(Mmax * 2 * 4, 'v.arg'), sp: B(64, 'v.sp'), res: B(S.RES_WORDS * 4, 'v.res'),
+    logits: head ? L('logits', Mmax * V * 4, 'v.logits') : null, mx: head ? B(Mmax * (V / 64) * 2 * 4, 'v.mx') : null, arg: head ? B(Mmax * 2 * 4, 'v.arg') : null, sp: B(64, 'v.sp'), res: B(S.RES_WORDS * 4, 'v.res'),
   };
 }
 

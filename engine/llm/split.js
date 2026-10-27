@@ -6,13 +6,14 @@
 // all here). Per token (or per verify pass of M rows): this page's front -> its rows read back -> the worker -> its rows back -> this
 // page's back half. The GPU takes turns between the processes and a busy second process starves the other (the bench: x13), so the two
 // halves run strictly one after the other. Every token is the target's own choice: its argmax (with or without the drafter) or the
-// caller's sampler (no drafter). Gemma 4 E2B split at 13 gives the words of one process; NVIDIA Bolt E4B splits at 23.
+// caller's sampler (no drafter). Gemma 4 E2B split at 13 gives the words of one process; NVIDIA Bolt E4B splits at 24 (3.9; 23 in 3.8).
 'use strict';
 import { DecodeRunner } from './drunner.js';
 import { rowstats } from '../ops/misc.js';
 import * as K from './lops.js';
 import * as S from './lops_spec.js';
 import { specKept, encodeVerifyFront, encodeVerifyLayers, encodeVerifyHead, polOf, polChoose, polLearn, polTime } from './spec.js';
+import { dropAB } from './gemma4.js';   // 3.9 (E4B room)
 
 const now = () => performance.now();
 const r2 = (v) => +(+v).toFixed(2);
@@ -158,6 +159,7 @@ export class SplitModel {
       const r = await wk.call('prefill', { p0, M: MC, Mtot: M, chunk: C, x, ple, first: p0 === 0, last: p0 + C >= M }, [x.buffer, ple.buffer], p0 === 0 ? 45000 : 30000, o.signal);   // 3.8 port: a chunk takes well under 2 s; a stalled one cost 120 s
       const t2 = now();
       g.device.queue.writeBuffer(s.x, 0, r.x.buffer, r.x.byteOffset, MC * D * 4); this._mirrorIn(p0, MC, r.kv);
+      dropAB(r.x.buffer);   // 3.9 (E4B room): the chunk's rows and mirror rows are on the GPU now
       T.hops++; T.readMs += t1 - t0; T.postMs += Math.max(0, t2 - t1 - r.ms); T.wkMs += r.ms; T.bytes += MC * (2 * D + NT) * 4;
       if (o.check) o.check();
     };

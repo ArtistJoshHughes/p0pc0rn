@@ -15,6 +15,9 @@ import { ensureServiceWorker, connectWorker, hiddenSince, splitFailure } from '.
 import { GemmaTokenizer } from './tokenizer.js';
 import { renderChat } from './chat_template.js';
 import { setKX } from './lopsx.js';   // 3.8 (bench v041)
+import { dropAB } from './gemma4.js';   // 3.9 (E4B room)
+/** 3.9 (E4B room): a weight store's idle upload staging, given back at once (not left for the garbage collector) */
+const dropStaging = (st) => { if (st && Array.isArray(st.pool)) { for (const b of st.pool) dropAB(b); st.pool.length = 0; } };
 
 export const LLM_VERSION = '0.2';
 // 3.8: split = the layer a split load starts the page's part at (engine/llm/split.js: layers [0, split) run in a second process on
@@ -22,8 +25,8 @@ export const LLM_VERSION = '0.2';
 // 'bolt-e4b' = NVIDIA Nemotron 3.5 Bolt E4B (a Gemma 4 E4B post-train, OpenMDW-1.1; text only), with Google's Gemma 4 E4B MTP drafter.
 export const LLM_MODELS = {
   'gemma4-e2b': { arch: 'gemma4-text', kind: 'chat', dir: 'pocketllm/pack', running: 'pocketllm:running', wipe: ['pocketllm/pack'], drafterDir: 'pocketllm/drafter', split: 13, vision: true },
-  'bolt-e4b': { arch: 'gemma4-text', kind: 'chat', dir: 'pocketllm/e4b', running: 'pocketllm:running', wipe: ['pocketllm/e4b'], drafterDir: 'pocketllm/e4b_drafter', split: 23, vision: false, ctxCap: 2048, chunk: 128,
-    spec: { specK: 2 } },   // its drafter: k 2 fixed (the iPhone's best for E4B: bench v036-v038); split 23: layer 22's KV mirrored (split.js)
+  'bolt-e4b': { arch: 'gemma4-text', kind: 'chat', dir: 'pocketllm/e4b', running: 'pocketllm:running', wipe: ['pocketllm/e4b'], drafterDir: 'pocketllm/e4b_drafter', split: 24, vision: false, ctxCap: 2048, chunk: 128,
+    spec: { specK: 2 } },   // its drafter: k 2 fixed (the iPhone's best for E4B: bench v036-v038); 3.9 (E4B room): split 24 (3.8: 23): layers 22 and 23's KV mirrored (split.js)
 };
 // 3.8 (v040 speed round): the Bigger brain's verify passes may take PROMPT LOOKUP drafts (split.js specLoop: the answer's last 4..3 tokens
 // seen earlier in the prompt or the answer -> the tokens that followed them are the next pass's drafts; the target checks every one; the
@@ -48,6 +51,10 @@ const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k)
 const TERMS_VERSION = '2026-10-14.2', CONSENT_KEY = 'p0pc0rn:consent';
 const consented = () => { try { const c = JSON.parse(localStorage.getItem(CONSENT_KEY) || 'null'); return !!c && c.terms === TERMS_VERSION && !!c.agreedAt; } catch (e) { return false; } };
 if (LS('p0pc0rn:test:kx') === '0') setKX(false);   // 3.8 (bench v041): test switch = the engine's own kernels everywhere
+// 3.9 (E4B room): ONE tokenizer per page for identical tokenizer files (Juli's pack and the Bigger brain's ship the same Gemma 4
+// vocabulary, the same sha256): the router's countTokens and every load share it, instead of one per engine plus one per loaded model
+// (~14 MB of JS memory each on an iPhone page: its 9.5 MB file and a 4 MB merge table)
+const TOKRS = new Map();   // '<tokenizer sha256>|<meta sha256>' -> Promise<GemmaTokenizer>
 
 export async function createEngine(opts = {}) { const e = new LLMEngine(opts); await e._init(); return e; }
 
@@ -102,13 +109,23 @@ class LLMEngine {
   /** 3.8: a prompt's length in tokens without loading the model or the GPU (the pack's own tokenizer; the router fits the Bigger
    *  brain's 2,048-token prompts with it). A picture counts as its placeholder only. */
   async countTokens(messages, { tools, prefix, thinking } = {}) {
-    if (!this._tokr) this._tokr = (async () => {
-      await this._open(); if (!this.store.http) await this.store.st.start();
-      const b = await this.store.readFile('tokenizer.tokenizer'), mm = await this.store.readFile('tokenizer.tokenizer_meta');
-      return new GemmaTokenizer(b, JSON.parse(new TextDecoder().decode(mm)));
-    })().catch((e) => { this._tokr = null; throw e; });
+    if (!this._tokr) this._tokr = this._sharedTok().catch((e) => { this._tokr = null; throw e; });   // 3.9 (E4B room): the page's one tokenizer
     const tok = await this._tokr;
     return tok.encode(renderChat(messages, { tools, enableThinking: !!thinking, addGenerationPrompt: true }) + (prefix || '')).length;
+  }
+  /** 3.9 (E4B room): this pack's tokenizer, shared by every engine on the page whose pack has the same tokenizer files (their sha256 in
+   *  the manifest); a pack that lists none gets its own */
+  async _sharedTok() {
+    await this._open(); if (!this.store.http) await this.store.st.start();
+    const sha = (n) => { const s = (this.store.m.shards || []).find((x) => x.name === n); return (s && s.sha256) || ''; };
+    const key = sha('tokenizer.tokenizer') && sha('tokenizer.tokenizer_meta') ? sha('tokenizer.tokenizer') + '|' + sha('tokenizer.tokenizer_meta') : null;
+    if (key && TOKRS.has(key)) return TOKRS.get(key);
+    const p = (async () => {
+      const b = await this.store.readFile('tokenizer.tokenizer'), mm = await this.store.readFile('tokenizer.tokenizer_meta');
+      return new GemmaTokenizer(b, JSON.parse(new TextDecoder().decode(mm)));
+    })();
+    if (key) { TOKRS.set(key, p); p.catch(() => { if (TOKRS.get(key) === p) TOKRS.delete(key); }); }
+    return p;
   }
   async _open() { if (!this.store.m) await this.store.open(); return this.store; }
   async status() { await this._open(); const s = this.store.status(); return { complete: s.complete, haveBytes: s.have, totalBytes: s.total, packVersion: this.store.m.pack_version }; }
@@ -168,6 +185,7 @@ class LLMEngine {
       else this._oneProcess(`no second process here: ${why}`);   // Juli: one process, no faster replies
     }
     this.pipe = new LLMPipeline({ gpu: g, store: this.store, emit: (n, d) => this.emit(n, d) });
+    try { this.pipe.tok = await this._sharedTok(); } catch (e) { /* the pipeline reads its own */ }   // 3.9 (E4B room): the page's one tokenizer
     let r;
     try { r = await this.pipe.load({ mode, ctxCap: cap, onProgress, split }); }
     catch (e) {
@@ -200,10 +218,14 @@ class LLMEngine {
         r.drafterError = String((e && e.message) || e).slice(0, 200); this.emit('drafter', { error: r.drafterError });
       }
     }
+    // 3.9 (E4B room): the upload staging goes once the weights are in (the store keeps up to three 16 MiB ArrayBuffers per pack for the
+    // next upload: 67 MB the Bigger brain's page held for nothing while it answered, counted by iOS against the page), given back at once
+    dropStaging(this.store); dropStaging(this.dstore);
     if (this.pipe.split) { const i = this.pipe.split.info || {}; r.split = { at: this.pipe.model.l0, mirror: this.pipe.model.mirrorKV(), pageMB: Math.round(g.alive / 1e6), workerMB: i.aliveMB, coep: i.coep, isolated: !!i.isolated, workerS: +((i.ms || 0) / 1000).toFixed(2) }; }
     this._loaded = true; return Object.assign(r, { gpu: g.describe() });
   }
-  unload() { if (this.pipe) { this._unloadedAt = performance.now(); if (this.pipe.model && this.pipe.model.releaseDrafter) this.pipe.model.releaseDrafter(); this.pipe.unload(); } this.pipe = null; this._loaded = false; }
+  unload() { dropStaging(this.store); dropStaging(this.dstore);   // 3.9 (E4B room): + after a load that failed
+    if (this.pipe) { this._unloadedAt = performance.now(); if (this.pipe.model && this.pipe.model.releaseDrafter) this.pipe.model.releaseDrafter(); this.pipe.unload(); } this.pipe = null; this._loaded = false; }
 
   /** chat(messages, {tools, images, maxTokens, temperature, topK, topP, seed, thinking, onToken, signal}) */
   async chat(messages, o = {}) {

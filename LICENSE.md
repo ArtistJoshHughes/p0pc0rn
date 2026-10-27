@@ -1,6 +1,6 @@
-# p0pc0rn Non-Commercial License 1.1
+# p0pc0rn Non-Commercial License 1.2
 
-> Effective October 15, 2026. Not legal advice. Later versions may update these terms; a copy you already have keeps the version it came with.
+> Version 1.2, effective with p0pc0rn 3.9 (version 1.1: October 15, 2026). Not legal advice. Later versions may update these terms; a copy you already have keeps the version it came with.
 
 Copyright (c) 2026 Joshua Hughes. All rights reserved except as granted below.
 
@@ -11,7 +11,9 @@ what you make with it, and you may use what you make commercially.
 ## 1. Definitions
 
 - **"Software"** means the p0pc0rn app, its engine, its workflows, documentation and every other file in this
-  repository that Licensor wrote, plus any modified version or work based on any of them.
+  repository that Licensor wrote (including its user interface, the Kit and skeletons, the skills, the Skeleton Guide and
+  the app's own art), plus any modified version, part, extract, port or translation of any of them, and any work based
+  on them.
 - **"Licensor"** means Joshua Hughes.
 - **"You"** means the individual or entity using the Software.
 - **"Official Distribution"** means the copy of the Software that Licensor publishes at the address listed in this
@@ -70,6 +72,16 @@ non-transferable license to:
 5. **Use Policy.** You must follow the p0pc0rn Use Policy (USE-POLICY.md) and the law. In particular, You may not use
    the Software to infringe copyright or trademark, or to make non-consensual likenesses or intimate imagery of real
    people.
+6. **Attribution, for as long as copyright lasts.** Anything You share or publish that is based on the Software, in whole or
+   in part (a fork, a build, a copy, a port to another language or platform, a translation, or a work that includes any of
+   its code, text or art), must credit the original with the words "Based on p0pc0rn by Joshua Hughes" and a link to the
+   Official Distribution:
+   - visibly in its own user interface (for example an About or Settings screen, or a credits page) and at the top of its
+     README or main documentation;
+   - with the same meaning, not hidden or made hard to find;
+   - passed on: anyone You share it with must give the same credit when they share it in turn.
+
+   This condition applies for as long as copyright in the Software lasts.
 
 ## 4. Model Weights and third-party code
 
@@ -77,6 +89,8 @@ non-transferable license to:
   including any limits they place on use, redistribution or Outputs.
 - **Third-party code:** files in this repository that carry their own license (listed in NOTICE) stay under that
   license.
+- **Other copies of Licensor's own code:** where Licensor also publishes part of the Software under another license (for
+  example the GPU kernels in the p0pc0rn-kernels repository, under MPL-2.0), You may use that copy under that license instead.
 
 ## 5. Outputs
 
@@ -111,5 +125,6 @@ You are responsible for what You upload and generate.
 ## 9. Other
 
 - **Commercial licence:** Licensor may offer the Software under other terms, including a separate commercial license.
+- **Duration:** this License and its conditions apply for as long as copyright in the Software lasts.
 - **Severability:** if any part of this License is unenforceable, the rest still applies.
 - **Governing law:** the laws of the United States and the State of Oregon.

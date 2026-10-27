@@ -21,7 +21,7 @@ export function sayRunner({ cast }) {
     const save = () => ctx.setState(st), prog = (phase, frac, message) => ctx.progress({ phase, frac, message });
     const person = await cast.get(P.personId);
     if (!person) throw err('NO_PERSON', `${P.name || 'That person'} is not in your cast any more.`);
-    if (!person.voice) throw err('NO_VOICE', `Record ${person.name}'s voice first (Settings › Cast).`);
+    if (!person.voice) throw err('NO_VOICE', `Record ${person.name}'s voice first (in Cast).`);
     const hard = screenRequest(P.line); if (hard) throw err(hard.code, hard.reply);
     const common = { refAttested: true, signal: ctx.signal };   // the cast member's consent was given when they were added
     // 1. the learned voice: once per recording (the engine keeps it on the phone; its key is kept on the person)
@@ -30,7 +30,7 @@ export function sayRunner({ cast }) {
     if (!key) {
       prog('voice', 0.02, 'Learning the voice');
       const ref = await cast.getBlob(person.voice.refKey);
-      if (!ref) throw err('NO_VOICE', `${person.name}'s recording is gone: record it again (Settings › Cast).`);
+      if (!ref) throw err('NO_VOICE', `${person.name}'s recording is gone: record it again (in Cast).`);
       const a = await eng.learnVoice(Object.assign({ refAudio: ref, onProgress: (p) => prog('voice', 0.02 + 0.1 * (p.frac || 0), 'Learning the voice') }, common));
       key = a.key; await cast.setVoiceKey(person.id, key);
       st.learned = { sec: +a.seconds.toFixed(2), peakMB: a.peakMB };
@@ -70,9 +70,9 @@ export function sayTurn({ cast, agent, queue, installed }) {
       const hard = screenRequest(P.text || P.line); if (hard) return end(hard.reply, { kind: 'refusal', code: hard.code });
       const person = await cast.byName(P.name);
       if (!person) return end(P.name.toLowerCase() === 'me' || P.name.toLowerCase() === 'myself'
-        ? "Add yourself in Settings › Cast first: read a short script out loud once, and I can say anything in your voice."
-        : `I can only make people in your Cast speak, in their own recorded voice and with their permission. ${P.name} isn't in your Cast: add them in Settings › Cast.`, { kind: 'status' });
-      if (!person.voice) return end(`Record ${person.name}'s voice first: Settings › Cast › ${person.name}.`, { kind: 'status' });
+        ? "Add yourself in Cast first (on the Home Screen): read a short script out loud once, and I can say anything in your voice."
+        : `I can only make people in your Cast speak, in their own recorded voice and with their permission. ${P.name} isn't in your Cast: add them in Cast, on the Home Screen.`, { kind: 'status' });
+      if (!person.voice) return end(`Record ${person.name}'s voice first: Cast › ${person.name}.`, { kind: 'status' });
       if (!(await installed(VOICE_MODEL))) return end("The voice model isn't on this phone yet. Download it from Settings › Models (Voice · 1.4 GB), then ask me again.", { kind: 'needs-download', model: VOICE_MODEL });
       const child = await ctx.enqueueOnce('say', 'say', { personId: person.id, name: person.name, line: P.line }, { title: `${person.name} says` });
       Object.assign(st, { stage: 'wait', child: child.id, name: person.name }); await save();

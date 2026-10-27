@@ -1,4 +1,4 @@
-// cast_ui.js - Settings › Cast: the list of people, "Add a person" (name -> consent -> voice -> photos), Edit / re-record / Delete, and a
+// cast_ui.js - Cast (its own screen since 3.9; Settings links to it): the list of people, "Add a person" (name -> consent -> voice -> photos), Edit / re-record / Delete, and a
 // "Say something" box on each card. The voice step is the voice probe's read-aloud flow (a script on screen, 3-2-1, a level meter,
 // auto-stop, trim, checks, play back, Use this / Record again); photos carry the app's per-upload rights box and are cut to the face.
 'use strict';

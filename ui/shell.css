@@ -1,0 +1,180 @@
+/* shell.css - p0pc0rn 3.9: the phone-OS shell (ui/shell.js). The home screen (wallpaper, widgets, icons), the dock and the p0pc0rn pill
+   sit under the open screen; the screen (the 3.8 header, main and bars) grows from its icon. Only the app's own tokens (app.css). */
+/* the dock and the p0pc0rn pill: LIGHT frosted glass in both themes (ART: it reads better than a dark one over the wallpaper), with their
+   own dark text; the widgets and the status chip: the theme's glass */
+:root { --dock-h: 100px; --pill-h: 36px; --sh-glass: rgba(28,28,34,.56); --sh-glass-line: rgba(255,255,255,.09); --sh-label: #F5F5F7; --sh-label-shadow: 0 1px 2px rgba(0,0,0,.55);
+  --sh-dock-bg: rgba(255,255,255,.52); --sh-dock-line: rgba(255,255,255,.38); --sh-dock-text: #17171C; }
+@media (prefers-color-scheme: light) {
+  :root { --sh-glass: rgba(255,255,255,.58); --sh-glass-line: rgba(0,0,0,.07); --sh-label: #1C1C22; --sh-label-shadow: none; --sh-dock-bg: rgba(255,255,255,.62); }
+}
+html[data-wall="photo"], html[data-wall="art"] { --sh-label: #FFF; --sh-label-shadow: 0 1px 3px rgba(0,0,0,.6); }
+
+/* the shell is now layers, not a grid: wallpaper < home < dock < screen < splash */
+.shell { display: block; overflow: hidden; }
+.screen { position: absolute; inset: 0; z-index: 3; display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); background: var(--bg);
+  will-change: auto; }
+.screen.sh-swiping { box-shadow: -16px 0 40px rgba(0,0,0,.35); }
+.edge-back { position: absolute; left: 0; top: 0; bottom: 0; width: var(--gutter-l); z-index: 5; touch-action: none; }
+/* without a tab bar under them, the bottom bars and the page keep clear of the home indicator */
+.screen .cta-bar, .screen .chat-bar { padding-bottom: calc(var(--s-3) + var(--safe-b)); }
+.screen main { padding-bottom: calc(var(--s-6) + var(--safe-b)); }
+.hdr .home-btn { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 4px 0 0; margin-left: -6px; border-radius: var(--r-sm); color: var(--accent); flex: none; }
+.hdr .home-btn svg { width: 22px; height: 22px; stroke-width: 2; }
+.hdr .home-btn:active { opacity: .6; }
+.tab-compat { display: none !important; }
+/* the job hairline (3.8's tab bar had it): now across the top, over everything */
+.tab-hair { position: fixed; top: var(--safe-t); left: 0; right: 0; height: 2px; z-index: 45; pointer-events: none; }
+
+/* ---------- wallpaper ---------- */
+.wall { position: absolute; inset: 0; z-index: 0; overflow: hidden; background:
+  radial-gradient(110% 70% at 15% 0%, rgba(139,124,255,.38), transparent 62%),
+  radial-gradient(120% 80% at 100% 100%, rgba(255,95,143,.22), transparent 58%),
+  radial-gradient(90% 60% at 0% 100%, rgba(46,156,106,.16), transparent 60%), #050507; }
+@media (prefers-color-scheme: light) {
+  .wall { background: radial-gradient(110% 70% at 15% 0%, rgba(91,75,245,.22), transparent 62%),
+    radial-gradient(120% 80% at 100% 100%, rgba(233,138,43,.18), transparent 58%),
+    radial-gradient(90% 60% at 0% 100%, rgba(29,134,184,.12), transparent 60%), #F3F2F8; }
+}
+.wall i { position: absolute; inset: -28px; background-size: cover; background-position: center; filter: blur(10px) saturate(1.08); transform: scale(1.04); }
+.wall[data-kind="photo"]::after, .wall[data-kind="art"]::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.16), rgba(0,0,0,.30)); }
+
+/* ---------- the home screen ---------- */
+.home { position: absolute; inset: 0; z-index: 1; }
+.home-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+  padding: calc(var(--safe-t) + 10px) 0 calc(var(--safe-b) + var(--dock-h) + var(--pill-h) + 40px);
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.home-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: 44px; padding: 0 var(--gutter-r) var(--s-2) var(--gutter-l); }
+.home-status { height: 30px; padding: 0 12px; border-radius: var(--r-pill); display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600;
+  background: var(--sh-glass); color: var(--text-1); box-shadow: inset 0 0 0 1px var(--sh-glass-line); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); }
+.home-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.home-status[data-tone="accent"] i { background: var(--accent); }
+.home-status[data-tone="warn"] i { background: var(--warn); }
+.home-status[data-tone="danger"] i { background: var(--danger); }
+.home-done { margin-left: auto; color: var(--accent); font-size: 15px; }
+.home-edit { display: flex; justify-content: center; padding: var(--s-6) 0 0; }
+.home-edit .btn { width: auto; }
+
+/* widgets: one card per agentic app (the items it holds for you) */
+.widgets { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 0 var(--sh-left, 24px) 22px; }
+@media (min-width: 600px) { .widgets { grid-template-columns: 1fr 1fr; } }
+.sh-widget { display: grid; gap: 2px; text-align: left; padding: 14px 16px 15px; border-radius: 22px; background: var(--sh-glass); color: var(--text-1);
+  box-shadow: inset 0 0 0 1px var(--sh-glass-line); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); }
+.sh-widget:active { transform: scale(.98); }
+/* 3.9 home cards: a sideways swipe clears a card (ui/shell.js swipeCard); up and down still scroll the home screen */
+.sh-widget { touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.sh-widget.sh-w-drag { will-change: transform, opacity; }
+.sh-w-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sh-w-kind { font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.sh-w-count { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; background: var(--danger); color: #fff; font: 700 12px/22px var(--font); text-align: center; }
+.sh-w-name { font-size: 17px; line-height: 22px; font-weight: 600; }
+.sh-w-line { font-size: 14px; line-height: 19px; color: var(--text-2); }
+
+/* the icon grid: columns from ui/shell_core.js gridLayout (CSS variables set by ui/shell.js) */
+.hgrid { display: grid; grid-template-columns: repeat(var(--sh-cols, 4), var(--sh-icon, 62px)); column-gap: var(--sh-gap, 22px); row-gap: 20px;
+  padding: 0 var(--sh-left, 24px); justify-content: start; }
+.sh-app, .dock-btn { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: var(--sh-icon, 62px); color: var(--sh-label);
+  -webkit-tap-highlight-color: transparent; }
+.sh-tile { position: relative; width: var(--sh-icon, 62px); height: var(--sh-icon, 62px); border-radius: 22%; display: grid; place-items: center; overflow: hidden; color: #fff;
+  background: linear-gradient(160deg, #6E7B8B, #3E4752); box-shadow: 0 6px 16px rgba(0,0,0,.35);
+  transition: transform var(--d-2) var(--ease-out), filter var(--d-2); }
+/* a 1 px inner rim over the picture (ART: dark tiles on the darkest parts of the wallpaper keep their edge) */
+.sh-tile::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); pointer-events: none; }
+.sh-tile svg { width: 54%; height: 54%; stroke-width: 1.7; }
+.sh-tile.art { background: #2A1C33; }
+.sh-tile.art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sh-tile.letter { font: 700 calc(var(--sh-icon, 62px) * .44)/1 var(--font); letter-spacing: -.01em; }
+.sh-app:active .sh-tile, .dock-btn:active .sh-tile { transform: scale(.92); filter: brightness(.85); }
+.sh-label { max-width: calc(var(--sh-icon, 62px) + 18px); font-size: 12px; line-height: 15px; font-weight: 500; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; text-shadow: var(--sh-label-shadow); }
+/* our own placeholder colours, for a build without the icon set (icons/ui/) */
+.sh-tile[data-id="assistant"] { background: linear-gradient(160deg, #9A8CFF, #5B4BF5); }
+.sh-tile[data-id="create"] { background: linear-gradient(160deg, #FF9B6A, #E0464E); }
+.sh-tile[data-id="music"] { background: linear-gradient(160deg, #FF6F9B, #C23F72); }
+.sh-tile[data-id="settings"] { background: linear-gradient(160deg, #98A2B0, #4A5361); }
+.sh-tile[data-id="library"] { background: linear-gradient(160deg, #FFCB5C, #E98A2B); }
+.sh-tile[data-id="apps"] { background: linear-gradient(160deg, #5CBBFF, #2A6FD9); }
+.sh-tile[data-id="browser"] { background: linear-gradient(160deg, #4FD8C6, #1D86B8); }
+.sh-tile[data-id="games"] { background: linear-gradient(160deg, #78DE97, #2E9C6A); }
+.sh-tile[data-id="skills"] { background: linear-gradient(160deg, #C2A8FF, #7F62E8); }
+.sh-tile[data-id="connection"] { background: linear-gradient(160deg, #8A8F98, #555A63); }
+.grayed .sh-tile { filter: grayscale(1); opacity: .42; }
+.grayed .sh-label { opacity: .55; }
+/* red number badges at the top LEFT of an icon (Josh: "they can be on the opposite side") */
+.sh-badge { position: absolute; top: -6px; left: -7px; min-width: 21px; height: 21px; padding: 0 6px; border-radius: 11px; background: var(--danger); color: #fff;
+  font: 700 12px/21px var(--font); text-align: center; box-shadow: 0 0 0 2px rgba(0,0,0,.12), 0 1px 3px rgba(0,0,0,.3); pointer-events: none; }
+.sh-badge:empty { display: none; }
+
+/* edit mode: a long press; the icons wiggle (never while a render runs or with reduced motion), pinned apps can be removed */
+.sh-x { display: none; position: absolute; top: -7px; left: -7px; width: 24px; height: 24px; border-radius: 50%; background: rgba(110,110,118,.92); color: #fff;
+  font: 700 18px/22px var(--font); text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+html.sh-editing .sh-x { display: block; }
+html.sh-editing .sh-app .sh-badge { display: none; }
+html.sh-editing .sh-app { touch-action: none; }
+html.sh-editing .sh-app .sh-tile { animation: sh-wiggle 280ms ease-in-out infinite alternate; }
+html.sh-editing .sh-app:nth-child(2n) .sh-tile { animation-delay: -140ms; animation-duration: 300ms; }
+html.sh-editing .sh-app:nth-child(3n) .sh-tile { animation-delay: -70ms; }
+@keyframes sh-wiggle { from { transform: rotate(-1.6deg); } to { transform: rotate(1.6deg); } }
+html[data-busy].sh-editing .sh-app .sh-tile { animation: none; }
+.sh-app.dragging { z-index: 6; transition: none; }
+.sh-app.dragging .sh-tile { animation: none !important; box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+
+/* ---------- the dock + the p0pc0rn pill ---------- */
+.dockwrap { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 0 max(12px, var(--safe-r)) calc(var(--safe-b) + 10px) max(12px, var(--safe-l)); pointer-events: none; }
+/* Josh: "branding lands inside the home bar": the p0pc0rn pill sits right above the dock, centred, in the same frosted glass */
+.brand-pill, .dock { pointer-events: auto; background: var(--sh-dock-bg); box-shadow: inset 0 0 0 1px var(--sh-dock-line), 0 8px 28px rgba(0,0,0,.22);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6); backdrop-filter: blur(28px) saturate(1.6); color: var(--sh-dock-text); }
+.brand-pill { height: var(--pill-h); padding: 0 16px 0 7px; border-radius: var(--r-pill); display: inline-flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+.brand-pill img { width: 24px; height: 24px; border-radius: 7px; }
+.brand-pill:active { transform: scale(.97); }
+.dock { width: min(100%, 440px); height: var(--dock-h); border-radius: 34px; display: flex; justify-content: space-around; align-items: center; padding: 0 10px; }
+/* Josh: "Names below the icons of what it is as well": the dock keeps its labels too, in the dock's own text colour */
+.dock .sh-label { color: var(--sh-dock-text); text-shadow: none; font-weight: 600; }
+.dock .sh-badge { top: -5px; left: -6px; }
+/* a screen is up: no dock (it lives on the home screen) */
+html:not([data-sh-home]) .dockwrap { visibility: hidden; }
+
+/* ---------- toasts: above the dock on the home screen; low in a screen (no tab bar any more) ---------- */
+html[data-tab]:not([data-viewer]):not([data-lesson]) .toast { bottom: calc(var(--safe-b) + 16px); }
+html[data-tab="create"]:not([data-viewer]):not([data-lesson]) .toast { bottom: calc(var(--safe-b) + 88px); }
+html[data-tab="assistant"]:not([data-viewer]):not([data-lesson]) .toast { bottom: calc(var(--safe-b) + 84px); }
+html[data-tab="home"]:not([data-viewer]):not([data-lesson]) .toast { bottom: calc(var(--safe-b) + var(--dock-h) + var(--pill-h) + 32px); }
+
+/* ---------- the launch splash ---------- */
+.splash { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; background: var(--bg); transition: opacity 380ms var(--ease-out);
+  pointer-events: none; }   /* a brand moment only: a tap during it lands on the home screen */
+.splash img { width: 92px; height: 92px; border-radius: 22px; box-shadow: 0 10px 40px rgba(139,124,255,.35); animation: pop 520ms var(--ease-spring) both; }
+.splash.out { opacity: 0; pointer-events: none; }
+
+/* ---------- sheets of the shell ---------- */
+.sh-soon .callout { text-align: center; font-size: 17px; padding: var(--s-4) 0 var(--s-6); }
+.sh-wall-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; max-height: 52dvh; overflow-y: auto; margin: var(--s-2) 0 var(--s-4); }
+.sh-wall-pick { aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.sh-wall-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sh-pin-btn { width: 36px; display: inline-grid; place-items: center; color: var(--text-3); }
+.sh-pin-btn svg { width: 21px; height: 21px; }
+.sh-pin-btn[aria-pressed="true"] { color: var(--accent); }
+/* the Skills screen starts with a padded footnote (3.8 put a label above it): no pull-up under the header */
+#v-skills > p.pad:first-of-type { margin-top: 0; }
+
+/* ---------- the Browser screen ---------- */
+.br-search { display: flex; gap: var(--s-2); align-items: center; }
+.br-search input, .br-field { flex: 1; min-width: 0; min-height: 44px; padding: 0 var(--s-4); border-radius: var(--r-sm); border: 0; background: var(--surface-2); color: var(--text-1);
+  font-size: 16px; box-shadow: inset 0 0 0 1px var(--hairline); }
+.br-field { width: 100%; margin-bottom: var(--s-3); }
+.br-row { padding-top: 6px; padding-bottom: 6px; }
+.br-link { display: flex; flex-direction: column; min-width: 0; flex: 1; color: var(--text-1); text-decoration: none; }
+.br-link .footnote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* a rotated phone: a smaller dock */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root { --dock-h: 90px; --pill-h: 32px; }   /* the dock keeps its names */
+  .dock { border-radius: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.sh-editing .sh-app .sh-tile { animation: none; outline: 2px dashed var(--accent); outline-offset: 3px; }
+  .splash img { animation: none; }
+  .sh-tile { transition: none; }
+}
+/* 3.9 shell bd05189fe929 */

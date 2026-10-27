@@ -1,0 +1,13 @@
+/* memory.css - 3.9: Settings › Juli › About me and Routines (ui/memory_ui.js). The app's tokens and its sheet styles (.mv-sheet) do the rest. */
+#s-about > span:first-child, #s-routines > span:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: left; }   /* title over description, like the switch rows (Qwen tester, 10-26) */
+.mh-list { display: flex; flex-direction: column; gap: var(--s-2); margin: var(--s-3) 0; }
+.mh-row { display: flex; flex-direction: column; gap: var(--s-1); padding: var(--s-3); border-radius: var(--r-sm); background: var(--surface-2); }
+.mh-row .row-btns { margin-top: var(--s-1); }
+.mh-text p { margin: 0; overflow-wrap: anywhere; }
+.mh-form { display: flex; flex-direction: column; gap: var(--s-2); }
+.mh-form .label { margin: var(--s-2) 0 0; }
+.mv-sheet .mv-seg.mh-when { grid-template-columns: 1fr 1fr 1fr; }   /* the three choices in one row (a sheet's .mv-seg has two columns) */
+.mh-when button { white-space: normal; min-height: 44px; }
+.mh-when-extra { display: flex; gap: var(--s-2); }
+.mh-when-extra [hidden] { display: none !important; }
+.msg.bot.k-routine { box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--hairline); }

@@ -13,15 +13,28 @@
 //     assistant has landed. With the assistant on the phone, a request for a model it has no tool for (lip-sync, Klein 9B) or a plain
 //     "download the … model" is answered the same way while that model is missing; everything else goes to the assistant as before.
 //     These messages stay in the chat but never reach the model (history: false).
+//   - 3.9 (Josh: "chat with Juli should feel like a text message conversation ... with a "new chat button" and continuing the bubble
+//     land with options"): bubbles in groups with a tail on the last one, a line between days, a bubble's time on a tap, a typing bubble
+//     while Juli works; results as picture / clip / song bubbles with ACTION bubbles under them (ui/chatactions.js: only what p0pc0rn
+//     already does; Make again = the same job with a new seed, its card and result posted in this conversation); Chats: every
+//     conversation (one agent session each, so a plan still sees only its own turns) with its first question, last line, time and
+//     unread count (ui/threads.js), New chat, swipe left or press and hold to delete. Juli's unread count also goes to the phone-OS
+//     shell's badge when the shell is there (globalThis.SHELL).
 import * as store from '../store.js';
 import { $, ls, clock, about, reducedMotion, isAbort } from '../util.js';
 import { researchList, lyricsEl } from './research.js';   // v026.2: the research list
+import { createThreads, titleOf, groups, listLabel, clockOf } from './threads.js';   // 3.9: the conversations, listed
+import { ACTIONS, actionsFor, againable, againParams } from './chatactions.js';   // 3.9: the action bubbles under a result
+const JULI_ICON = new URL('../icons/ui/juli-120.png', import.meta.url).href;   // 3.9: Juli's avatar in Chats (ART's icon, part 8; else the letter J)
 
-const SUGGEST = [
-  'Make me a song about the last train home, synthwave',
-  'A picture of a red fox in fresh snow at sunrise',
-  'A 5-second clip of waves rolling onto a black sand beach at dusk',
+// 3.9 polish (Josh, Oct-26: "Juli chat is a general chat now with a research agent capabilities via Wikipedia and fandom. The chats
+// instructions only say creation prompts."): what Juli does, an example of each (the start screen; "I'm ready" offers the same)
+const HELLO = [
+  { kind: 'ask', icon: 'i-chat', label: 'Ask me something', tries: ['Can dogs eat grapes?'] },
+  { kind: 'look', icon: null, label: 'Look it up on Wikipedia or Fandom', tries: ['Who directed Spirited Away?'] },
+  { kind: 'make', icon: 'i-sparkle', label: 'Make a song, a picture or a clip', tries: ['A picture of a red fox in fresh snow at sunrise', 'Make me a song about the last train home, synthwave'] },
 ];
+const SUGGEST = HELLO.flatMap((h) => h.tries);
 // ---- onboarding: what a message asks for (model keys of the app's MODELS; 'assist' = the assistant + the starter knowledge)
 const SETUP = new Set(['welcome', 'ready', 'setup']);
 const WANTS = [
@@ -65,23 +78,163 @@ const TERMINAL = new Set(['done', 'failed', 'cancelled']);
 const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const svg = (id, cls = 'ic') => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('class', cls); s.setAttribute('aria-hidden', 'true'); const u = document.createElementNS('http://www.w3.org/2000/svg', 'use'); u.setAttribute('href', '#' + id); s.append(u); return s; };
 const btn = (label, cls = 'btn sm', icon = null) => { const b = mk('button', cls); b.type = 'button'; if (icon) b.append(svg(icon)); b.append(mk('span', null, label)); return b; };
+const lens = (cls = 'ic') => { const N = 'http://www.w3.org/2000/svg', s = document.createElementNS(N, 'svg'), c = document.createElementNS(N, 'circle'), p = document.createElementNS(N, 'path');
+  s.setAttribute('class', cls); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); c.setAttribute('cx', '10.5'); c.setAttribute('cy', '10.5'); c.setAttribute('r', '5.75');
+  p.setAttribute('d', 'm15 15 4.5 4.5'); s.append(c, p); return s; };   // 3.9 polish: a magnifier (our own drawing; the sprite has none)
 
 export function createChat(api) {
   const C = { sid: ls.get('pf.app.chatSession', null), shown: false, urls: new Set(), cards: new Map(), stream: null, photo: null, typing: null,
     pop: null, popCanvas: null, popJob: null, unread: false, armed: new Map(), qopen: false, loadTok: 0,
-    declined: false, lastUser: '', setupBusy: null, brainWas: null };   // onboarding: "Not now" was tapped; the last thing the person asked
+    declined: false, lastUser: '', setupBusy: null, brainWas: null,   // onboarding: "Not now" was tapped; the last thing the person asked
+    list: false, th: null, thP: null, total: 0, last: null, landed: new Set(), icon: false, iconP: null, ensuring: null };   // 3.9: Chats is showing; the conversations' index; unread; the last bubble (groups); results made again, posted; Juli's icon
   const Q = () => api.Q, AG = () => api.AG;
 
+  // ---------------------------------------------------------------------------------------------- 3.9: the conversations (ui/threads.js)
+  /** the index of conversations, built once from the agent's sessions (null when Juli couldn't start) */
+  const threads = () => C.thP || (C.thP = AG() ? createThreads({ agentDb: AG().db, currentId: C.sid }).then((t) => (C.th = t)).catch(() => null) : Promise.resolve(null));
+  const onScreen = (sid) => C.shown && !C.list && sid === C.sid && document.visibilityState === 'visible';
+  /** Juli's unread count: the Chats button, the tab's dot, and the phone-OS shell's badge when the shell is there */
+  async function paintUnread() {
+    const t = await threads(); C.total = t ? await t.total().catch(() => 0) : 0;
+    const n = $('as-chats-n'); if (n) { n.hidden = !C.total; n.textContent = C.total > 99 ? '99+' : String(C.total); }
+    renderDot();
+    try { if (globalThis.SHELL && typeof SHELL.badge === 'function') SHELL.badge('assistant', C.total); } catch (e) { /* the shell is optional */ }
+  }
+  /** a message in any conversation: its line in Chats; unread while the person can't see it */
+  async function track(sid, m) {
+    const t = await threads(); if (!t) return;
+    await t.touch(sid, m, { visible: onScreen(sid) }).catch(() => {});
+    paintUnread(); if (C.list) renderList();
+  }
+  /** Chats: every conversation, newest first */
+  async function openList() {
+    if (!AG()) return;
+    C.list = true; $('as-list').hidden = false; $('v-assistant').classList.add('listing'); $('chat-bar').classList.add('listing');
+    await renderList(); const m = $('main'); if (m) m.scrollTo({ top: 0 });
+  }
+  function closeList() {
+    C.list = false; $('as-list').hidden = true; $('v-assistant').classList.remove('listing'); $('chat-bar').classList.remove('listing');
+  }
+  /** Juli's avatar: ART's final icon (part 8 installs icons/ui/juli-120.png) when this build has it, else the letter J; loaded once */
+  const juliIcon = () => C.iconP || (C.iconP = new Promise((res) => {
+    const im = new Image(); im.onload = () => res(C.icon = im.naturalWidth > 0); im.onerror = () => res(C.icon = false); im.src = JULI_ICON;
+  }));
+  async function renderList() {
+    const t = await threads(), box = $('as-threads'); if (!t || !box) return;
+    await juliIcon();
+    const all = await t.list().catch(() => []), now = Date.now();
+    box.replaceChildren(...all.map((x) => threadRow(x, now)));
+    $('as-threads-none').hidden = all.length > 0;
+  }
+  function threadRow(x, now) {
+    const row = mk('div', 'as-thread'), title = x.title || 'New chat', when = listLabel(x.at || x.createdAt || now, now);
+    row.setAttribute('role', 'listitem'); row.dataset.sid = x.id;
+    const del = mk('button', 'as-thread-del', 'Delete'); del.type = 'button'; del.tabIndex = -1;
+    const main = mk('button', 'as-thread-main'); main.type = 'button';
+    main.classList.toggle('unread', !!x.unread); main.classList.toggle('current', x.id === C.sid);
+    const av = mk('span', 'as-av'); av.setAttribute('aria-hidden', 'true');
+    if (C.icon) { const im = mk('img', 'as-av-img'); im.alt = ''; im.draggable = false; im.src = JULI_ICON; av.classList.add('has-icon'); av.append(im); } else av.textContent = 'J';
+    const top = mk('span', 'as-thread-top'); top.append(mk('span', 'as-thread-title headline', title), mk('span', 'as-thread-time footnote num', when));
+    const txt = mk('span', 'as-thread-txt'); txt.append(top, mk('span', 'as-thread-prev footnote', x.preview || ' '));
+    main.append(av, txt);
+    if (x.unread) { const u = mk('span', 'as-thread-n num', x.unread > 99 ? '99+' : String(x.unread)); u.setAttribute('aria-hidden', 'true'); main.append(u); }
+    main.setAttribute('aria-label', `${title}. ${x.preview || ''} ${when}${x.unread ? `. ${x.unread} unread` : ''}`);
+    main.onclick = () => {
+      if (main.dataset.held || main.dataset.swiped) return;
+      if (row.classList.contains('open')) { row.classList.remove('open'); main.style.transform = ''; return; }
+      openThread(x.id);
+    };
+    del.onclick = () => removeThread(x.id, title);
+    main.addEventListener('keydown', (e) => { if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeThread(x.id, title); } });   // a keyboard's way to the same sheet
+    row.append(del, main); swipeRow(row, main, () => removeThread(x.id, title));
+    return row;
+  }
+  /** a row swiped left shows Delete; press and hold asks the same (so deleting never depends on a swipe) */
+  function swipeRow(row, main, onHold) {
+    const W = 88; let x0 = 0, y0 = 0, dx = 0, drag = false, pid = null, hold = null;
+    const set = (v, ease) => { main.style.transition = ease ? '' : 'none'; main.style.transform = v ? `translateX(${v}px)` : ''; };
+    main.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return; pid = e.pointerId; x0 = e.clientX; y0 = e.clientY; dx = row.classList.contains('open') ? -W : 0; drag = false;
+      clearTimeout(hold); hold = setTimeout(() => { hold = null; if (drag || pid == null) return; pid = null; main.dataset.held = '1'; setTimeout(() => { delete main.dataset.held; }, 600); onHold(); }, 550);
+    });
+    main.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== pid) return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!drag && Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { clearTimeout(hold); pid = null; return; }   // a scroll
+      if (!drag && Math.abs(mx) > 8) { drag = true; clearTimeout(hold); try { main.setPointerCapture(pid); } catch (x) { /* */ } }
+      if (drag) { dx = Math.max(-W - 12, Math.min(0, mx + (row.classList.contains('open') ? -W : 0))); set(dx); }
+    });
+    const end = (e) => {
+      if (e.pointerId !== pid) return; clearTimeout(hold); pid = null;
+      if (!drag) return; drag = false;
+      const open = dx < -W / 2; row.classList.toggle('open', open); set(open ? -W : 0, true);
+      main.dataset.swiped = '1'; setTimeout(() => { delete main.dataset.swiped; }, 80);
+    };
+    main.addEventListener('pointerup', end); main.addEventListener('pointercancel', end);
+  }
+  async function openThread(sid) {
+    const ag = AG(); if (!ag) return;
+    if (!(await ag.session(sid))) { const t = await threads(); if (t) await t.remove(sid); return renderList(); }   // gone (another tab deleted it)
+    C.sid = sid; ls.set('pf.app.chatSession', sid); C.unread = false;
+    closeList(); await rebuild(); sweepAgain();
+  }
+  /** delete a conversation (its messages; what Juli made stays in the Library) - never one Juli is still working in */
+  function removeThread(sid, title) {
+    const q = Q();
+    if (q && q.list({ includeTerminal: false }).some((j) => j.session === sid)) return api.toast('Juli is still working in that chat. Delete it when she is done.');
+    const go = async () => {
+      const t = await threads(); if (!t) return;
+      await t.remove(sid).catch(() => {});
+      if (sid === C.sid) { const rest = await t.list().catch(() => []); C.sid = rest.length ? rest[0].id : null; ls.set('pf.app.chatSession', C.sid); }
+      await renderList(); paintUnread(); api.toast('Chat deleted');
+    };
+    if (api.confirm) api.confirm('Delete this chat?', `“${title}” and its messages go from this phone. What Juli made stays in the Library.`, 'Delete', go); else go();
+  }
+
+  // ---------------------------------------------------------------------------------------------- 3.9: Make again (ui/chatactions.js)
+  const AGAIN = 'chat:again';   // the queue tag of a job made again from an action bubble
+  /** the same job with a new seed (and its own copy of any picture it reads); its card here, its result posted here when it lands */
+  async function again(m, el) {
+    const q = Q(), ag = AG(), j = q && m && q.get(m.jobId);
+    if (!q || !ag || !j || !againable(j.kind)) return api.toast("That can't be made again from here.");
+    if (api.readOnly()) return api.toast('p0pc0rn is open in another tab.');
+    if (el) el.disabled = true;
+    try {
+      const params = await againParams(j.params, { getBlob: (k) => q.getBlob(k), putBlob: (b) => q.putBlob(b, { role: 'again' }) });
+      if (!params) return api.toast("Its picture isn't on this phone any more.");
+      const sid = C.sid || await ensureSession();
+      const nj = await q.add(j.kind, params, { session: sid, title: j.title || '', tag: AGAIN });
+      await ag.say(sid, { kind: 'status', text: 'Making it again', jobId: nj.id, history: false });
+    } catch (e) { api.toast("Couldn't start it. Try again."); }
+    finally { if (el) setTimeout(() => { el.disabled = false; }, 1200); }
+  }
+  /** a job made again that finished: its result in its own conversation (so it goes to the Library like Juli's own) */
+  async function landAgain(j) {
+    if (!j || j.tag !== AGAIN || j.status !== 'done' || C.landed.has(j.id)) return;
+    C.landed.add(j.id);
+    const ag = AG(), sid = j.session; if (!ag || !sid) return;
+    const s = await ag.session(sid); if (!s || s.messages.some((x) => x.kind === 'result' && x.jobId === j.id)) return;
+    const r = j.result || {}, key = (r.image && r.image.blobKey) || (r.video && r.video.blobKey) || (r.audio && r.audio.blobKey);
+    if (key) await ag.say(sid, { kind: 'result', text: 'Here it is again.', jobId: j.id, media: { kind: j.kind, blobKey: key }, history: false });
+  }
+  function sweepAgain() { const q = Q(); if (q) for (const j of q.list()) if (j.tag === AGAIN && j.status === 'done') landAgain(j).catch(() => {}); }
+
   // ---------------------------------------------------------------------------------------------- the session
-  async function ensureSession() {
+  /** the open conversation, made when none is open. Callers at the same moment share one: when Juli's screen opens, render() and
+   *  show() both ask (3.9: one "New chat", not two) */
+  function ensureSession() { return C.ensuring || (C.ensuring = ensureOne().finally(() => { C.ensuring = null; })); }
+  async function ensureOne() {
     const ag = AG(); if (!ag) return null;
     if (C.sid && await ag.session(C.sid)) return C.sid;
-    const s = await ag.newSession(); C.sid = s.id; ls.set('pf.app.chatSession', s.id); return s.id;
+    const s = await ag.newSession(); C.sid = s.id; ls.set('pf.app.chatSession', s.id);
+    const t = await threads(); if (t) await t.ensure(s).catch(() => {});   // 3.9: listed in Chats
+    return s.id;
   }
   async function newChat() {
     const ag = AG(); if (!ag) return;
     const s = await ag.newSession(); C.sid = s.id; ls.set('pf.app.chatSession', s.id);
-    await rebuild(); api.toast('New chat');
+    const t = await threads(); if (t) await t.ensure(s).catch(() => {});
+    closeList(); await rebuild();   // 3.9: the new conversation, empty, ready to type in (Chats lists it)
   }
 
   // ---------------------------------------------------------------------------------------------- the top cards + the composer
@@ -106,7 +259,7 @@ export function createChat(api) {
     $('as-need-title').textContent = { downloading: 'Downloading Juli', pausing: 'Pausing…', paused: 'Download paused', dropped: 'Paused — connection dropped', failed: 'Download stopped' }[u.sub] || 'Get Juli';
     $('as-need-text').textContent = u.sub === 'failed' ? "Couldn't reach the model server. Check Wi-Fi (and that you are signed in to it), then Resume."
       : st.error && !u.have ? "Couldn't reach the model server. Connect to Wi-Fi, then try Download."
-      : `Juli (${m.what}) writes the prompts for you, and a song's style and lyrics, then makes them with the picture, video and music models. It runs on this phone: one-time download · ${api.fmtSize(u.total)} · Wi-Fi and a charger recommended; keep this screen open.`;
+      : `Juli (${m.what}) answers questions, looks things up on Wikipedia and Fandom, and makes songs, pictures and clips with the picture, video and music models. It runs on this phone: one-time download · ${api.fmtSize(u.total)} · Wi-Fi and a charger recommended; keep this screen open.`;
     $('as-need-bar').hidden = !live; $('as-need-fill').style.transform = `scaleX(${api.dlPct(u).toFixed(4)})`;
     $('as-need-line').hidden = !live; $('as-need-line').textContent = api.dlLine(u, true);
     const b = $('as-need-go'), dl = u.sub === 'downloading';
@@ -128,7 +281,10 @@ export function createChat(api) {
     const turns = q.list({ includeTerminal: false }).filter((j) => j.kind === 'chat' && j.session === C.sid && ((j.params && j.params.purpose) || 'turn') === 'turn' && (j.status === 'queued' || j.status === 'running' || j.status === 'blocked'));
     const t = turns[0], log = $('as-log');
     if (!t || (C.stream && C.stream.jobId === t.id)) { if (C.typing) { C.typing.remove(); C.typing = null; } return; }
-    if (!C.typing) { C.typing = mk('div', 'msg bot typing'); C.typing.append(mk('span', 'dots', '•••'), mk('span', 'footnote dim tp-text')); log.append(C.typing); scrollDown(); }
+    if (!C.typing) {   // 3.9: Juli's typing bubble: three dots that bounce, what she is doing under it
+      C.typing = mk('div', 'msg bot typing g-bot g-first g-last'); const d = mk('span', 'dots'); d.setAttribute('role', 'img'); d.setAttribute('aria-label', 'Juli is typing'); d.append(mk('i'), mk('i'), mk('i'));
+      C.typing.append(d, mk('span', 'footnote dim tp-text')); log.append(C.typing); scrollDown();
+    }
     const a = q.active && q.active.job;
     // v026.2: the research list, live, under the activity line (from the event, else from the job's own state after a reload)
     const rows = (C.rl && C.rl.jid === t.id && C.rl.rows) || (t.state && t.state.rl) || null;
@@ -138,21 +294,26 @@ export function createChat(api) {
       : t.status === 'running' ? 'Thinking…' : a && a.id !== t.id ? (a.kind === 'chat' ? 'Waiting for the other chat…' : 'Waiting for the graphics chip: a job is running') : 'Thinking…';
   }
   function renderDot() {
-    const d = document.querySelector('.tab[data-tab="assistant"] .tab-dot'); if (d) d.classList.toggle('on', C.unread && !C.shown);
+    // 3.9: + unread in any conversation. With the phone-OS shell its badge shows the count (paintUnread) and this dot stays off (the
+    // shell reads a lit dot as 1, which would hide the count)
+    const d = document.querySelector('.tab[data-tab="assistant"] .tab-dot'), on = !(globalThis.SHELL && typeof SHELL.badge === 'function') && (C.unread || C.total > 0) && !C.shown;
+    if (d && d.classList.contains('on') !== on) d.classList.toggle('on', on);
   }
 
   // ---------------------------------------------------------------------------------------------- show / hide the tab
   async function show() {
     C.shown = true; C.unread = false; renderDot();
+    if (C.list) closeList();   // 3.9: Juli opens on the conversation that was open
     $('as-attest-text').textContent = api.rights.ATTEST;
     render();
-    if (AG()) { C.built = api.done('brain'); await ensureSession(); await rebuild(); }
+    if (AG()) { C.built = api.done('brain'); await ensureSession(); await rebuild(); sweepAgain(); }
   }
   function hide() {
     C.shown = false; C.built = false; C.loadTok++;
     if (C.pop) C.pop.stop(); C.popJob = null;
     for (const u of C.urls) URL.revokeObjectURL(u); C.urls.clear();
-    C.cards.clear(); C.stream = null; C.typing = null; $('as-log').textContent = '';
+    C.cards.clear(); C.stream = null; C.typing = null; C.last = null; $('as-log').textContent = '';
+    if (C.list) closeList();
   }
   async function rebuild() {
     const tok = ++C.loadTok, ag = AG(), log = $('as-log');
@@ -162,12 +323,15 @@ export function createChat(api) {
     if (tok !== C.loadTok) return;
     log.textContent = '';
     const msgs = (s && s.messages) || [], brain = api.done('brain');
-    $('as-hello').hidden = msgs.length > 0 || !brain; $('as-new').hidden = !msgs.length || !brain;   // no New chat before the assistant
+    $('as-hello').hidden = msgs.length > 0 || !brain; $('as-new').hidden = !brain;   // no New chat before the assistant (3.9: also from a chat with messages)
     if (!$('as-hello').hidden) renderHello();
     const w = msgs.map((m) => m.kind).lastIndexOf('welcome');
     C.declined = w >= 0 && msgs.slice(w + 1).some((m) => m.later);
-    C.lastUser = '';
-    for (const m of msgs.slice(-60)) { log.append(bubble(m)); if (m.role === 'user') C.lastUser = m.text; }
+    C.lastUser = ''; C.last = null;
+    const shown = msgs.slice(-60), g = groups(shown);   // 3.9: bubble groups, day lines, the time on a tap
+    shown.forEach((m, i) => { place(log, bubble(m), m, g[i]); if (m.role === 'user') C.lastUser = m.text; });
+    $('as-title').textContent = titleOf(msgs);
+    if (s) threads().then((t) => t && t.refresh(s)).then(paintUnread).catch(() => {});   // on screen: read, and its line in Chats current
     renderPending(); syncPop(); scrollDown(true);
   }
   // ---------------------------------------------------------------------------------------------- onboarding: the scripted messages
@@ -184,8 +348,8 @@ export function createChat(api) {
     })();
     try { await C.setupBusy; } finally { C.setupBusy = null; }
   }
-  const WELCOME = "Hi, I'm Juli, p0pc0rn's assistant. I write the prompts for you, and a song's style and lyrics, then make them with the picture, video and music models, here on this phone. First I need a one-time download: Juli and the starter knowledge.";
-  const READY = "I'm ready. Ask me for a song, a picture or a clip.";
+  const WELCOME = "Hi, I'm Juli, p0pc0rn's assistant. I answer questions, look things up on Wikipedia and Fandom, and make songs, pictures and clips with p0pc0rn's models, here on this phone. First I need a one-time download: Juli and the starter knowledge.";
+  const READY = "I'm ready. Ask me something, have me look it up on Wikipedia or Fandom, or ask for a song, a picture or a clip.";
   const has = (k) => (k === 'assist' ? api.done('brain') : k === 'music' ? api.musicDl().ready : api.done(k));
   const offerable = (k) => k === 'assist' || k === 'music' || !!(api.E && api.E[k]);   // the models this phone's app can download
   const nameOf = (k) => (k === 'assist' || k === 'brain' ? 'Juli' : k === 'music' ? 'music' : ['planner', 'reader', 'starter'].includes(k) ? `the ${api.MODELS[k].noun}` : `the ${api.MODELS[k].noun} model`);
@@ -193,7 +357,7 @@ export function createChat(api) {
   const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const freeLine = () => { const p = api.phone ? api.phone() : {}; return `Wi-Fi and a charger recommended; keep this screen open.${p.free != null ? ` ${api.fmtSize(Math.max(0, p.free))} free for p0pc0rn on this phone.` : ''}`; };
   const NEEDS = { image: 'Pictures also need the picture model.', video: 'Clips also need the video model.', music: 'Songs also need the music model and its lyrics planner.',
-    voice: 'Cast voices need the voice model, and the person added in Settings › Cast.', lipsync: 'Lip-sync (experimental) needs the lip-sync model.',
+    voice: 'Cast voices need the voice model, and the person added in Cast.', lipsync: 'Lip-sync (experimental) needs the lip-sync model.',
     k9b: 'Better pictures come from Klein 9B: once it is here, pick Better (9B) in Create › Picture.' };
   /** a message answered here, in code: {text, offer: [model keys], create?} | null (the assistant answers it, or the Cast's say does) */
   function localAnswer(text) {
@@ -242,7 +406,7 @@ export function createChat(api) {
   /** the first message: what I do, the two parts with the sizes the packs report, the phone's notes, one button for both, Not now */
   function welcomeBody(b) {
     const M = api.MODELS, sz = (k) => api.fmtSize(api.S.dl[k].total || M[k].total), p = api.phone ? api.phone() : {};
-    b.append(mk('p', 'msg-text', "Hi, I'm Juli, p0pc0rn's assistant. I write the prompts for you, and a song's style and lyrics, then make them with the picture, video and music models, here on this phone."),
+    b.append(mk('p', 'msg-text', "Hi, I'm Juli, p0pc0rn's assistant. I answer questions, look things up on Wikipedia and Fandom, and make songs, pictures and clips with p0pc0rn's models, here on this phone."),
       mk('p', 'msg-text', 'First I need a one-time download:'));
     const ul = mk('ul', 'as-parts'); ul.append(mk('li', null, `Juli (${M.brain.what}) · ${sz('brain')}`));
     if (api.E && api.E.starter) ul.append(mk('li', null, `Starter knowledge (${M.starter.what}) · ${sz('starter')}${api.done('starter') ? ' · on this phone' : ''}`));
@@ -272,14 +436,25 @@ export function createChat(api) {
     if (col.childElementCount) b.append(col);
   }
   const fill = (t) => { $('as-in').value = t; grow(); renderComposer(); $('as-in').focus(); };
-  function renderHello() {
+  function renderHello() {   // 3.9 polish: what Juli does, an example of each (a tap puts it in the composer, as before)
     const box = $('as-try'); if (box.childElementCount) return renderMusicHint();
-    for (const t of SUGGEST) { const b = mk('button', 'as-chip', t); b.type = 'button'; b.onclick = () => { $('as-in').value = t; grow(); renderComposer(); $('as-in').focus(); }; box.append(b); }
+    for (const h of HELLO) {
+      const k = mk('div', 'as-kind'); k.dataset.kind = h.kind;
+      const head = mk('p', 'as-kind-h'); head.append(h.icon ? svg(h.icon) : lens(), mk('span', null, h.label));
+      if (h.kind === 'look') { const off = mk('span', 'as-kind-off', '· off in Settings'); off.hidden = true; head.append(off); }
+      k.append(head);
+      for (const t of h.tries) { const b = mk('button', 'as-chip', t); b.type = 'button'; b.onclick = () => { $('as-in').value = t; grow(); renderComposer(); $('as-in').focus(); }; k.append(b); }
+      box.append(k);
+    }
+    const av = $('as-hello-av');   // ART's Juli icon; a build without it shows none
+    if (av) { if (av.complete && !av.naturalWidth) av.hidden = true; else av.addEventListener('error', () => { av.hidden = true; }, { once: true }); }
     const extra = mk('div', 'as-musichint'); extra.id = 'as-musichint'; box.after(extra);
     renderMusicHint();
   }
+  /** 3.9 polish: the start screen says when lookups are off (Settings › Juli) */
+  function paintHello() { const o = document.querySelector('#as-try .as-kind-off'); if (o) o.hidden = !(api.AS && api.AS.research === false); }
   function renderMusicHint() {   // v021: one button for the music model + the lyrics planner (or the planner alone when music is already here)
-    const el = $('as-musichint'); if (!el) return;
+    paintHello(); const el = $('as-musichint'); if (!el) return;   // 3.9 polish: + the start screen's lookups note
     const md = api.musicDl();
     if (md.ready) { el.textContent = ''; el.dataset.state = ''; return; }
     const state = md.addPlanner ? 'add' : 'get';
@@ -313,8 +488,26 @@ export function createChat(api) {
     }
     d.append(ol); return d;
   }
+  /** 3.9 polish: an answer's Sources (where its facts came from: the links CC BY-SA asks for) and what Juli looked up, as one quiet row
+   *  of small chips under its words instead of two loose lines; each opens under the row, full width */
+  function tidyFoot(b) {
+    const src = b.querySelector(':scope > div > details.srcs'), rl = b.querySelector(':scope > details.rl-sum');
+    if (!src && !rl) return;
+    if (src) { const s = src.querySelector('summary'); if (s) s.prepend(svg('i-sh-link', 'ic foot-ic')); }
+    if (rl) { const s = rl.querySelector('summary'); if (s) { const t = s.textContent.replace(/^\s*\u{1F50E}\s*/u, ''); s.textContent = t.charAt(0).toUpperCase() + t.slice(1); s.prepend(lens('ic foot-ic')); s.append(svg('i-chevron', 'ic chev')); } }
+    const foot = mk('div', 'msg-foot'); foot.append(...[src, rl].filter(Boolean)); b.append(foot);
+  }
+  /** 3.9: a bubble into the log like a text-message thread: its side, its place in its group (the tail goes on the last one), a line
+   *  before it when the day changed, and its time (shown on a tap) */
+  function place(log, el, m, gi) {
+    if (gi.day) { const d = mk('p', 'as-day footnote', gi.day); d.setAttribute('role', 'separator'); log.append(d); }
+    el.classList.add('g-' + gi.side); el.classList.toggle('g-first', !!gi.first); el.classList.toggle('g-last', !!gi.last);
+    if (m.at) el.dataset.time = clockOf(m.at);
+    log.append(el); C.last = { m, el };
+  }
   function bubble(m) {
     if (m.role === 'user') {
+      if (m.kind === 'routine' && api.routineCard) { const rc = api.routineCard(m); if (rc) return rc; }   // 3.9: a routine (Settings › Juli) as a card
       const b = mk('div', 'msg me'); b.dataset.mid = m.id;
       if (m.photoKey) { const img = mk('img', 'msg-photo'); img.alt = 'Your photo'; b.append(img); loadBlob(m.photoKey, null).then((x) => { if (x) img.src = url(x); }); }
       b.append(mk('p', 'msg-text', m.text)); return b;
@@ -348,6 +541,7 @@ export function createChat(api) {
     }
     if (kind === 'result' && m.media) b.append(result(m));
     if (Array.isArray(m.research) && m.research.length) { const rl = researchList(m.research); if (rl) b.append(rl); }   // v026.2: what was looked up, collapsed
+    tidyFoot(b);   // 3.9 polish: Sources + what was looked up, one quiet row of chips
     return b;
   }
   /** a Download button for a model (live: progress, Pause, then "Ready") */
@@ -406,15 +600,21 @@ export function createChat(api) {
   }
   function result(m) {
     const box = mk('div', 'res-media'), kind = m.media.kind, jobId = m.jobId, j = Q() && Q().get(jobId), P = (j && j.params) || {};
-    const actions = mk('div', 'row-btns');
-    const save = btn(kind === 'song' || kind === 'say' ? 'Save as .m4a' : 'Save', 'btn sm', 'i-share'), open = btn('Open in Library', 'btn sm ghost', 'i-grid');
-    open.onclick = () => api.openLibraryItem('a-' + jobId);
-    let blob = null;
-    save.onclick = () => {   // v026.4: the copy that carries the AI label
-      if (!blob) return api.toast('Still loading…');
-      if (!save.item) { save.item = { blob, seed: P.seed != null ? P.seed : (j && j.result && j.result.seed) || 0, createdAt: Date.now() }; api.exportOf(save.item); }
-      api.shareItem(save.item, (f) => api.saveFile(f));
-    };
+    box.classList.add('rm-' + kind);
+    // 3.9: the action bubbles under it (ui/chatactions.js): what p0pc0rn already does with this kind of result, the creative ones first
+    const caps = { picOK: !!(api.picOK && api.picOK()), animateSong: !!api.animateSong, board: !!api.openBoard, talk: !!api.talkFromSay };
+    const ids = actionsFor({ kind, mvId: m.mvId }, caps).filter((id) => id !== 'again' || (j && againable(j.kind)));
+    const acts = mk('div', 'as-acts'); acts.setAttribute('role', 'group'); acts.setAttribute('aria-label', 'What next');
+    const OLD = { lipsync: 'cast-talk', board: 'mv-edit' };   // the classes these buttons had in 3.8
+    let blob = null, save = null;
+    for (const id of ids) {
+      const a = ACTIONS[id], c = btn(id === 'save' && (kind === 'song' || kind === 'say') ? 'Save as .m4a' : a.label, 'as-act', a.icon);
+      c.dataset.act = id; if (OLD[id]) c.classList.add(OLD[id]); if (id === 'animate' && kind === 'song') c.classList.add('mv-animate');
+      if (id === 'save') save = c;
+      c.onclick = () => act(id, m, () => blob, c);
+      acts.append(c);
+    }
+    const saveLabel = (t) => { if (save) save.lastChild.textContent = t; };
     if (kind === 'song') {
       const sc = mk('div', 'song-card');
       // v032: the song's length as made (10-60 s; the result's length, then the job's, then the message's), never a guessed 30
@@ -427,31 +627,43 @@ export function createChat(api) {
       // v024.1: the Save button names the real file (.wav on an iPhone until it passed the AAC test); no player for a missing / unplayable file
       const gone = (t) => { au.remove(); sc.insertBefore(mk('p', 'footnote dim', t), lyr); };
       au.onerror = () => { if (au.getAttribute('src')) gone('This phone could not play the song file.'); };
-      loadBlob(m.media.blobKey, jobId).then((b) => { blob = b; if (b && b.size) { au.src = url(b); const ext = /wav/.test(b.type) ? 'wav' : /mp4|m4a|aac/.test(b.type) ? 'm4a' : ''; if (ext) save.lastChild.textContent = `Save as .${ext}`; } else { blob = null; gone('The song file is missing.'); } });
+      loadBlob(m.media.blobKey, jobId).then((b) => { blob = b; if (b && b.size) { au.src = url(b); const ext = /wav/.test(b.type) ? 'wav' : /mp4|m4a|aac/.test(b.type) ? 'm4a' : ''; if (ext) saveLabel(`Save as .${ext}`); } else { blob = null; gone('The song file is missing.'); } });
     } else if (kind === 'say') {   // p0pc0rn Cast: a Cast member's line, in their own voice
       const sc = mk('div', 'song-card');
       const au = mk('audio', 'song-audio'); au.controls = true; au.preload = 'metadata'; au.setAttribute('aria-label', `Play ${P.name || 'the line'}`);
       sc.append(svg('i-chat', 'ic song-ic'), mk('p', 'headline', `${P.name || 'Your cast'} says`), mk('p', 'footnote dim', `“${P.line || ''}”`), au); box.append(sc);
       const gone = (t) => { au.remove(); sc.append(mk('p', 'footnote dim', t)); };
       au.onerror = () => { if (au.getAttribute('src')) gone('This phone could not play the file.'); };
-      loadBlob(m.media.blobKey, jobId).then((b) => { blob = b; if (b && b.size) { au.src = url(b); save.lastChild.textContent = /wav/.test(b.type) ? 'Save as .wav' : 'Save as .m4a'; } else { blob = null; gone('The audio file is missing.'); } });
+      loadBlob(m.media.blobKey, jobId).then((b) => { blob = b; if (b && b.size) { au.src = url(b); saveLabel(/wav/.test(b.type) ? 'Save as .wav' : 'Save as .m4a'); } else { blob = null; gone('The audio file is missing.'); } });
     } else if (kind === 'picture' || kind === 'edit') {
       const im = mk('img', 'res-img'); im.alt = P.prompt || 'The picture'; im.onclick = () => api.openLibraryItem('a-' + jobId); box.append(im);
-      if (P.width && P.height) im.style.aspectRatio = `${P.width} / ${P.height}`;
+      if (P.width && P.height) { im.style.aspectRatio = `${P.width} / ${P.height}`; im.style.setProperty('--ar', String(P.width / P.height)); }   // 3.9: its width from its shape (chat.css)
       loadBlob(m.media.blobKey, jobId).then((b) => { blob = b; if (b) im.src = url(b); });
     } else {   // a clip (muted loop) or a music video (with its song)
-      const mv = kind === 'musicvideo' || kind === 'lipsync', v = mk('video', 'res-vid');   // Cast: a lip-sync clip plays with its sound v.playsInline = true; v.preload = 'metadata'; v.muted = !mv; v.loop = !mv; v.controls = mv;
+      const mv = kind === 'musicvideo' || kind === 'lipsync', v = mk('video', 'res-vid');   // Cast: a lip-sync clip plays with its sound
+      v.playsInline = true; v.preload = 'metadata'; v.muted = !mv; v.loop = !mv; v.controls = mv;   // 3.9: these sat inside the comment above (since 3.7), so they never ran
       v.setAttribute('aria-label', mv ? 'Your music video' : P.prompt || 'The clip'); box.append(v);
-      if (P.width && P.height) v.style.aspectRatio = `${P.width} / ${P.height}`;
+      if (P.width && P.height) { v.style.aspectRatio = `${P.width} / ${P.height}`; v.style.setProperty('--ar', String(P.width / P.height)); }
       loadBlob(m.media.blobKey, jobId).then((b) => { blob = b; if (b) { v.src = url(b); if (!mv) v.play().catch(() => { v.controls = true; }); } });
     }
-    actions.append(save, open);
-    if (kind === 'say' && api.talkFromSay) { const ls2 = btn('Lip-sync · experimental', 'btn sm ghost', 'i-anim'); ls2.classList.add('cast-talk'); ls2.onclick = () => api.talkFromSay(jobId, C.sid); actions.append(ls2); }   // p0pc0rn Cast
     if (kind === 'lipsync') box.append(mk('p', 'footnote dim', 'Lip-sync is experimental.'));
-    if (kind === 'song' && api.animateSong) { const an = btn('Animate', 'btn sm', 'i-anim'); an.classList.add('mv-animate'); an.onclick = () => api.animateSong(jobId); actions.append(an); }   // v023
-    if (kind === 'musicvideo' && m.mvId && api.openBoard) { const ed = btn('Edit video', 'btn sm ghost', 'i-anim'); ed.classList.add('mv-edit'); ed.onclick = () => api.openBoard(m.mvId); actions.append(ed); }
-    box.append(actions);
+    box.append(acts);
     return box;
+  }
+  /** 3.9: an action bubble tapped, each on the path p0pc0rn already has for it */
+  function act(id, m, blobOf, el) {
+    const jobId = m.jobId, j = Q() && Q().get(jobId), P = (j && j.params) || {}, item = 'a-' + jobId;
+    if (id === 'again') return again(m, el);
+    if (id === 'save') {   // v026.4: the copy that carries the AI label
+      const blob = blobOf(); if (!blob) return api.toast('Still loading…');
+      if (!el.item) { el.item = { blob, seed: P.seed != null ? P.seed : (j && j.result && j.result.seed) || 0, createdAt: Date.now() }; api.exportOf(el.item); }
+      return api.shareItem(el.item, (f) => api.saveFile(f));
+    }
+    if (id === 'open') return api.openLibraryItem(item);
+    if (id === 'animate' && m.media.kind === 'song') return api.animateSong(jobId);   // v023: a music video from the song
+    if (id === 'board') return api.openBoard(m.mvId);
+    if (id === 'lipsync') return api.talkFromSay(jobId, C.sid);   // p0pc0rn Cast
+    if (api.act) return api.act(item, id);   // edit / animate (a picture into a clip) / clip2: the Library viewer's own paths (app.js chatAct)
   }
 
   // ---------------------------------------------------------------------------------------------- job cards
@@ -464,6 +676,7 @@ export function createChat(api) {
     if (j.kind === 'musicvideo' || j.kind === 'mvflf') return P.title ? `Music video · “${P.title}”` : 'Music video';
     if (j.kind === 'mvplan') return 'Writing the storyboard';
     if (j.kind === 'makeapp') return `Make an app · “${(j.title || '').slice(0, 40)}”`;   // 3.8
+    if (j.kind === 'appedit') return `Change an app · “${(j.title || '').slice(0, 40)}”`;   // H39
     if (j.kind === 'appask') return `Juli · a question from ${P.app || 'an app'}`;
     if (j.kind === 'bench') return `Benchmark · ${j.title || ''}`;
     const n = api.NOUN[j.kind] || j.kind; return `${n[0].toUpperCase()}${n.slice(1)}${typeof j.tag === 'string' && j.tag.startsWith('create:') ? ' · from Create' : ''}`;
@@ -555,6 +768,7 @@ export function createChat(api) {
     if (C.qopen) paintQueueRow(j);
   }
   function queueChanged(j) {
+    if (j && j.tag === AGAIN && j.status === 'done') landAgain(j).catch(() => {});   // 3.9: a result made again lands in its conversation
     if (C.shown) {
       for (const [id, c] of C.cards) { const x = Q().get(id); if (x) paintCard(c, x); }
       syncPop(); renderPending();
@@ -562,13 +776,16 @@ export function createChat(api) {
     if (C.qopen) renderQueue();
   }
   function onMessage(sid, m) {
+    track(sid, m).catch(() => {});   // 3.9: every conversation's line in Chats, and unread while it is not on screen
     if (sid !== C.sid) return;
     if (!C.shown) { if (m.role === 'assistant') { C.unread = true; renderDot(); } return; }
     if (m.role === 'assistant' && !SETUP.has(m.kind)) { C.activity = ''; if (C.stream) { C.stream.el.remove(); C.stream = null; } if (C.typing) { C.typing.remove(); C.typing = null; } }   // a scripted answer is not the end of a running turn
     $('as-hello').hidden = true; $('as-new').hidden = !api.done('brain');
     const stick = nearBottom() || m.role === 'user';
-    $('as-log').append(bubble(m)); syncPop(); renderPending();
-    if (m.role === 'user') C.lastUser = m.text;
+    const prev = C.last && C.last.el.isConnected ? C.last : null, g = groups(prev ? [prev.m, m] : [m]), gi = g[g.length - 1];   // 3.9: joins the bubbles above?
+    if (prev && !gi.first) prev.el.classList.remove('g-last');
+    place($('as-log'), bubble(m), m, gi); syncPop(); renderPending();
+    if (m.role === 'user') { C.lastUser = m.text; if ($('as-title').textContent === 'New chat') $('as-title').textContent = titleOf([m]); }
     if (stick) scrollDown();
   }
   /** the assistant's words as they come (agent.js's planning call); a tool call shows as "Planning…" */
@@ -577,7 +794,7 @@ export function createChat(api) {
     const raw = String(text || ''), call = raw.indexOf('<|tool_call>'), vis = (call >= 0 ? raw.slice(0, call) : raw).replace(SPECIAL, '').replace(/^\s+/, '');
     if (!C.stream || C.stream.jobId !== j.id) {
       if (C.stream) C.stream.el.remove();
-      const el = mk('div', 'msg bot streaming'); el.append(mk('p', 'msg-text'));
+      const el = mk('div', 'msg bot streaming g-bot g-first g-last'); el.append(mk('p', 'msg-text'));   // 3.9: a bubble of its own while the words come
       C.stream = { jobId: j.id, el }; if (C.typing) { C.typing.remove(); C.typing = null; }
       $('as-log').append(el);
     }
@@ -692,6 +909,17 @@ export function createChat(api) {
   // ---------------------------------------------------------------------------------------------- wiring
   $('as-send').onclick = () => send();
   $('as-new').onclick = () => newChat();
+  $('as-chats').onclick = () => openList();   // 3.9: Chats
+  $('as-list-new').onclick = () => newChat();
+  $('as-log').addEventListener('click', (e) => {   // 3.9: a bubble's time under it on a tap (not on its buttons, links, players or pictures)
+    const b = e.target.closest('.msg'); if (!b || !b.dataset.time || e.target.closest('button, a, audio, video, summary, details, input, textarea, label, img')) return;
+    const n = b.nextElementSibling;
+    if (n && n.classList.contains('as-time')) { n.remove(); return; }
+    const t = mk('p', 'as-time footnote ' + (b.classList.contains('g-me') ? 'me' : 'bot'), b.dataset.time); b.after(t);
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && onScreen(C.sid)) threads().then((t) => t && t.read(C.sid)).then(paintUnread).catch(() => {}); });
+  threads().then(paintUnread).catch(() => {});   // the count right away (unread from before this page)
+  setTimeout(() => { paintUnread().catch(() => {}); }, 2500);   // and once more after the shell's own first paint
   $('as-in').addEventListener('input', () => { grow(); renderComposer(); });
   $('as-in').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
   $('as-need-go').onclick = () => api.dlTap('brain');
@@ -710,5 +938,6 @@ export function createChat(api) {
   /** v021: what the assistant is doing right now ("Looking up “Golden Gate Bridge”…"), shown in the thinking bubble */
   function activity(sid, text) { if (sid !== C.sid) return; C.activity = text || ''; if (C.shown) renderPending(); }
   function research(sid, jid, rows) { if (sid !== C.sid) return; C.rl = { jid, rows }; if (C.shown) renderPending(); }   // v026.2
-  return { render, renderDl, show, hide, onMessage, stream, progress, queueChanged, openQueue, closeQueue, newChat, send, activity, research, session: ensureSession, get sid() { return C.sid; } };
+  return { render, renderDl, show, hide, onMessage, stream, progress, queueChanged, openQueue, closeQueue, newChat, send, activity, research, session: ensureSession, get sid() { return C.sid; },
+    openList, openThread, unread: () => C.total };   // 3.9: Chats, a conversation by id, Juli's unread count (the shell's badge)
 }

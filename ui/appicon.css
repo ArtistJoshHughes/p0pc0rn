@@ -1,0 +1,21 @@
+/* appicon.css - p0pc0rn 3.9: the "Add to Home Screen" sheet's icon maker (ui/appicon.js). The app's tokens only; the sheet itself is the
+   app's own (.sheet .mv-sheet), so its idea box takes the sheet's textarea style. */
+.ai-body { display: flex; flex-direction: column; gap: var(--s-3); }
+.ai-fig { position: relative; align-self: center; width: 132px; height: 132px; border-radius: 22%; overflow: hidden; background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.10), 0 6px 16px rgba(0,0,0,.35); }
+.ai-img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ai-letter { position: absolute; inset: 0; display: grid; place-items: center; font-size: 56px; font-weight: 600; line-height: 1; color: var(--text-1);
+  background: linear-gradient(135deg, #4b2a8c, #120d1c); }
+.ai-letter[hidden], .ai-img[hidden] { display: none; }
+.ai-fig.busy::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.14) 50%, transparent 70%);
+  background-size: 250% 100%; animation: ai-sheen 1.6s linear infinite; }
+@keyframes ai-sheen { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+.ai-status { min-height: 1.4em; text-align: center; color: var(--text-2); }
+.ai-ideabox { display: flex; flex-direction: column; gap: var(--s-1); }
+.ai-ideabox[hidden] { display: none; }
+.ai-label { color: var(--text-2); }
+.ai-row { display: flex; flex-wrap: wrap; gap: var(--s-2); justify-content: center; }
+.ai-row .btn { flex: 1 1 auto; }
+.apps-status .ai-add { margin-left: var(--s-2); }
+@media (prefers-reduced-motion: reduce) { .ai-fig.busy::after { animation: none; background: rgba(255,255,255,.06); } }
+[data-busy] .ai-fig.busy::after { animation: none; background: rgba(255,255,255,.06); }

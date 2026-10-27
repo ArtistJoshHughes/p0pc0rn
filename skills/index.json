@@ -1,0 +1,50 @@
+{
+ "version": 1,
+ "skills": [
+  {
+   "name": "make-an-app",
+   "description": "How Juli makes an app from a skeleton: choose the one that fits, fill its slots with the person's own content, and say plainly what it can't do.",
+   "for": [
+    "make"
+   ],
+   "file": "make-an-app.md",
+   "tokens": 347
+  },
+  {
+   "name": "change-an-app",
+   "description": "How Juli changes an app the person already made: a setting (slot) first, a small added part only when no slot can do it, one small step at a time, with Undo.",
+   "for": [
+    "change"
+   ],
+   "file": "change-an-app.md",
+   "tokens": 412
+  },
+  {
+   "name": "play-four-in-a-row",
+   "description": "How Juli picks a strong Four in a Row move from the columns the game offers: win now, block the person, follow the game's read, build from the middle.",
+   "for": [
+    "game"
+   ],
+   "file": "play-four-in-a-row.md",
+   "tokens": 269
+  },
+  {
+   "name": "make-a-game",
+   "description": "How a game for p0pc0rn is made: Juli fills a game design's slots; a new game (chess, checkers, cards) needs its own design, written on the Game Kit.",
+   "for": [
+    "game"
+   ],
+   "file": "make-a-game.md",
+   "tokens": 476
+  },
+  {
+   "name": "watch-a-wallet",
+   "description": "How Juli reads public Avalanche activity for Wallet Watch: say plainly what changed, describe a wallet's habits from its numbers, never advise and never guess who is behind an address.",
+   "for": [
+    "app"
+   ],
+   "file": "watch-a-wallet.md",
+   "tokens": 330
+  }
+ ]
+}

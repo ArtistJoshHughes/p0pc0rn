@@ -3,6 +3,7 @@
  "manifest": {
   "id": "flashcards-learn",
   "name": "Flashcards",
+  "plain": "Flashcards you study when you open it, with the cards that are due first. It keeps your cards on this phone and never goes online.",
   "description": "Flashcards with spaced repetition: decks of cards (front, back, a note), tap to flip, grade Again / Good / Easy, daily streaks. Fits: learning words, facts, definitions, quizzes, study.",
   "category": "non-agentic",
   "version": "1.0",

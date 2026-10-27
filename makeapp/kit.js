@@ -1,11 +1,11 @@
-/* p0pc0rn Kit v1.4 (kit.js) - the design, motion and input layer every p0pc0rn app is built on.
+/* p0pc0rn Kit v1.5 (kit.js) - the design, motion and input layer every p0pc0rn app is built on.
    Vendored and LOCKED: p0pc0rn sends this file into every app's sandbox ahead of the app's own code; never edit or re-type it in an app.
    One global: K. It hooks p5's frame automatically (pre/post), so sketch.js only calls K.* functions.
    API reference: makeapp/Skeleton-Guide.md. Everything draws on the canvas 2D context inside save/restore, so p5's own
    fill/stroke state is never disturbed. Colours are '#rrggbb' strings or 'rgba(...)' strings from K.alpha(). */
 const K = (function () {
   'use strict';
-  const K = { version: '1.4' };
+  const K = { version: '1.6' };   // 1.5: K.on hooks for an app's added part (an edit by chat); 1.6: K.choose (Juli picks a game's move)
   const $ = () => (K._g ? K._g.drawingContext : window.drawingContext);   // the active 2D context
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   K.clamp = clamp;
@@ -225,7 +225,7 @@ const K = (function () {
   }
   /** K.text(str, x, y, role, color, {align:'left'|'center'|'right', base:'alphabetic'|'middle'|'top', size, weight, ls, alpha, shadow, maxW}) -> width drawn. */
   K.text = (str, x, y, role, col, o) => {
-    o = o || {}; let w = 0; str = String(str == null ? '' : str);
+    o = o || {}; let w = 0; str = String(str == null ? '' : str); shown(str, x, y);
     with2d(c => {
       const f = fontOf(role, o); c.font = f.css; c.textAlign = o.align || 'left'; c.textBaseline = o.base || 'alphabetic';
       if ('letterSpacing' in c) c.letterSpacing = f.ls + 'px';
@@ -258,7 +258,7 @@ const K = (function () {
   K.paraHeight = (str, w, role, o) => { o = o || {}; const f = fontOf(role, o); let n = K.wrap(str, w, role, o).length; if (o.maxLines) n = Math.min(n, o.maxLines); return n * f.lh; };
   /** K.num(str, x, y, role, color, {align}) - numbers in fixed-width digit cells so counters never jitter. */
   K.num = (str, x, y, role, col, o) => {
-    o = o || {}; str = String(str); let total = 0;
+    o = o || {}; str = String(str); let total = 0; shown(str, x, y);
     with2d(c => {
       const f = fontOf(role, o); c.font = f.css; if ('letterSpacing' in c) c.letterSpacing = '0px'; const dw = c.measureText('0').width;
       const cw = ch => (/[0-9]/.test(ch) ? dw : c.measureText(ch).width + (f.ls || 0));
@@ -442,7 +442,7 @@ const K = (function () {
   K.claim = (p, tag) => { if (p) p.claimed = tag || 'app'; return p; };
 
   // ------------------------------------------------------------------ controls map for automated tests, written every frame
-  function ctlReset() { window.__controls = { dpad: null, buttons: [], screen: K.sceneName || '' }; }
+  function ctlReset() { window.__controls = { dpad: null, buttons: [], screen: K.sceneName || '', texts: [] }; }   // 1.5: + the text drawn this frame
   function ctl(name, x, y, w, h) {   // v1.2: only the part inside every K.clip and the screen is offered to automated tests (rows scrolled under a bar drop out)
     if (blocked()) return; let x1 = Math.max(x, 0), y1 = Math.max(y, 0), x2 = Math.min(x + w, K.W), y2 = Math.min(y + h, K.H);
     for (const r of clipStack) { x1 = Math.max(x1, r[0]); y1 = Math.max(y1, r[1]); x2 = Math.min(x2, r[0] + r[2]); y2 = Math.min(y2, r[1] + r[3]); }
@@ -944,7 +944,9 @@ const K = (function () {
   K.calendar = (n) => { const t = K.today(), out = []; for (let i = 1; i <= clamp(n || 21, 1, 60); i++) { const d = K.addDays(t, i); out.push(K.dayName(d, true) + ' ' + d); } return 'Today is ' + K.dayName(t) + ', ' + t + '. The next days: ' + out.join(', ') + '.'; };
   /** K.json(text) -> the first JSON object in a model's answer, or null. */
   K.json = (text) => { try { const s = String(text || '').replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, ''); const a = s.indexOf('{'), b = s.lastIndexOf('}'); return a < 0 || b < a ? null : JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; } };
-  /** await K.ask(prompt, {json}) -> Juli's answer, made on this phone (needs permissions.juli ["ask"]): text, or with {json: true} an object
+  /** await K.ask(prompt, {json, skill}) -> Juli's answer, made on this phone (needs permissions.juli ["ask"]): text, or with {json: true} an object
+      (3.9 Wallet Watch: skill = the name of a skill for apps ('for: app') with her know-how for this question: p0pc0rn adds it, framed as
+      know-how, when it is on; it is never a permission)
       (null when the answer was not JSON). ONLY in a check (p0.mode 'check'): Juli never works while the app is open, because the phone's
       memory goes to the open app. In the open app, save the person's request in the notebook; a task answers it in the next check, which
       comes right after the app closes. Throws when Juli can't answer (open app, not downloaded, busy, too many questions): keep a way to
@@ -952,8 +954,33 @@ const K = (function () {
   K.ask = async (prompt, o) => {
     o = o || {}; if (!window.p0 || !window.p0.juli) throw Object.assign(new Error('Juli is only there inside p0pc0rn'), { code: 'NO_JULI' });
     if (window.p0.mode !== 'check') throw Object.assign(new Error("Juli works in the app's checks, after it closes"), { code: 'OPEN_APP' });
-    const a = await window.p0.juli.ask(String(prompt), { json: !!o.json });
+    const a = await window.p0.juli.ask(String(prompt), { json: !!o.json, skill: o.skill ? String(o.skill).slice(0, 40) : '' });   // 3.9 Wallet Watch: + skill
     return o.json ? K.json(a) : String(a == null ? '' : a);
+  };
+  /** await K.choose(about, options, {skill, hint, big}) -> {index, option, by, why, big}: Juli picks ONE of your options, on this phone, while the
+      person has the app open (needs permissions.juli ["choose"]; a game's move). about = the state as text (<= 1200 characters, e.g. the
+      board), options = the LEGAL choices (2-12, each <= 60 characters), hint = what the app worked out (<= 300 characters, e.g. 'column D
+      wins now'), skill = the name of a skill with her know-how (e.g. 'play-four-in-a-row'). She answers with one of your options and
+      p0pc0rn checks it: her answer is her move. by 'fallback' = no answer that names an option (why says why: not downloaded, busy,
+      her model stopped, or her answer named no choice): never use the option that came back as her move; ask again or say so (the
+      Game Kit's match does both). big: true = Juli with the Bigger brain answers (a game's opponent the person chose; only when
+      K.juliModels() says it is on, else why says so: never her own model instead); the answer's big = the Bigger brain answered.
+      Not in a check (p0.mode 'check'). */
+  K.choose = async (about, options, o) => {
+    o = o || {}; if (!window.p0 || !window.p0.juli || !window.p0.juli.choose) throw Object.assign(new Error('Juli is only there inside p0pc0rn'), { code: 'NO_JULI' });
+    if (window.p0.mode === 'check') throw Object.assign(new Error('Juli chooses while the person has the app open'), { code: 'CHECK' });
+    const opts = (Array.isArray(options) ? options : []).map((x) => String(x));
+    if (opts.length < 2 || opts.length > 12) throw Object.assign(new Error('K.choose needs 2 to 12 options'), { code: 'BAD_CHOICE' });
+    const r = await window.p0.juli.choose({ about: String(about == null ? '' : about), options: opts, hint: o.hint ? String(o.hint) : '', skill: o.skill ? String(o.skill) : '', big: o.big === true });
+    const i = r && Number.isInteger(r.index) && r.index >= 0 && r.index < opts.length ? r.index : 0;
+    return { index: i, option: opts[i], by: r && r.by === 'juli' && r.index === i ? 'juli' : 'fallback', why: String((r && r.why) || ''), said: (r && r.said) || null, big: !!(r && r.big) };   // 3.9 polish: why, big
+  };
+  /** await K.juliModels() -> {juli, big}: which of Juli's models can answer K.choose on this phone (needs permissions.juli ["choose"]):
+      juli = her own model is downloaded; big = the Bigger brain is downloaded and on (then K.choose(..., {big: true}) asks it). Both
+      false outside p0pc0rn, in a check, or when the app may not ask. 3.9 polish */
+  K.juliModels = async () => {
+    try { const r = window.p0 && window.p0.juli && window.p0.juli.models && window.p0.mode !== 'check' ? await window.p0.juli.models() : null; return { juli: !!(r && r.juli), big: !!(r && r.big) }; }
+    catch (e) { return { juli: false, big: false }; }
   };
   /** K.facts(text, data) -> {ok, missing}: every number written in text also appears somewhere in data (any JSON). Put Juli's words through it
       before you show or keep them: a line with a reading the source never gave is dropped, never shown. */
@@ -1123,6 +1150,9 @@ const K = (function () {
       K.safe = { top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0, left: parseFloat(cs.paddingLeft) || 0, right: parseFloat(cs.paddingRight) || 0 }; d.remove();
     } catch (e) { K.safe = { top: 0, bottom: 0, left: 0, right: 0 }; }
     if (K.safe.top < 20 && /iPhone|iPad/.test(navigator.userAgent || '')) K.safe.top = Math.max(K.safe.top, 20);
+    // 3.9 platform: in p0pc0rn's frame env() gives the screen's insets wherever the frame sits: the host's measure of where it really
+    // reaches (top 0 under p0pc0rn's bar; the home indicator only when the frame runs to the bottom) replaces the frame's own reading
+    try { const hs = window.p0 && window.p0.safe; if (hs && hs.host) { K.safe.top = +hs.top || 0; K.safe.bottom = +hs.bottom || 0; } } catch (e) { /* outside p0pc0rn */ }
   }
   function lockScrolling() {
     try {
@@ -1150,8 +1180,35 @@ const K = (function () {
     K.theme(o); K.W = width; K.H = height; measureSafe(); K.navBar.barH = K.safe.top + 50; lockScrolling(); installInput(); ctlReset();
     try { textFont(K.FONT); } catch (e) { /* ignore */ }
     window.addEventListener('resize', () => { try { resizeCanvas(windowWidth, windowHeight); K.W = width; K.H = height; measureSafe(); } catch (e) { /* ignore */ } });
+    window.addEventListener('p0:safe', () => { try { measureSafe(); K.navBar.barH = K.safe.top + 50; } catch (e) { /* ignore */ } });   // 3.9 platform: the host's new insets
     K._ready = true; return K;
   };
+
+  // ------------------------------------------------------------------ hooks (v1.5): an app's CUSTOM part (what Juli adds when the person
+  // changes an app by chat) runs after sketch.js in its own scope and draws through these. K.on('start', fn) runs once, at the first frame
+  // after it is added (the sketch's setup() has run); K.on('draw', fn) every frame after the sketch draws, on the same canvas, in screen
+  // coordinates (inside push / pop); K.on('tap', fn) with {x, y} for each tap the app did not use. A hook that throws is taken out and
+  // reported to the host as the custom part's error ('custom-error'): the app itself goes on. A check (p0.mode 'check') runs no hooks.
+  // The text drawn each frame (K.text, K.num) is listed in window.__controls.texts as {s, x, y} (c: 1 when a hook drew it): the host's
+  // test run reads it, so Juli hears what the screen shows without a picture.
+  const hooks = { start: [], draw: [], tap: [] };
+  let inHook = 0;
+  const hookErr = (ev, e) => { try { if (window.__p0custom) window.__p0custom.error(e, ev); else console.error(e); } catch (x) { /* ignore */ } };
+  /** K.on('start' | 'draw' | 'tap', fn) - add a hook (the custom part's way in; at most 20 of each). Returns K. */
+  K.on = (ev, fn) => { if (hooks[ev] && typeof fn === 'function' && hooks[ev].length < 20) hooks[ev].push(fn); return K; };
+  function fire(ev, arg) {
+    const L = hooks[ev];
+    for (let i = 0; i < L.length; i++) { const fn = L[i]; inHook++; try { fn(arg); } catch (e) { L.splice(i--, 1); hookErr(ev, e); } finally { inHook--; } }
+  }
+  function shown(s, x, y) {   // K.text / K.num: the text of this frame, for the host's test run (the first 80 pieces)
+    try { const T = window.__controls && window.__controls.texts; if (T && T.length < 80 && s) T.push(inHook ? { s: String(s).slice(0, 80), x: Math.round(+x || 0), y: Math.round(+y || 0), c: 1 } : { s: String(s).slice(0, 80), x: Math.round(+x || 0), y: Math.round(+y || 0) }); } catch (e) { /* ignore */ }
+  }
+  function startHooks() { if (!hooks.start.length || inCheck()) return; const L = hooks.start.splice(0); for (const fn of L) { inHook++; try { fn(); } catch (e) { hookErr('start', e); } finally { inHook--; } } }
+  function endHooks() {
+    if (inCheck()) return;
+    if (hooks.draw.length) { const p = typeof push === 'function' && typeof pop === 'function'; if (p) { push(); try { if (typeof resetMatrix === 'function') resetMatrix(); } catch (e) { /* */ } } try { fire('draw'); } finally { if (p) pop(); } }
+    if (hooks.tap.length) for (const u of ups) { if (u.used || u.claimed || u.cancel || u.dist >= 14 || u.gen !== sceneGen || blocked()) continue; u.used = true; fire('tap', { x: u.x, y: u.y }); }
+  }
 
   // ------------------------------------------------------------------ the frame hooks
   let lastPre = -1, lastPost = -1;
@@ -1160,11 +1217,12 @@ const K = (function () {
     const ms = Math.min(Math.max(window.deltaTime || 16.7, 1), 60); K.ms = ms; K.dt = ms / 1000; K.t += K.dt; K.frame++;
     K.gdt = performance.now() < hitstopUntil ? 0 : K.dt * K.timeScale;   // gameplay dt: 0 during hitstop
     if (typeof width === 'number') { K.W = width; K.H = height; }
-    ctlReset(); stepInput(); stepTweens(ms); stepSprings(K.dt);
+    ctlReset(); stepInput(); stepTweens(ms); stepSprings(K.dt); startHooks();
     if (shakeT > 0) shakeT = Math.max(0, shakeT - K.dt);
   };
   K.end = () => {
     if (lastPost === window.frameCount) return; lastPost = window.frameCount;
+    endHooks();   // 1.5: the added part draws after the sketch, under the toasts
     drawToasts();
     if (flashA > 0 && flashCol) { K.rect(0, 0, K.W, K.H, { r: 0, fill: K.alpha(flashCol, 0.55 * flashA) }); flashA = Math.max(0, flashA - K.ms / flashMs); }
     drawErrors();
@@ -1173,3 +1231,1060 @@ const K = (function () {
   try { if (window.p5 && p5.prototype.registerMethod) { p5.prototype.registerMethod('pre', function () { if (K._ready) K.begin(); }); p5.prototype.registerMethod('post', function () { if (K._ready) K.end(); }); } } catch (e) { /* the sketch can call K.begin()/K.end() itself */ }
   return K;
 })();
+// ===== the Game Kit (K.game), part of the Kit =====
+/* ===== p0pc0rn Game Kit 1.0 (K.game) ===================================================================================================
+   The game layer of the p0pc0rn Kit, sent with it into every app's sandbox (it is part of kit.js: vendored and LOCKED like the rest).
+   Boards and aiming, motion (timelines, drops with gravity and bounce, jolts), sprites (glossy pieces, boards and backdrops drawn once
+   and reused), effects (confetti, sparks, glows), synthesised sound (off until the first tap, a remembered mute), Juli as a player (a
+   match: turns, save and resume, a score; her model picks from every legal move and her answer is her move: an unclear answer is asked
+   again, and when she gives none the game says so with "Ask Juli again", never moving for her), a search for two-player games (for the
+   game's read of the board, never her decision), work in slices, Juli's avatar, a results card (with a run toward something to earn),
+   the celebration of an unlock, accessibility (spoken updates, screen-reader buttons, reduced motion) and frame pacing. One name: K.game.
+   Reference: makeapp/Skeleton-Guide.md, "The Game Kit".
+   The pure parts (boards, layout, search, the match's rules) need no p5 and no page: the node units run them. */
+(function (K) {
+  'use strict';
+  if (!K || K.game) return;
+  const G = { version: '1.0' };
+  const WN = typeof window !== 'undefined' ? window : null;
+  const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+  const DOM = () => typeof document !== 'undefined' && typeof document.createElement === 'function';
+  const easeOf = (e) => (typeof e === 'function' ? e : (K.ease && K.ease[e]) || (K.ease ? K.ease.outCubic : (t) => t));
+  const dens = () => { try { return typeof pixelDensity === 'function' ? pixelDensity() : Math.min(2, (WN && WN.devicePixelRatio) || 1); } catch (e) { return 1; } };
+  const tick = typeof setImmediate === 'function' ? () => new Promise((r) => setImmediate(r)) : (() => {
+    try { const ch = new MessageChannel(), q = []; ch.port1.onmessage = () => { const f = q.shift(); if (f) f(); }; return () => new Promise((r) => { q.push(r); ch.port2.postMessage(0); }); }
+    catch (e) { return () => new Promise((r) => setTimeout(r, 0)); }
+  })();
+  G.clamp = clamp; G.lerp = lerp; G.sleep = sleep;
+  const report = (e) => { try { console.error(e); } catch (x) { /* */ } };
+
+  // ------------------------------------------------------------------ reduced motion (the phone's own setting; G.reduced can be set too)
+  G.reduced = false;
+  try {
+    const mq = WN && WN.matchMedia ? WN.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    if (mq) { G.reduced = !!mq.matches; const on = (e) => { G.reduced = !!e.matches; }; if (mq.addEventListener) mq.addEventListener('change', on); else if (mq.addListener) mq.addListener(on); }
+  } catch (e) { /* no media queries here */ }
+
+  // ------------------------------------------------------------------ boards (pure): b[r][c], the top row first
+  const DIRS = [[0, 1], [1, 0], [1, 1], [1, -1]];
+  G.DIRS = DIRS;
+  /** K.game.grid(rows, cols, fill = 0) -> a board: rows arrays of cols cells, the top row first */
+  G.grid = (rows, cols, v) => Array.from({ length: rows }, () => new Array(cols).fill(v === undefined ? 0 : v));
+  G.copy = (b) => b.map((r) => (Array.isArray(r) ? r.slice() : r));
+  G.inside = (b, r, c) => r >= 0 && r < b.length && c >= 0 && c < (b[r] || []).length;
+  G.each = (b, fn) => { for (let r = 0; r < b.length; r++) for (let c = 0; c < b[r].length; c++) fn(b[r][c], r, c); };
+  G.count = (b, v) => { let n = 0; G.each(b, (x) => { if (x === v) n++; }); return n; };
+  G.full = (b, empty) => { const e = empty === undefined ? 0 : empty; for (const row of b) for (const x of row) if (x === e) return false; return true; };
+  /** K.game.lineAt(b, r, c, n, {empty, dirs}) -> {who, cells: [[r, c], ...]}: the straight line of b[r][c]'s value through (r, c) when it
+   *  is at least n long (3 noughts and crosses, 4 Four in a Row, 5 gomoku), else null */
+  G.lineAt = (b, r, c, n, o) => {
+    const who = b[r] && b[r][c], empty = o && o.empty !== undefined ? o.empty : 0;
+    if (who === undefined || who === null || who === empty) return null;
+    for (const [dr, dc] of (o && o.dirs) || DIRS) {
+      const cells = [[r, c]];
+      for (let rr = r + dr, cc = c + dc; G.inside(b, rr, cc) && b[rr][cc] === who; rr += dr, cc += dc) cells.push([rr, cc]);
+      for (let rr = r - dr, cc = c - dc; G.inside(b, rr, cc) && b[rr][cc] === who; rr -= dr, cc -= dc) cells.unshift([rr, cc]);
+      if (cells.length >= n) return { who, cells };
+    }
+    return null;
+  };
+  /** K.game.findLine(b, n, o) -> the first line of n or more anywhere ({who, cells}) or null */
+  G.findLine = (b, n, o) => { for (let r = 0; r < b.length; r++) for (let c = 0; c < b[r].length; c++) { const l = G.lineAt(b, r, c, n, o); if (l) return l; } return null; };
+  G.colName = (c) => String.fromCharCode(65 + c);
+  /** K.game.cellName(r, c, rows) -> 'A1'-style (column letter, row 1 at the bottom, as on a chess board) */
+  G.cellName = (r, c, rows) => G.colName(c) + (rows - r);
+  /** K.game.text(b, {symbols: {0: '.', 1: 'X', 2: 'O'}, letters: true}) -> the board as text for Juli: one line a row, the top row first */
+  G.text = (b, o) => {
+    o = o || {}; const sym = o.symbols || { 0: '.', 1: 'X', 2: 'O' };
+    const rows = b.map((row) => row.map((v) => (sym[v] !== undefined ? sym[v] : String(v))).join(' '));
+    if (o.letters !== false) rows.push((b[0] || []).map((_, c) => G.colName(c)).join(' '));
+    return rows.join('\n');
+  };
+
+  // ------------------------------------------------------------------ layout: square cells fitted in a box
+  /** K.game.layout({rows, cols, x, y, w, h, pad, maxCell, align: 'center'|'top'}) -> L = {x, y, w, h, cell, pad, ix, iy, cx(c), cy(r),
+   *  rect(r, c), col(px) -> c or -1, row(py) -> r or -1, at(px, py) -> {r, c} or null, contains(px, py)} (screen coordinates) */
+  G.layout = (o) => {
+    const rows = o.rows, cols = o.cols, pad = o.pad || 0;
+    const cell = Math.max(4, Math.floor(Math.min((o.w - 2 * pad) / cols, (o.h - 2 * pad) / rows, o.maxCell || 1e9)));
+    const w = cell * cols + 2 * pad, h = cell * rows + 2 * pad;
+    const x = Math.round(o.x + (o.w - w) / 2), y = Math.round(o.y + (o.align === 'top' ? 0 : (o.h - h) / 2));
+    const L = { rows, cols, cell, pad, x, y, w, h, ix: x + pad, iy: y + pad };
+    L.cx = (c) => L.ix + (c + 0.5) * cell;
+    L.cy = (r) => L.iy + (r + 0.5) * cell;
+    L.rect = (r, c) => ({ x: L.ix + c * cell, y: L.iy + r * cell, w: cell, h: cell });
+    L.col = (px) => { const c = Math.floor((px - L.ix) / cell); return c >= 0 && c < cols ? c : -1; };
+    L.row = (py) => { const r = Math.floor((py - L.iy) / cell); return r >= 0 && r < rows ? r : -1; };
+    L.at = (px, py) => { const c = L.col(px), r = L.row(py); return c >= 0 && r >= 0 ? { r, c } : null; };
+    L.contains = (px, py) => px >= x && px <= x + w && py >= y && py <= y + h;
+    return L;
+  };
+
+  // ------------------------------------------------------------------ input: the Game Kit's own pointer list (a drag's last place, a tap
+  // that went down and up inside one frame, and a cancel: a cancelled touch never drops a piece)
+  const PT = new Map(); let qD = [], qU = [], fD = [], fU = [], lastInput = -1e9;
+  function canvasXY(e) {
+    let r = null; try { const cv = document.querySelector('canvas'); r = cv && cv.getBoundingClientRect ? cv.getBoundingClientRect() : null; } catch (x) { r = null; }
+    return { x: e.clientX - (r ? r.left : 0), y: e.clientY - (r ? r.top : 0) };
+  }
+  function installInput() {
+    if (!WN || !WN.addEventListener || G._inputOn) return; G._inputOn = true;
+    const opt = { capture: true, passive: true };
+    WN.addEventListener('pointerdown', (e) => { const p = canvasXY(e); const rec = { id: e.pointerId, x: p.x, y: p.y, sx: p.x, sy: p.y, t0: now(), dist: 0, type: e.pointerType }; PT.set(e.pointerId, rec); qD.push(rec); lastInput = now(); }, opt);
+    WN.addEventListener('pointermove', (e) => { const r = PT.get(e.pointerId); if (!r) return; const p = canvasXY(e); r.x = p.x; r.y = p.y; r.dist = Math.max(r.dist, Math.hypot(p.x - r.sx, p.y - r.sy)); lastInput = now(); }, opt);
+    const up = (e) => { const r = PT.get(e.pointerId); if (!r) return; const p = canvasXY(e); r.x = p.x; r.y = p.y; r.cancel = e.type === 'pointercancel'; r.t1 = now(); PT.delete(e.pointerId); qU.push(r); lastInput = now(); snd.gesture(); };
+    WN.addEventListener('pointerup', up, opt); WN.addEventListener('pointercancel', up, opt);
+    WN.addEventListener('touchend', () => snd.gesture(), opt);
+    WN.addEventListener('keydown', () => { lastInput = now(); }, opt);
+  }
+  function stepInput() { fD = qD; fU = qU; qD = []; qU = []; }
+  const kitPointer = (id) => (K.pointers || []).find((q) => q.id === id) || null;
+
+  /** K.game.aim(id, L, {mode: 'column'|'cell', enabled, legal(t), top, bottom, name(t)}) -> {hover, drop, press, keys}
+   *  The person's aim at a board: hover = the column (or {r, c}) under a finger that is down (draw a highlight and a ghost piece there),
+   *  drop = the one let go on this frame (a tap, or a press, a slide along the columns and a release), press = a finger went down.
+   *  Columns take the whole height from `top` (default: one cell above the board) to the board's bottom. A cancelled touch never drops.
+   *  The finger is claimed (no swipe). Arrow keys move a keyboard aim and Enter or Space drops (desktop). Every legal target is in the
+   *  controls map for automated tests ('column D', 'cell B2'). */
+  const aims = {};
+  G.aim = (id, L, o) => {
+    o = o || {}; const st = aims[id] || (aims[id] = { pid: null, key: null });
+    const mode = o.mode || 'column', top = o.top != null ? o.top : L.y - L.cell, bottom = o.bottom != null ? o.bottom : L.y + L.h;
+    const res = { hover: null, drop: null, press: false, keys: false };
+    const legal = (t) => t != null && (!o.legal || o.legal(t));
+    const target = (x, y) => {
+      if (mode === 'column') { if (y < top || y > bottom || x < L.x || x > L.x + L.w) return null; const c = L.col(clamp(x, L.ix, L.ix + L.cell * L.cols - 0.01)); return c >= 0 && legal(c) ? c : null; }
+      const a = L.at(x, y); return a && legal(a) ? a : null;
+    };
+    const enabled = o.enabled !== false && !(K.isBlocked && K.isBlocked());
+    if (K.uiRect) K.uiRect(L.x, top, L.w, bottom - top);
+    if (!enabled) { st.pid = null; st.key = null; return res; }
+    const names = o.name || ((t) => (mode === 'column' ? 'column ' + G.colName(t) : 'cell ' + G.cellName(t.r, t.c, L.rows)));
+    if (K.registerControl) {
+      if (mode === 'column') { for (let c = 0; c < L.cols; c++) if (legal(c)) K.registerControl(names(c), L.ix + c * L.cell, top, L.cell, bottom - top); }
+      else for (let r = 0; r < L.rows; r++) for (let c = 0; c < L.cols; c++) if (legal({ r, c })) K.registerControl(names({ r, c }), L.ix + c * L.cell, L.iy + r * L.cell, L.cell, L.cell);
+    }
+    if (st.pid == null) for (const d of fD) {
+      if (d.used || d.sy < top || d.sy > bottom || d.sx < L.x || d.sx > L.x + L.w) continue;
+      d.used = true; st.pid = d.id; st.key = null; res.press = true; const kp = kitPointer(d.id); if (kp && K.claim) K.claim(kp, 'aim:' + id); break;
+    }
+    if (st.pid != null) {
+      const live = PT.get(st.pid), gone = live ? null : fU.find((u) => u.id === st.pid);
+      if (live) { const kp = kitPointer(live.id); if (kp && !kp.claimed && K.claim) K.claim(kp, 'aim:' + id); res.hover = target(live.x, live.y); }
+      else {
+        if (gone && !gone.cancel) {
+          const t = target(gone.x, gone.y);
+          if (t != null && (mode === 'column' || gone.dist < Math.max(16, L.cell * 0.45) || JSON.stringify(t) === JSON.stringify(target(gone.sx, gone.sy)))) res.drop = t;
+        }
+        st.pid = null;
+      }
+    }
+    // the keyboard (a desk or a keyboard on a tablet): arrows aim, Enter or Space drops
+    const keys = K.pressedKeys || [];
+    if (mode === 'column' && keys.length) {
+      const legalCols = []; for (let c = 0; c < L.cols; c++) if (legal(c)) legalCols.push(c);
+      for (const k of keys) {
+        if (!legalCols.length) break;
+        if (k === 'ArrowLeft' || k === 'ArrowRight') { const cur = st.key == null ? legalCols[Math.floor(legalCols.length / 2)] : st.key; const i = legalCols.indexOf(cur); st.key = k === 'ArrowLeft' ? legalCols[Math.max(0, (i < 0 ? 0 : i) - 1)] : legalCols[Math.min(legalCols.length - 1, (i < 0 ? 0 : i) + 1)]; if (i < 0) st.key = legalCols[0]; res.keys = true; }
+        if ((k === 'Enter' || k === ' ') && st.key != null && legal(st.key)) { res.drop = st.key; st.key = null; res.keys = true; }
+      }
+    }
+    if (res.hover == null && st.key != null && legal(st.key) && st.pid == null) res.hover = st.key;
+    return res;
+  };
+
+  // ------------------------------------------------------------------ motion: timelines, drops with gravity, jolts (stepped every frame)
+  const live = { tl: new Set(), bodies: new Set() };
+  /** K.game.timeline() -> tl: a sequence of tweens and calls on the game's clock. tl.tween(obj, {prop: to}, ms, {ease, at}) animates numbers;
+   *  tl.call(fn, {at}); tl.wait(ms). `at`: by default right after what is already in it; a number = ms from its start; '<' = with the step
+   *  before; '+=200' = 200 ms after its end. tl.play() -> a promise for its end; tl.skip() jumps to the end (every value set, every call
+   *  made, in time order); tl.stop() leaves it where it is. tl.duration, tl.t, tl.ended. */
+  G.timeline = () => {
+    const tl = { t: 0, steps: [], end: 0, last: 0, running: false, ended: false }; let res = null;
+    const promise = new Promise((r) => { res = r; });
+    const pos = (o) => {
+      const a = o && o.at; if (a == null) return tl.end; if (a === '<') return tl.last;
+      if (typeof a === 'string' && /^[+-]=/.test(a)) return tl.end + (a[0] === '-' ? -1 : 1) * (parseFloat(a.slice(2)) || 0);
+      return +a || 0;
+    };
+    tl.tween = (obj, to, ms, o) => { const s = Math.max(0, pos(o)), d = Math.max(0, +ms || 0); tl.steps.push({ k: 'tw', s, d, obj, to, from: null, e: easeOf(o && o.ease) }); tl.last = s; tl.end = Math.max(tl.end, s + d); return tl; };
+    tl.call = (fn, o) => { const s = Math.max(0, pos(o)); tl.steps.push({ k: 'fn', s, d: 0, fn, ran: false }); tl.last = s; tl.end = Math.max(tl.end, s); return tl; };
+    tl.wait = (ms) => { tl.end += Math.max(0, +ms || 0); return tl; };
+    Object.defineProperty(tl, 'duration', { get: () => tl.end });
+    const apply = (t) => {
+      for (const st of tl.steps) {
+        if (t < st.s) continue;
+        if (st.k === 'fn') { if (!st.ran) { st.ran = true; try { st.fn(); } catch (e) { report(e); } } continue; }
+        if (!st.from) { st.from = {}; for (const k in st.to) st.from[k] = +st.obj[k] || 0; }
+        const p = st.d ? clamp((t - st.s) / st.d, 0, 1) : 1, v = st.e(p);
+        for (const k in st.to) st.obj[k] = st.from[k] + (st.to[k] - st.from[k]) * v;
+      }
+    };
+    const finish = () => { if (tl.ended) return; tl.running = false; tl.ended = true; live.tl.delete(tl); res(tl); };
+    tl._step = (ms) => { if (!tl.running) return; tl.t += ms; apply(tl.t); if (tl.t >= tl.end) finish(); };
+    tl.play = () => { if (!tl.running && !tl.ended) { tl.steps.sort((a, b) => a.s - b.s); tl.running = true; live.tl.add(tl); apply(0); if (tl.end <= 0) finish(); } return promise; };
+    tl.skip = () => { if (!tl.ended) { tl.steps.sort((a, b) => a.s - b.s); tl.t = tl.end; apply(Infinity); finish(); } return promise; };
+    tl.stop = () => { tl.running = false; live.tl.delete(tl); return tl; };
+    return tl;
+  };
+
+  /** K.game.fall({from, to, g, bounce, v0, minHop, maxHits, onHit(speed, n, strength), onDone, auto}) -> body {y, vy, hits, squash, ended,
+   *  step(dt), skip(), promise}: a piece dropped with gravity (g px/s², down is +) that lands on `to` and bounces (bounce = the speed kept,
+   *  0..1) until a hop would be lower than minHop px. onHit gets the impact speed, the hit's number and its strength 0..1 (the first hit of a
+   *  fall from rest = 1): play the clack and the board's jolt with it. squash (0..1) springs back after each hit: scale the piece with it.
+   *  Stepped by the Game Kit every frame (auto: false = step it yourself, e.g. in a test). */
+  G.fall = (o) => {
+    o = o || {};
+    const b = { y: +o.from || 0, vy: +o.v0 || 0, to: +o.to || 0, g: +o.g || 2400, e: o.bounce == null ? 0.25 : clamp(+o.bounce, 0, 0.95), hits: 0, ended: false, squash: 0,
+      minHop: o.minHop == null ? 1.2 : +o.minHop, maxHits: o.maxHits == null ? 4 : o.maxHits };
+    let res = null; b.promise = new Promise((r) => { res = r; });
+    const vmax = Math.max(1, Math.sqrt(2 * b.g * Math.max(1, b.to - b.y) + b.vy * b.vy));
+    const end = () => { b.ended = true; b.vy = 0; b.y = b.to; live.bodies.delete(b); if (o.onDone) try { o.onDone(b); } catch (e) { report(e); } res(b); };
+    b.step = (dt) => {
+      if (b.ended) return;
+      let left = Math.min(dt, 0.1);
+      while (left > 1e-9 && !b.ended) {
+        const h = Math.min(left, 1 / 240); left -= h;
+        b.vy += b.g * h; b.y += b.vy * h;
+        if (b.y >= b.to && b.vy > 0) {
+          const speed = b.vy; b.hits++; b.y = b.to; b.squash = Math.max(b.squash, clamp(speed / vmax, 0, 1));
+          if (o.onHit) try { o.onHit(speed, b.hits, clamp(speed / vmax, 0, 1)); } catch (e) { report(e); }
+          b.vy = -speed * b.e;
+          if ((b.vy * b.vy) / (2 * b.g) < b.minHop || b.hits >= b.maxHits) { end(); return; }
+        }
+      }
+      b.squash *= Math.exp(-dt * 16);
+    };
+    b.skip = () => { if (!b.ended) end(); return b.promise; };
+    if (o.auto !== false) live.bodies.add(b);
+    return b;
+  };
+
+  // jolts: a damped spring offset per key (a board knocked by a landing piece); none with reduced motion
+  const jolts = new Map();
+  /** K.game.jolt(key, px, {dir: 'down'|'up'|'left'|'right'}) - knock `key` by about px pixels (it springs back). K.game.joltOf(key) -> {x, y} */
+  G.jolt = (key, px, o) => {
+    if (G.reduced) return;
+    let j = jolts.get(key); if (!j) { j = { x: 0, y: 0, vx: 0, vy: 0 }; jolts.set(key, j); }
+    const v = (+px || 3) * 26, d = (o && o.dir) || 'down';
+    if (d === 'down') j.vy += v; else if (d === 'up') j.vy -= v; else if (d === 'left') j.vx -= v; else j.vx += v;
+  };
+  G.joltOf = (key) => { const j = jolts.get(key); return j ? { x: j.x, y: j.y } : { x: 0, y: 0 }; };
+  function stepJolts(dt) {
+    for (const j of jolts.values()) {
+      const n = Math.max(1, Math.ceil(dt / 0.004)), h = dt / n;
+      for (let i = 0; i < n; i++) { j.vx += (-700 * j.x - 22 * j.vx) * h; j.vy += (-700 * j.y - 22 * j.vy) * h; j.x += j.vx * h; j.y += j.vy * h; }
+      if (Math.abs(j.x) + Math.abs(j.y) + Math.abs(j.vx) / 60 + Math.abs(j.vy) / 60 < 0.02) { j.x = j.y = j.vx = j.vy = 0; }
+    }
+  }
+  const jolting = () => { for (const j of jolts.values()) if (j.x || j.y || j.vx || j.vy) return true; return false; };
+
+  /** K.game.step(ms) - advance timelines, falls, jolts and effects by ms (the Game Kit calls it every frame; tests call it themselves) */
+  G.step = (ms) => {
+    const dt = clamp(+ms || 0, 0, 100) / 1000;
+    for (const tl of Array.from(live.tl)) tl._step(ms);
+    for (const b of Array.from(live.bodies)) b.step(dt);
+    stepJolts(dt); stepParticles(dt);
+  };
+
+  // ------------------------------------------------------------------ sprites: drawn once on their own canvas, reused every frame
+  const SPR = new Map(); let sprBytes = 0; const SPR_MAX = 16e6;
+  const dropSprite = (k) => { const s = SPR.get(k); if (!s) return; sprBytes -= s.bytes; try { s.cv.width = 0; s.cv.height = 0; } catch (e) { /* */ } SPR.delete(k); };
+  /** K.game.sprite(key, w, h, draw(ctx, w, h), {pd}) -> a cached picture w x h (screen px) at the screen's pixel density (pd 1 for soft
+   *  things such as a backdrop): the same key and size give the same picture without drawing it again. null outside a page. */
+  G.sprite = (key, w, h, draw, o) => {
+    const k = String(key); w = Math.max(1, Math.round(w)); h = Math.max(1, Math.round(h));
+    let s = SPR.get(k);
+    if (s && s.w === w && s.h === h) { s.used = now(); return s; }
+    if (s) dropSprite(k);
+    if (!DOM()) return null;
+    const d = (o && o.pd) || dens(), cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.ceil(w * d)); cv.height = Math.max(1, Math.ceil(h * d));
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.scale(d, d); try { draw(c, w, h); } catch (e) { report(e); }
+    s = { key: k, cv, w, h, d, used: now(), bytes: cv.width * cv.height * 4 }; SPR.set(k, s); sprBytes += s.bytes;
+    if (sprBytes > SPR_MAX) { const old = Array.from(SPR.values()).filter((x) => x !== s).sort((a, b) => a.used - b.used); while (sprBytes > SPR_MAX && old.length) dropSprite(old.shift().key); }
+    return s;
+  };
+  /** K.game.dropSprites(prefix) - forget cached pictures (all, or those whose key starts with prefix): after a size or colour change */
+  G.dropSprites = (prefix) => { for (const k of Array.from(SPR.keys())) if (!prefix || k.startsWith(prefix)) dropSprite(k); };
+  G.spriteBytes = () => sprBytes;
+  /** K.game.blit(sprite, x, y, w, h, {alpha, add, rot, sx, sy}) - draw a sprite (add = light it onto what is below) */
+  G.blit = (s, x, y, w, h, o) => {
+    if (!s || !K.with) return; o = o || {};
+    K.with((c) => {
+      if (o.alpha != null) c.globalAlpha *= clamp(o.alpha, 0, 1);
+      if (o.add) c.globalCompositeOperation = 'lighter';
+      const W = w == null ? s.w : w, H = h == null ? s.h : h;
+      if (o.rot || (o.sx != null && o.sx !== 1) || (o.sy != null && o.sy !== 1)) {
+        c.translate(x + W / 2, y + H / 2); if (o.rot) c.rotate(o.rot); c.scale(o.sx == null ? 1 : o.sx, o.sy == null ? 1 : o.sy); c.drawImage(s.cv, -W / 2, -H / 2, W, H);
+      } else c.drawImage(s.cv, x, y, W, H);
+    });
+  };
+
+  // a colour's own shade: darker and a little richer, the hue kept (warm colours lean warmer), never muddied with black
+  function hsl(col) {
+    const m = /rgba?\(([^)]+)\)/.exec(K.mix(col, col, 0)), v = m ? m[1].split(',').map(parseFloat) : [128, 128, 128];
+    const r = v[0] / 255, g = v[1] / 255, b = v[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+    let h = 0, s = 0;
+    if (d) { s = d / (1 - Math.abs(2 * l - 1)); h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; if (h < 0) h += 360; }
+    return { h, s, l };
+  }
+  /** K.game.shade(color, t 0..1) -> the colour's own shade: darker and a little richer, its hue kept (warm colours lean warmer) */
+  G.shade = (col, t) => { const o = hsl(col), warm = o.h > 15 && o.h < 75 ? -10 * t : 0; return K.hsl(o.h + warm, Math.min(100, o.s * 100 * (1 + 0.15 * t)), Math.max(4, o.l * 100 * (1 - 0.62 * t))); };
+  // glossy pieces, lit from the top left
+  function drawPiece(c, x, y, r, col, style, shadow) {
+    const L = (t) => K.lighten(col, t), D = (t) => G.shade(col, t), TAU = Math.PI * 2;
+    if (shadow) { const g = c.createRadialGradient(x, y + r * 0.2, r * 0.55, x, y + r * 0.2, r * 1.2); g.addColorStop(0, 'rgba(0,0,0,0.42)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.beginPath(); c.arc(x, y + r * 0.2, r * 1.2, 0, TAU); c.fill(); }
+    let g = c.createRadialGradient(x - r * 0.38, y - r * 0.44, r * 0.08, x, y, r * 1.04);
+    g.addColorStop(0, L(0.45)); g.addColorStop(0.36, L(0.12)); g.addColorStop(0.76, col); g.addColorStop(1, D(0.34));
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+    if (style === 'disc') {   // a moulded ring pressed into the face, and its slightly hollow middle
+      c.lineWidth = r * 0.09;
+      g = c.createLinearGradient(x, y - r * 0.66, x, y + r * 0.66); g.addColorStop(0, K.alpha(D(0.5), 0.8)); g.addColorStop(1, K.alpha(L(0.4), 0.75));
+      c.strokeStyle = g; c.beginPath(); c.arc(x, y, r * 0.66, 0, TAU); c.stroke();
+      g = c.createLinearGradient(x, y - r * 0.6, x, y + r * 0.6); g.addColorStop(0, K.alpha(D(0.2), 0.5)); g.addColorStop(1, K.alpha(L(0.16), 0.3));
+      c.fillStyle = g; c.beginPath(); c.arc(x, y, r * 0.6, 0, TAU); c.fill();
+    }
+    c.lineWidth = Math.max(1, r * 0.06); c.strokeStyle = K.alpha(D(0.55), 0.55); c.beginPath(); c.arc(x, y, r * 0.97, 0, TAU); c.stroke();
+    c.lineWidth = Math.max(1, r * 0.05); c.strokeStyle = 'rgba(255,255,255,0.22)'; c.beginPath(); c.arc(x, y, r * 0.88, 0.12 * Math.PI, 0.58 * Math.PI); c.stroke();
+    c.save(); c.translate(x - r * 0.3, y - r * 0.47); c.rotate(-0.35); c.scale(1, 0.55);
+    g = c.createRadialGradient(0, 0, 0, 0, 0, r * 0.48); g.addColorStop(0, 'rgba(255,255,255,0.88)'); g.addColorStop(0.45, 'rgba(255,255,255,0.32)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, r * 0.48, 0, TAU); c.fill(); c.restore();
+    if (style === 'ball') { g = c.createRadialGradient(x + r * 0.35, y + r * 0.45, 0, x + r * 0.35, y + r * 0.45, r * 0.5); g.addColorStop(0, 'rgba(255,255,255,0.18)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); }
+  }
+  /** K.game.piece(cx, cy, r, color, {style: 'disc'|'ball'|'flat', shadow, alpha, sx, sy, add}) - a glossy, lit game piece (Four in a Row
+   *  disc, checker, marble): gradients, a moulded ring (disc), a specular highlight and a soft shadow, drawn once per colour and size */
+  G.piece = (cx, cy, r, color, o) => {
+    o = o || {}; const style = o.style || 'disc', sh = o.shadow !== false, R = Math.max(2, Math.round(r * 2) / 2);
+    const pad = Math.ceil(R * 0.35) + 2, S = 2 * (R + pad);
+    const s = G.sprite('gk:piece:' + style + ':' + color + ':' + R + ':' + (sh ? 1 : 0), S, S, (c) => {
+      if (style === 'flat') { c.fillStyle = color; c.beginPath(); c.arc(S / 2, S / 2, R, 0, Math.PI * 2); c.fill(); return; }
+      drawPiece(c, S / 2, S / 2, R, color, style, sh);
+    });
+    if (!s) { if (K.circle) K.circle(cx, cy, r, { fill: color, alpha: o.alpha }); return; }
+    const k = r / R, sx = o.sx == null ? 1 : o.sx, sy = o.sy == null ? 1 : o.sy, w = S * k * sx, h = S * k * sy;
+    G.blit(s, cx - w / 2, cy - h / 2, w, h, { alpha: o.alpha, add: o.add });
+  };
+  /** K.game.glow(x, y, r, color, strength 0..1, {add}) - a soft light (cached); lit onto what is below unless add: false */
+  G.glow = (x, y, r, color, a, o) => {
+    const s = G.sprite('gk:glow:' + color, 64, 64, (c) => { const g = c.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, K.alpha(color, 1)); g.addColorStop(0.32, K.alpha(color, 0.5)); g.addColorStop(1, K.alpha(color, 0)); c.fillStyle = g; c.fillRect(0, 0, 64, 64); }, { pd: 1 });
+    G.blit(s, x - r, y - r, 2 * r, 2 * r, { alpha: a == null ? 0.6 : a, add: !(o && o.add === false) });
+  };
+  /** K.game.backdrop({top, bottom, glows: [{x, y, r, color, a}] (x, y, r as 0..1 of the screen), vignette 0..1}) - a full-screen scene
+   *  background, drawn once per size (cheap every frame: use it instead of K.backdrop in a game) */
+  G.backdrop = (o) => {
+    o = o || {}; const W = Math.round(K.W), H = Math.round(K.H), key = 'gk:bd:' + JSON.stringify([o.top, o.bottom, o.glows, o.vignette]);
+    for (const k of Array.from(SPR.keys())) if (k.startsWith('gk:bd:') && k !== key) dropSprite(k);
+    const s = G.sprite(key, W, H, (c) => {
+      const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, o.top || '#1b1240'); g.addColorStop(1, o.bottom || '#0a0814'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+      for (const gl of o.glows || []) { const R = (gl.r || 0.6) * Math.max(W, H), x = (gl.x == null ? 0.5 : gl.x) * W, y = (gl.y == null ? 0.4 : gl.y) * H; const rg = c.createRadialGradient(x, y, 0, x, y, R); rg.addColorStop(0, K.alpha(gl.color || '#6a3fd9', gl.a == null ? 0.3 : gl.a)); rg.addColorStop(1, K.alpha(gl.color || '#6a3fd9', 0)); c.fillStyle = rg; c.fillRect(0, 0, W, H); }
+      const v = o.vignette == null ? 0.45 : o.vignette;
+      if (v > 0) { const vg = c.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.78); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,' + v + ')'); c.fillStyle = vg; c.fillRect(0, 0, W, H); }
+    }, { pd: 1 });
+    if (s) G.blit(s, 0, 0, W, H); else if (K.backdrop) K.backdrop({ top: o.top, bottom: o.bottom });
+  };
+  /** K.game.boardBack(L, {color}) - the inside of a 'holes' board: a dark back with the column slots, seen through the empty holes and
+   *  behind a falling piece. Draw it first, then the pieces, then K.game.board(L, {style: 'holes'}) */
+  G.boardBack = (L, o) => {
+    o = o || {}; const color = o.color || '#5b34c9', ins = Math.round(L.cell * 0.12), w = L.w - 2 * ins, h = L.h - 2 * ins;
+    const s = G.sprite('gk:back:' + JSON.stringify([L.rows, L.cols, L.cell, L.pad, color]), w, h, (c) => {
+      const g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, K.mix(color, '#05030c', 0.86)); g.addColorStop(1, K.mix(color, '#05030c', 0.7));
+      c.fillStyle = g; K.pathRR(c, 0, 0, w, h, L.cell * 0.2); c.fill();
+      c.fillStyle = K.alpha('#000000', 0.35);   // the walls between the column slots
+      for (let k = 1; k < L.cols; k++) c.fillRect(L.pad - ins + k * L.cell - 1.5, 0, 3, h);
+      const sh = c.createLinearGradient(0, 0, 0, h * 0.4); sh.addColorStop(0, 'rgba(0,0,0,0.45)'); sh.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = sh; c.fillRect(0, 0, w, h * 0.4);
+    });
+    if (s) G.blit(s, L.x + ins, L.y + ins, w, h);
+  };
+  /** K.game.board(L, {style: 'holes'|'squares'|'lines', color, color2, hole, line, feet, radius}) -> {x, y, w, h}: the board for layout L,
+   *  drawn once and cached. 'holes' (Four in a Row): a moulded plastic face with round holes cut through it (draw the pieces FIRST: they
+   *  show through the holes, and a falling piece passes behind the face), a bevel, the holes' inner shadow and a soft floor shadow; feet
+   *  at the bottom. 'squares' (chess, checkers): two-colour squares in a bevelled frame. 'lines' (noughts and crosses, go): grid lines on
+   *  a plate. Draw the pieces AFTER 'squares' and 'lines'. */
+  G.board = (L, o) => {
+    o = o || {}; const style = o.style || 'holes', color = o.color || '#5b34c9', cell = L.cell, m = Math.round(cell * 0.5);
+    const feet = style === 'holes' && o.feet !== false, fh = feet ? Math.round(cell * 0.42) : 0;
+    const W = L.w + 2 * m, H = L.h + 2 * m + fh, hole = o.hole || cell * 0.4, rad = o.radius == null ? Math.round(cell * 0.3) : o.radius;
+    const key = 'gk:board:' + style + ':' + JSON.stringify([L.rows, L.cols, cell, L.pad, color, o.color2 || '', hole, rad, fh, o.line || '']);
+    const s = G.sprite(key, W, H, (c) => {
+      const x0 = m, y0 = m, w = L.w, h = L.h, TAU = Math.PI * 2;
+      // the floor shadow
+      const sg = c.createRadialGradient(x0 + w / 2, y0 + h + fh * 0.7, 0, x0 + w / 2, y0 + h + fh * 0.7, w * 0.62);
+      sg.addColorStop(0, 'rgba(0,0,0,0.5)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
+      c.save(); c.translate(0, y0 + h + fh * 0.7); c.scale(1, 0.16); c.translate(0, -(y0 + h + fh * 0.7)); c.fillStyle = sg; c.fillRect(0, 0, W, H * 6); c.restore();
+      if (feet) for (const fx of [x0 + cell * 0.25, x0 + w - cell * 0.25 - cell * 1.1]) {
+        const fg = c.createLinearGradient(0, y0 + h - 4, 0, y0 + h + fh); fg.addColorStop(0, K.darken(color, 0.35)); fg.addColorStop(1, K.darken(color, 0.55));
+        c.fillStyle = fg; K.pathRR(c, fx, y0 + h - 6, cell * 1.1, fh + 6, Math.min(8, fh / 2)); c.fill();
+      }
+      // the face
+      let g = c.createLinearGradient(0, y0, 0, y0 + h);
+      if (style === 'lines') { g.addColorStop(0, K.lighten(color, 0.1)); g.addColorStop(1, K.darken(color, 0.2)); }
+      else { g.addColorStop(0, K.lighten(color, 0.2)); g.addColorStop(0.18, K.lighten(color, 0.06)); g.addColorStop(0.7, color); g.addColorStop(1, K.darken(color, 0.3)); }
+      c.fillStyle = g; K.pathRR(c, x0, y0, w, h, rad); c.fill();
+      if (style === 'squares') {
+        const c2 = o.color2 || K.lighten(color, 0.55);
+        for (let r = 0; r < L.rows; r++) for (let cc = 0; cc < L.cols; cc++) { c.fillStyle = (r + cc) % 2 ? color : c2; c.fillRect(x0 + L.pad + cc * cell, y0 + L.pad + r * cell, cell, cell); }
+        c.lineWidth = 2; c.strokeStyle = 'rgba(0,0,0,0.35)'; c.strokeRect(x0 + L.pad - 1, y0 + L.pad - 1, cell * L.cols + 2, cell * L.rows + 2);
+      }
+      if (style === 'lines') {
+        c.strokeStyle = o.line || K.alpha('#ffffff', 0.55); c.lineWidth = Math.max(3, cell * 0.06); c.lineCap = 'round';
+        for (let i = 1; i < L.cols; i++) { const x = x0 + L.pad + i * cell; c.beginPath(); c.moveTo(x, y0 + L.pad + cell * 0.12); c.lineTo(x, y0 + L.pad + L.rows * cell - cell * 0.12); c.stroke(); }
+        for (let i = 1; i < L.rows; i++) { const y = y0 + L.pad + i * cell; c.beginPath(); c.moveTo(x0 + L.pad + cell * 0.12, y); c.lineTo(x0 + L.pad + L.cols * cell - cell * 0.12, y); c.stroke(); }
+      }
+      // a sheen across the top left, the bevel
+      g = c.createLinearGradient(x0, y0, x0 + w * 0.6, y0 + h * 0.6); g.addColorStop(0, 'rgba(255,255,255,0.10)'); g.addColorStop(0.5, 'rgba(255,255,255,0.03)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = g; K.pathRR(c, x0, y0, w, h, rad); c.fill();
+      g = c.createLinearGradient(0, y0, 0, y0 + h); g.addColorStop(0, 'rgba(255,255,255,0.45)'); g.addColorStop(0.08, 'rgba(255,255,255,0.08)'); g.addColorStop(0.9, 'rgba(0,0,0,0.12)'); g.addColorStop(1, 'rgba(0,0,0,0.45)');
+      c.lineWidth = 2; c.strokeStyle = g; K.pathRR(c, x0 + 1, y0 + 1, w - 2, h - 2, Math.max(0, rad - 1)); c.stroke();
+      if (style === 'holes') {
+        // the holes go right through; then each one's chamfer, the shadow its top edge casts and the light on its lower wall
+        c.globalCompositeOperation = 'destination-out'; c.fillStyle = '#000';   // opaque: the hole is cut right through
+        for (let r = 0; r < L.rows; r++) for (let cc = 0; cc < L.cols; cc++) { c.beginPath(); c.arc(x0 + L.pad + (cc + 0.5) * cell, y0 + L.pad + (r + 0.5) * cell, hole, 0, TAU); c.fill(); }
+        c.globalCompositeOperation = 'source-over';
+        for (let r = 0; r < L.rows; r++) for (let cc = 0; cc < L.cols; cc++) {
+          const x = x0 + L.pad + (cc + 0.5) * cell, y = y0 + L.pad + (r + 0.5) * cell;
+          g = c.createLinearGradient(0, y - hole, 0, y + hole); g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(0.5, 'rgba(0,0,0,0.12)'); g.addColorStop(1, 'rgba(255,255,255,0.3)');
+          c.lineWidth = Math.max(2, cell * 0.05); c.strokeStyle = g; c.beginPath(); c.arc(x, y, hole + c.lineWidth / 2, 0, TAU); c.stroke();
+          c.lineWidth = Math.max(2, hole * 0.2); c.strokeStyle = 'rgba(0,0,0,0.42)'; c.beginPath(); c.arc(x, y, hole - c.lineWidth / 2, Math.PI * 1.08, Math.PI * 1.92); c.stroke();
+          c.lineWidth = Math.max(1, hole * 0.08); c.strokeStyle = 'rgba(255,255,255,0.16)'; c.beginPath(); c.arc(x, y, hole - c.lineWidth / 2, Math.PI * 0.2, Math.PI * 0.8); c.stroke();
+        }
+      }
+    });
+    const at = { x: L.x - m, y: L.y - m, w: W, h: H };
+    if (s) G.blit(s, at.x, at.y, W, H); else if (K.rect) K.rect(L.x, L.y, L.w, L.h, { fill: color, r: rad });
+    return at;
+  };
+
+  // ------------------------------------------------------------------ effects: confetti that flutters, sparks, rings (pooled, capped)
+  const P = []; const PMAX = 240;
+  /** K.game.confetti(x, y, {n, colors, power, angle, spread, gravity, life}) - paper confetti: a burst that slows in the air, flutters and
+   *  sways down (fewer pieces with reduced motion) */
+  G.confetti = (x, y, o) => {
+    o = o || {}; const cols = o.colors && o.colors.length ? o.colors : [K.C.accent], n = G.reduced ? Math.min(12, o.n || 70) : o.n || 70;
+    for (let i = 0; i < n && P.length < PMAX; i++) {
+      const a = (o.angle == null ? -Math.PI / 2 : o.angle) + (Math.random() - 0.5) * (o.spread == null ? 1.4 : o.spread), sp = (o.power || 950) * (0.4 + Math.random() * 0.8), col = cols[(Math.random() * cols.length) | 0];
+      P.push({ k: 'c', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, rot: Math.random() * 6.28, vr: (Math.random() - 0.5) * 9, ph: Math.random() * 6.28, vph: 5 + Math.random() * 9,
+        w: 6 + Math.random() * 6, h: 3.5 + Math.random() * 3.5, col, col2: K.darken(col, 0.38), t: 0, life: (o.life || 3200) * (0.75 + Math.random() * 0.5), g: o.gravity == null ? 620 : o.gravity, drag: 2.6, sway: 40 + Math.random() * 70 });
+    }
+  };
+  /** K.game.sparks(x, y, {n, color, power, angle, spread, life}) - small bright sparks (a landing, a pick-up) */
+  G.sparks = (x, y, o) => {
+    o = o || {}; const n = G.reduced ? Math.min(4, o.n || 10) : o.n || 10;
+    for (let i = 0; i < n && P.length < PMAX; i++) {
+      const a = (o.angle == null ? -Math.PI / 2 : o.angle) + (Math.random() - 0.5) * (o.spread == null ? 2.4 : o.spread), sp = (o.power || 320) * (0.35 + Math.random() * 0.8);
+      P.push({ k: 's', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, life: (o.life || 420) * (0.6 + Math.random() * 0.6), col: o.color || '#fff4d6', size: 1.5 + Math.random() * 1.6, g: 900, drag: 3 });
+    }
+  };
+  /** K.game.ring(x, y, {r0, r1, color, life, width}) - an expanding ring */
+  G.ring = (x, y, o) => { o = o || {}; if (P.length < PMAX) P.push({ k: 'r', x, y, r0: o.r0 || 6, r1: o.r1 || 60, col: o.color || '#ffffff', t: 0, life: o.life || 520, w: o.width || 3 }); };
+  G.clearFx = () => { P.length = 0; };
+  G.fxCount = () => P.length;
+  function stepParticles(dt) {
+    for (let i = P.length - 1; i >= 0; i--) {
+      const p = P[i]; p.t += dt * 1000; if (p.t >= p.life) { P.splice(i, 1); continue; }
+      if (p.k === 'r') continue;
+      const dr = Math.exp(-p.drag * dt); p.vx *= dr; p.vy *= dr; p.vy += p.g * dt;
+      if (p.k === 'c') { p.ph += p.vph * dt; p.vx += Math.sin(p.ph * 0.5) * p.sway * dt; p.rot += p.vr * dt; }
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.y > (K.H || 1e9) + 40) P.splice(i, 1);
+    }
+  }
+  /** K.game.fx() - draw the confetti, sparks and rings (once a frame, where they belong in depth: above the board, under a results card) */
+  G.fx = () => {
+    if (!P.length || !K.with) return;
+    K.with((c) => {
+      for (const p of P) {
+        const k = 1 - p.t / p.life;
+        if (p.k === 'c') {
+          const fl = Math.cos(p.ph); c.globalAlpha = Math.min(1, k * 2.5); c.fillStyle = fl >= 0 ? p.col : p.col2;
+          c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.fillRect(-p.w / 2, (-p.h / 2) * Math.abs(fl), p.w, Math.max(0.6, p.h * Math.abs(fl))); c.restore();
+        } else if (p.k === 's') {
+          c.globalAlpha = Math.min(1, k * 1.8); c.globalCompositeOperation = 'lighter'; c.strokeStyle = p.col; c.lineWidth = p.size; c.lineCap = 'round';
+          c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03); c.stroke(); c.globalCompositeOperation = 'source-over';
+        } else {
+          const e = K.ease.outCubic(1 - k); c.globalAlpha = k; c.strokeStyle = p.col; c.lineWidth = p.w * (0.4 + 0.6 * k); c.beginPath(); c.arc(p.x, p.y, p.r0 + (p.r1 - p.r0) * e, 0, Math.PI * 2); c.stroke();
+        }
+      }
+    });
+  };
+
+  // ------------------------------------------------------------------ sound: synthesised (no files), off until the first tap, a remembered mute
+  const snd = { on: true, touched: false, ac: null, out: null, verb: null, noise: null, last: {} };
+  try { const v = K.load ? K.load('gamekit.sound', null) : null; if (v === false || v === true) snd.on = v; } catch (e) { /* */ }
+  K.sound = snd.on;   // the Kit's own button sounds follow the same switch
+  snd.gesture = () => { snd.touched = true; };
+  function audio() {
+    if (!snd.touched || !snd.on) return null;
+    let ac = null; try { ac = K.audio ? K.audio() : null; } catch (e) { ac = null; }
+    if (!ac || !ac.createOscillator) return null;
+    if (ac.state === 'suspended' && ac.resume) { try { const p = ac.resume(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* */ } }
+    if (snd.ac !== ac) { snd.ac = ac; snd.out = null; }
+    if (!snd.out) {
+      const comp = ac.createDynamicsCompressor(); comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.2; comp.connect(ac.destination);
+      const out = ac.createGain(); out.gain.value = 0.9; out.connect(comp);
+      try {   // a small room: half a second of decaying noise as the impulse
+        const len = Math.floor(ac.sampleRate * 0.55), ir = ac.createBuffer(2, len, ac.sampleRate);
+        for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+        const verb = ac.createConvolver(); verb.buffer = ir; const vg = ac.createGain(); vg.gain.value = 0.25; verb.connect(vg); vg.connect(out); snd.verb = verb;
+      } catch (e) { snd.verb = null; }
+      const nl = ac.sampleRate, nb = ac.createBuffer(1, nl, ac.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nl; i++) nd[i] = Math.random() * 2 - 1; snd.noise = nb;
+      snd.out = out;
+    }
+    return ac;
+  }
+  function tone(ac, type, f0, f1, t, att, dec, amp, wet) {
+    const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + att + dec);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp * G.volume), t + att); g.gain.exponentialRampToValueAtTime(0.0001, t + att + dec);
+    o.connect(g); g.connect(snd.out); if (wet && snd.verb) { const w = ac.createGain(); w.gain.value = wet; g.connect(w); w.connect(snd.verb); }
+    o.start(t); o.stop(t + att + dec + 0.05);
+  }
+  function hiss(ac, t, dur, type, f, q, amp, wet, f1) {
+    const s = ac.createBufferSource(); s.buffer = snd.noise; const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.setValueAtTime(f, t); if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t + dur); fl.Q.value = q;
+    const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp * G.volume), t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(fl); fl.connect(g); g.connect(snd.out); if (wet && snd.verb) { const w = ac.createGain(); w.gain.value = wet; g.connect(w); w.connect(snd.verb); }
+    s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
+  }
+  const notes = (ac, t, list, o) => list.forEach(([f, at, len, amp]) => { tone(ac, o.type || 'triangle', f, f, t + at, 0.006, len, amp, o.wet); if (o.octave) tone(ac, 'sine', f * 2, f * 2, t + at, 0.006, len * 0.7, amp * 0.3, o.wet); });
+  const VOICES = {
+    // a plastic disc landing on the one below: a short pitched tock, a band-passed click and the board's low thud
+    clack: (ac, t, o) => { const v = clamp(o.vel == null ? 1 : o.vel, 0.05, 1), p = (o.pitch || 1) * (0.94 + Math.random() * 0.12);
+      tone(ac, 'triangle', 520 * p, 230 * p, t, 0.002, 0.06, 0.5 * v, 0.12); hiss(ac, t, 0.035, 'bandpass', 2900 * p, 1.3, 0.85 * v, 0.1); tone(ac, 'sine', 150 * p, 70, t, 0.002, 0.1, 0.4 * v, 0); },
+    place: (ac, t, o) => { const v = clamp(o.vel == null ? 1 : o.vel, 0.05, 1); tone(ac, 'sine', 660, 420, t, 0.003, 0.08, 0.35 * v, 0.15); hiss(ac, t, 0.02, 'highpass', 3500, 0.8, 0.25 * v, 0); },
+    tap: (ac, t) => { tone(ac, 'sine', 1100, 760, t, 0.002, 0.045, 0.16, 0); },
+    tick: (ac, t) => { tone(ac, 'triangle', 1900, 1900, t, 0.001, 0.016, 0.06, 0); },
+    turn: (ac, t) => { tone(ac, 'sine', 660, 660, t, 0.004, 0.07, 0.07, 0.2); tone(ac, 'sine', 880, 880, t + 0.08, 0.004, 0.09, 0.06, 0.2); },
+    start: (ac, t) => { hiss(ac, t, 0.3, 'bandpass', 380, 1.6, 0.18, 0.2, 2400); tone(ac, 'triangle', 523.25, 523.25, t + 0.12, 0.004, 0.22, 0.12, 0.25); },
+    clear: (ac, t) => { hiss(ac, t, 0.5, 'bandpass', 2600, 0.9, 0.14, 0.15, 500); for (let i = 0; i < 6; i++) tone(ac, 'triangle', 480 + Math.random() * 120, 220, t + i * 0.06 + Math.random() * 0.02, 0.002, 0.05, 0.12, 0.1); },
+    win: (ac, t) => { notes(ac, t, [[523.25, 0, 0.42, 0.22], [659.25, 0.09, 0.42, 0.22], [783.99, 0.18, 0.42, 0.22], [1046.5, 0.27, 0.9, 0.24]], { octave: true, wet: 0.35 });
+      notes(ac, t + 0.4, [[1318.5, 0, 1.1, 0.07], [1568, 0.03, 1.1, 0.06], [2093, 0.06, 1.2, 0.05]], { type: 'sine', wet: 0.5 }); hiss(ac, t + 0.36, 0.9, 'highpass', 7000, 0.7, 0.05, 0.4); },
+    lose: (ac, t) => { notes(ac, t, [[392, 0, 0.5, 0.18], [329.63, 0.17, 0.5, 0.16], [261.63, 0.34, 0.9, 0.16]], { type: 'sine', wet: 0.35 }); },
+    draw: (ac, t) => { notes(ac, t, [[392, 0, 0.8, 0.14], [587.33, 0, 0.8, 0.1], [493.88, 0.18, 0.9, 0.1]], { type: 'sine', wet: 0.35 }); },
+    error: (ac, t) => { tone(ac, 'sine', 300, 210, t, 0.004, 0.12, 0.12, 0); },
+  };
+  G.volume = 0.8;
+  /** K.game.sound: play(name, {vol, vel, pitch}) - clack (vel 0..1: a landing), place, tap, tick, turn, start, clear, win, lose, draw,
+   *  error. Silent until the person's first tap (the phone's rule) and while muted. sound.on (true / false, remembered on this phone; the
+   *  Kit's own button sounds follow it), sound.toggle(). Every sound is listed for automated tests (K.markSound). */
+  G.sound = {
+    get on() { return snd.on; },
+    set on(v) { snd.on = !!v; K.sound = snd.on; try { if (K.save) K.save('gamekit.sound', snd.on); } catch (e) { /* */ } },
+    toggle() { G.sound.on = !snd.on; return snd.on; },
+    get ready() { return !!(snd.touched && snd.on); },
+    play(name, o) {
+      o = o || {}; try { if (K.markSound) K.markSound('game:' + name); } catch (e) { /* */ }
+      const v = VOICES[name]; if (!v) return false;
+      const t0 = now(); if (snd.last[name] && t0 - snd.last[name] < (name === 'tick' ? 45 : 18)) return false; snd.last[name] = t0;
+      const ac = audio(); if (!ac) return false;
+      try { v(ac, ac.currentTime + 0.004, o); return true; } catch (e) { return false; }
+    },
+  };
+  /** K.game.soundButton(id, cx, cy, size, {style, color}) -> on: the speaker button (sound / mute); a tap switches and remembers it */
+  G.soundButton = (id, cx, cy, size, o) => {
+    o = o || {};
+    if (K.iconButton(id, cx, cy, size || 36, snd.on ? 'sound' : 'mute', { style: o.style || 'glass', color: o.color, sfx: false })) { G.sound.toggle(); if (snd.on) G.sound.play('tap'); }
+    return snd.on;
+  };
+
+  // ------------------------------------------------------------------ Juli picks a move: her answer is her move; the game never moves for her
+  /** await K.game.juliPick({about, options: [labels], hint, skill}, {pick, big, tries, timeoutMs, retryMs, waitMs, alive})
+   *  -> {index, by: 'juli', tries, said, big} (her answer) or {index: -1, by: 'none', kind, why, tries} (no move from her: say so, honestly).
+   *  big = ask the Bigger brain (K.choose's big: the game's chosen opponent; K.juliModels() says whether it is on).
+   *  Asks Juli (K.choose: her model answers with one of the options on this phone). An answer that names no option is asked again, up to
+   *  `tries` (3) in all. kind: 'unreadable' (still no clear answer), 'stopped' (her model failed or gave no answer in time), 'busy' (another
+   *  question was still on its way), 'missing' (Juli is not downloaded), 'nobig' (the game asked for the Bigger brain, K.choose's big, and
+   *  it is not on), 'nojuli' (outside p0pc0rn), 'notallowed', 'ratelimit', 'bad' (fewer than two options) or 'dropped' (alive() false:
+   *  this turn ended meanwhile). The game shows the kind in plain words with an "Ask Juli again" button and never makes a move for her.
+   *  p0pc0rn takes one question at a time from an open app: a question still on its way (a turn dropped by a new game) is let finish first,
+   *  up to waitMs (20000; its answer is dropped), so the new one reaches her instead of "still choosing". */
+  let picking = null;   // the question on its way to Juli, as a promise that settles when she answers (or it fails)
+  const KIND_OF_CODE = { NO_JULI: 'nojuli', NOT_ALLOWED: 'notallowed', RATE_LIMIT: 'ratelimit', BAD_CHOICE: 'bad', CHECK: 'nojuli', NOT_DOWNLOADED: 'missing' };
+  G.juliPick = async (a, o) => {
+    o = o || {}; a = a || {};
+    const opts = (Array.isArray(a.options) ? a.options : []).slice(0, 12).map((x) => String(x)), cap = Math.max(1, o.tries || 3);
+    const pick = o.pick || ((x) => K.choose(x.about, x.options, { skill: x.skill, hint: x.hint, big: !!o.big }));
+    const none = (kind, why, tries) => ({ index: -1, by: 'none', kind, why: String(why || ''), tries });
+    if (opts.length < 2) return none('bad', 'a choice needs two or more options', 0);
+    if (!o.pick && !(WN && WN.p0 && WN.p0.juli && WN.p0.juli.choose)) return none('nojuli', 'Juli plays inside p0pc0rn', 0);
+    let tries = 0, kind = 'unreadable', why = '';
+    while (tries < cap) {
+      if (picking) { let tw = null; await Promise.race([picking, new Promise((res) => { tw = setTimeout(res, o.waitMs == null ? 20000 : o.waitMs); })]); clearTimeout(tw); }
+      if (o.alive && !o.alive()) return none('dropped', 'the turn ended', tries);
+      tries++; let timer = null, r = null;
+      try {
+        const asked = Promise.resolve().then(() => pick({ about: String(a.about || ''), options: opts, hint: String(a.hint || ''), skill: String(a.skill || '') }));
+        const mine = asked.then(() => {}, () => {}); picking = mine; mine.then(() => { if (picking === mine) picking = null; });
+        try { r = await Promise.race([asked, new Promise((res) => { timer = setTimeout(() => res({ by: 'timeout' }), o.timeoutMs || 180000); })]); }
+        finally { clearTimeout(timer); }
+      } catch (e) {
+        const code = String((e && e.code) || '');
+        return none(KIND_OF_CODE[code] || 'stopped', (e && (e.message || e.code)) || 'it stopped', tries);
+      }
+      if (r && r.by === 'juli' && Number.isInteger(r.index) && r.index >= 0 && r.index < opts.length) return { index: r.index, by: 'juli', tries, said: r.said || null, big: !!r.big };
+      why = String((r && r.why) || '');
+      if (r && r.by === 'timeout') return none('stopped', 'no answer in time', tries);
+      if (/bigger brain/i.test(why)) return none('nobig', why, tries);   // asked for the Bigger brain while it is not on (never Juli's model instead)
+      if (/not downloaded/i.test(why)) return none('missing', why, tries);
+      if (/still choosing|queue is busy/i.test(why)) { kind = 'busy'; if (tries < cap) await sleep(o.retryMs == null ? 600 : o.retryMs); continue; }
+      if (why && !/named no|no option|unreadable/i.test(why)) return none('stopped', why, tries);   // her model failed or stopped
+      kind = 'unreadable';   // her answer named no option: ask her again
+    }
+    return none(kind, why || 'her answer named no choice', tries);
+  };
+  /** await K.game.work(step, {sliceMs, wallMs}) - long work in slices: step(sliceMs) works for at most sliceMs and returns true when it is
+   *  finished; between slices the page draws its frames. Resolves when step says it is finished or after wallMs (true = finished). */
+  G.work = async (step, o) => {
+    o = o || {}; const slice = o.sliceMs || 10, t0 = now(), wall = o.wallMs || 2000;
+    for (;;) { if (step(slice)) return true; if (now() - t0 >= wall) return false; await tick(); }
+  };
+  G.tick = () => tick();
+
+  // ------------------------------------------------------------------ a search for two-player games (negamax with alpha-beta)
+  const WINV = 1e6, STOP = { stop: true };
+  G.WIN = WINV;
+  function negamax(x, s, who, depth, alpha, beta, ply) {
+    const sp = x.sp;
+    if (++x.nodes > x.max || ((x.nodes & 255) === 0 && x.deadline && now() > x.deadline)) throw STOP;
+    if (depth <= 0) return sp.score(s, who);
+    const ms = sp.moves(s, who);
+    if (!ms.length) return 0;
+    let best = -Infinity;
+    for (const m of ms) {
+      const u = sp.do(s, m, who); let v;
+      try {
+        if (sp.won(s, m, u, who)) v = WINV - ply;
+        else if (sp.draw && sp.draw(s, m, u, who)) v = 0;
+        else v = -negamax(x, s, x.next(who), depth - 1, -beta, -alpha, ply + 1);
+      } finally { sp.undo(s, m, u, who); }
+      if (v > best) best = v;
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+  // the search's core yields between root moves: the async driver lets frames through there, the sync one runs straight on
+  function* searchCore(sp, o) {
+    const s = sp.state, who = sp.who || 1, t0 = now(), maxD = Math.max(1, o.depth || 6);
+    const x = { sp, nodes: 0, max: o.maxNodes || 4e6, deadline: o.timeMs ? t0 + o.timeMs : 0, next: sp.next || ((w) => 3 - w) };
+    let order = sp.moves(s, who).slice(), best = null, depth = 0;
+    if (!order.length) return { move: null, score: 0, ranked: [], depth: 0, nodes: 0, ms: 0 };
+    for (let d = 1; d <= maxD; d++) {
+      const ranked = []; let stopped = false;
+      for (const m of order) {
+        yield;
+        if (x.deadline && now() > x.deadline && best) { stopped = true; break; }
+        const u = sp.do(s, m, who); let v = 0;
+        try {
+          if (sp.won(s, m, u, who)) v = WINV;
+          else if (sp.draw && sp.draw(s, m, u, who)) v = 0;
+          else v = -negamax(x, s, x.next(who), d - 1, -Infinity, Infinity, 1);
+        } catch (e) { if (e === STOP) stopped = true; else throw e; }
+        finally { sp.undo(s, m, u, who); }
+        if (stopped) break;
+        ranked.push({ move: m, score: v });
+      }
+      if (stopped) break;
+      ranked.sort((a, b) => b.score - a.score);   // stable: equal scores keep the move order
+      best = ranked; depth = d; order = ranked.map((r) => r.move);
+      if (ranked[0].score >= WINV - 64 || ranked.every((r) => r.score <= -WINV + 64)) break;   // the result is known: deeper changes nothing
+    }
+    if (!best) best = order.map((m) => ({ move: m, score: 0 }));
+    return { move: best[0].move, score: best[0].score, ranked: best, depth, nodes: x.nodes, ms: Math.round(now() - t0) };
+  }
+  /** await K.game.search(spec, {depth, timeMs, sliceMs, maxNodes}) -> {move, score, ranked: [{move, score}] (best first), depth, nodes, ms}
+   *  spec = {state (searched IN PLACE: pass a copy), who (1 or 2), moves(s, who) (best-looking first), do(s, m, who) -> undo info,
+   *  undo(s, m, undo, who), won(s, m, undo, who) (did who just win?), draw(s, m, undo, who), score(s, who) (a heuristic for the side to move:
+   *  higher is better for it), next(who) (default 3 - who)}. It deepens one level at a time until depth, timeMs or a known result, and lets
+   *  frames through every sliceMs (8) so the game keeps its frame rate while it thinks. A win scores K.game.WIN less the moves it takes. */
+  G.search = async (spec, o) => {
+    o = o || {}; const it = searchCore(spec, o), slice = o.sliceMs || 8; let at = now(), r = it.next();
+    while (!r.done) { if (now() - at > slice) { await tick(); at = now(); } r = it.next(); }
+    return r.value;
+  };
+  /** K.game.searchSync(spec, {depth, timeMs, maxNodes}) - the same, at once (small depths, tests) */
+  G.searchSync = (spec, o) => { const it = searchCore(spec, o || {}); let r = it.next(); while (!r.done) r = it.next(); return r.value; };
+
+  // ------------------------------------------------------------------ the match: you (1) against Juli (2)
+  /** K.game.match(cfg) -> M: turns, save and resume, the score and Juli's moves for a two-player game (1 = the person, 2 = Juli).
+   *  cfg = {
+   *    key: 'mygame.v1' (K.save key), first: 'you'|'juli'|'take turns',
+   *    fresh() -> a new board, legal(board, who) -> moves, apply(board, move, who) -> {board, last} (a NEW board; last = what to remember of
+   *    the move), result(board, move, who, applied) -> null or {who: 1|2 (the winner)|0 (a draw), cells}, valid(board) -> bool (a saved
+   *    board to trust), same(a, b) (two moves are the same; default by JSON),
+   *    animate(move, who, applied) -> a promise (the move's animation: the match waits for it),
+   *    juli: { ask(board, legal) -> {about, options: [{move, label}] (EVERY legal move), hint, skill} (may be async: the game's read),
+   *      pick(a) (default K.choose), big() (true: the Bigger brain is the opponent, K.choose's big), tries (3: an answer that names no
+   *      option is asked again), minMs (700: her turn lasts at least this), timeoutMs, beforeMove(move) (a promise before her move lands) },
+   *    tally(st, who) (the game's own counts at the end of a game, in st.keep: a run of wins, an unlock; saved with the score) }
+   *  Juli's model makes every move: her answer is her move, even a weak one. When she gives none (her model stopped, still no clear
+   *  answer after `tries`, not downloaded...) the match is STUCK: M.stuck = {kind, why} and the event 'stuck'; show it in plain words with
+   *  an "Ask Juli again" button (M.askAgain()). The match never moves for her; only a move that is the ONLY legal one is played as it is
+   *  (by 'forced').
+   *  M.st = {v, board, turn, over: null|{who, cells}, games, score: {you, juli, draw}, last, moves, by: 'juli'|'forced'|null, streak: {who, n},
+   *  keep: {} (the game's own values that last across games: what the person earned, a chosen opponent)} is saved after every move, so a
+   *  game left open (or a page that reloaded) goes on where it was; on Juli's turn she is asked.
+   *  M.start(), M.play(move) (the person's move; false when it is not theirs to make), M.canPlay(), M.newGame(), M.askAgain(),
+   *  M.newGame({clear}) - clear() = the game's clear-out animation (a promise): the game that was on stops at once (Juli's turn, the end of
+   *  a move still falling: no 'end', no turn), then the clear-out plays, then the new game starts; M.clearing is set meanwhile,
+   *  M.thinking ({t0} while she chooses), M.stuck, M.animating, M.phase ('you'|'juli'|'moving'|'stuck'|'over'|'clearing'),
+   *  M.stats ({asked, juli, forced, reasked, stuck}), M.on(event, fn): 'new', 'resume', 'move' ({move, who, by}), 'think', 'decided'
+   *  ({move, by, tries, index}), 'stuck' ({kind, why}), 'turn', 'end' (over). */
+  G.match = (cfg) => {
+    const M = { cfg, st: null, thinking: null, stuck: null, animating: 0, clearing: null, gen: 0, stats: { asked: 0, juli: 0, forced: 0, reasked: 0, stuck: 0 }, ev: {} };
+    const key = cfg.key || 'game.v1', same = cfg.same || ((a, b) => JSON.stringify(a) === JSON.stringify(b));
+    const firstOf = (n) => (cfg.first === 'you' ? 1 : cfg.first === 'juli' ? 2 : n % 2 ? 1 : 2);   // take turns: the person starts game 1
+    const fresh = (prev) => ({ v: 1, board: cfg.fresh(), turn: 1, over: null, games: (prev && +prev.games) || 0,
+      score: Object.assign({ you: 0, juli: 0, draw: 0 }, prev && prev.score && typeof prev.score === 'object' ? prev.score : {}), last: null, moves: 0, by: null,
+      streak: prev && prev.streak && typeof prev.streak === 'object' ? prev.streak : { who: 0, n: 0 },
+      keep: prev && prev.keep && typeof prev.keep === 'object' && !Array.isArray(prev.keep) ? prev.keep : {} });
+    M.emit = (e, x) => { for (const fn of M.ev[e] || []) try { fn(x); } catch (er) { report(er); } };
+    M.on = (e, fn) => { (M.ev[e] = M.ev[e] || []).push(fn); return M; };
+    M.save = () => { try { if (K.save) K.save(key, M.st); } catch (e) { /* */ } };
+    M.load = () => {
+      let s = null; try { s = K.load ? K.load(key, null) : null; } catch (e) { s = null; }
+      const ok = !!s && typeof s === 'object' && Array.isArray(s.board) && (s.turn === 1 || s.turn === 2) && (!cfg.valid || cfg.valid(s.board));
+      M.st = ok ? Object.assign(fresh(s), s) : fresh(s && typeof s === 'object' ? s : null);
+      delete M.st.level;   // a 3.9 save: its level is gone (Juli always plays her best)
+      if (!M.st.score || typeof M.st.score !== 'object') M.st.score = { you: 0, juli: 0, draw: 0 };
+      if (!M.st.streak || typeof M.st.streak !== 'object') M.st.streak = { who: 0, n: 0 };
+      if (!M.st.keep || typeof M.st.keep !== 'object' || Array.isArray(M.st.keep)) M.st.keep = {};
+      return M.st;
+    };
+    Object.defineProperty(M, 'phase', { get: () => (!M.st ? 'idle' : M.clearing ? 'clearing' : M.st.over ? 'over' : M.animating ? 'moving' : M.stuck ? 'stuck' : M.st.turn === 2 ? 'juli' : 'you') });
+    M.canPlay = () => !!M.st && !M.st.over && M.st.turn === 1 && !M.thinking && !M.animating && !M.clearing;
+    M.legal = (who) => (M.st ? cfg.legal(M.st.board, who || M.st.turn) : []);
+    M.start = (o) => {
+      M.load(); G._match = M;
+      if (!M.st.games) M.newGame({ quiet: true, introMs: o && o.introMs });
+      else { M.emit('resume', M.st); if (!M.st.over && M.st.turn === 2) M.juliTurn(); }
+      return M;
+    };
+    M.newGame = (o) => {
+      o = o || {};
+      if (o.clear) {   // the game that was on stops now; its clear-out plays; then the new game
+        if (M.clearing) return M.clearing;
+        M.thinking = null; M.stuck = null; M.gen++;
+        const next = Object.assign({}, o, { clear: null });
+        M.clearing = Promise.resolve().then(() => o.clear()).catch(report).then(() => { M.clearing = null; return M.newGame(next); });
+        return M.clearing;
+      }
+      M.thinking = null; M.stuck = null; M.gen++; M.clearing = null;
+      const keep = M.st || fresh(null), nx = fresh(keep); nx.games = (+keep.games || 0) + 1; nx.turn = firstOf(nx.games);
+      M.st = nx; M.save(); M.emit('new', { quiet: !!o.quiet, turn: nx.turn });
+      if (nx.turn === 2) { const g = nx.games; setTimeout(() => { if (M.st.games === g && !M.st.over && M.st.turn === 2 && !M.st.moves) M.juliTurn(); }, o.introMs == null ? 450 : o.introMs); }
+      else M.emit('turn', 1);
+      return M.st;
+    };
+    M.play = (move) => {
+      if (!M.canPlay()) return false;
+      if (!cfg.legal(M.st.board, 1).some((m) => same(m, move))) return false;
+      commit(move, 1, null); return true;
+    };
+    /** after "Ask Juli again": her turn once more (only while the match is stuck on her turn) */
+    M.askAgain = () => { if (!M.stuck || !M.st || M.st.over || M.st.turn !== 2) return false; M.stuck = null; M.juliTurn(); return true; };
+    function tally(who) {
+      const s = M.st.score; if (who === 1) s.you++; else if (who === 2) s.juli++; else s.draw++;
+      const k = M.st.streak; if (who && k.who === who) k.n++; else { k.who = who; k.n = who ? 1 : 0; }
+      if (cfg.tally) try { cfg.tally(M.st, who); } catch (e) { report(e); }   // the game's own counts (st.keep), in the same save
+    }
+    async function commit(move, who, by) {
+      const g = M.st.games, gen = M.gen, applied = cfg.apply(M.st.board, move, who) || {}, board = applied.board || applied;
+      M.st.board = board; M.st.last = applied.last !== undefined ? applied.last : move; M.st.moves++; M.st.by = who === 2 ? by || 'juli' : null;
+      const res = cfg.result(board, move, who, applied);
+      if (res) { M.st.over = { who: res.who || 0, cells: res.cells || [] }; tally(res.who || 0); } else M.st.turn = 3 - who;
+      M.save(); M.emit('move', { move, who, by: M.st.by, applied });
+      M.animating++;
+      try { if (cfg.animate) await cfg.animate(move, who, applied); } catch (e) { report(e); } finally { M.animating = Math.max(0, M.animating - 1); }
+      if (M.st.games !== g || M.gen !== gen) return;   // a new game started (or is clearing) meanwhile
+      if (M.st.over) { M.emit('end', M.st.over); return; }
+      if (M.st.turn === 2) M.juliTurn(); else M.emit('turn', 1);
+    }
+    /** Juli's turn: the game reads the board (ask), her model picks one of EVERY legal move and her answer is her move. Never twice for one
+     *  turn; no move from her = stuck (never a move made for her) */
+    M.juliTurn = async () => {
+      if (!M.st || M.st.over || M.st.turn !== 2 || M.thinking || M.animating || M.clearing) return;
+      const J = cfg.juli || {}, token = M.st.games + ':' + M.st.moves, th = M.thinking = { t0: now(), token };
+      M.stuck = null;
+      const stale = () => M.thinking !== th || !M.st || M.st.over || M.st.turn !== 2 || token !== M.st.games + ':' + M.st.moves || !!M.clearing;
+      const bail = () => { if (M.thinking === th) M.thinking = null; };
+      const stuck = (kind, why) => { if (M.thinking === th) M.thinking = null; M.stuck = { kind: kind || 'stopped', why: String(why || '') }; M.stats.stuck++; M.emit('stuck', M.stuck); };
+      M.emit('think', th);
+      let move = null, by = 'juli';
+      try {
+        const legal = cfg.legal(M.st.board, 2);
+        if (!legal.length) return bail();
+        if (legal.length === 1) { move = legal[0]; by = 'forced'; M.stats.forced++; }   // the only legal move: nothing to choose
+        else {
+          const a = J.ask ? await J.ask(G.copy(M.st.board), legal) : null;
+          if (stale()) return bail();
+          if (!a || !Array.isArray(a.options) || a.options.length < 2) return stuck('bad', 'the game offered no choice');
+          M.stats.asked++;
+          const big = !!(J.big && J.big());
+          const r = await G.juliPick({ about: a.about, options: a.options.map((x) => x.label), hint: a.hint, skill: a.skill }, { pick: J.pick, big, tries: J.tries, timeoutMs: J.timeoutMs, alive: () => !stale() });
+          if (stale()) return bail();
+          th.tries = r.tries; if (r.tries > 1) M.stats.reasked += r.tries - 1;
+          if (r.by !== 'juli' || !a.options[r.index] || !legal.some((m) => same(m, a.options[r.index].move))) return stuck(r.kind, r.why);
+          move = a.options[r.index].move; th.index = r.index; th.said = r.said || null; th.big = !!r.big; M.stats.juli++;
+        }
+        const wait = (J.minMs == null ? 700 : J.minMs) - (now() - th.t0);
+        if (wait > 0) await sleep(wait);
+        if (stale()) return bail();
+        th.move = move; th.by = by; M.emit('decided', { move, by, tries: th.tries || 0, index: th.index, big: !!th.big });
+        if (J.beforeMove) await J.beforeMove(move, by);
+        if (stale()) return bail();
+      } catch (e) {
+        report(e); if (stale()) return bail();
+        return stuck('stopped', (e && (e.code || e.message)) || 'it stopped');
+      }
+      M.thinking = null;
+      commit(move, 2, by);
+    };
+    return M;
+  };
+
+  // ------------------------------------------------------------------ Juli's avatar, the players' cards, the results card
+  const JULI = { a: '#7a4cf0', b: '#2a1660', bubble: '#fff4d6', dot: '#2a1b4a', spark: '#ffc43a' };
+  /** K.game.avatar(cx, cy, r, {mood: 'idle'|'thinking'|'happy'|'sad', t, ring}) - Juli as a player: her speech bubble with three dots on a
+   *  violet disc. thinking = the dots wave and a ring turns; happy = she bounces and a sparkle shines; sad = the dots settle low. */
+  G.avatar = (cx, cy, r, o) => {
+    o = o || {}; const mood = o.mood || 'idle', t = o.t == null ? K.t : o.t, still = G.reduced;
+    const bounce = mood === 'happy' && !still ? Math.abs(Math.sin(t * 7)) * r * 0.12 : 0, breathe = mood === 'idle' && !still ? 1 + 0.02 * Math.sin(t * 2.2) : 1;
+    const y = cy - bounce, R = r * breathe;
+    K.with((c) => {
+      const g = c.createLinearGradient(cx - R, y - R, cx + R, y + R); g.addColorStop(0, JULI.a); g.addColorStop(1, JULI.b);
+      c.fillStyle = g; c.beginPath(); c.arc(cx, y, R, 0, Math.PI * 2); c.fill();
+      c.lineWidth = Math.max(1, R * 0.06); c.strokeStyle = 'rgba(255,255,255,0.22)'; c.stroke();
+      const bw = R * 1.12, bh = R * 0.78, bx = cx - bw / 2, by = y - bh / 2 - R * 0.06;   // the bubble and its tail
+      c.fillStyle = JULI.bubble; K.pathRR(c, bx, by, bw, bh, bh * 0.36); c.fill();
+      c.beginPath(); c.moveTo(bx + bw * 0.22, by + bh - 1); c.lineTo(bx + bw * 0.16, by + bh + R * 0.24); c.lineTo(bx + bw * 0.42, by + bh - 1); c.closePath(); c.fill();
+      for (let i = 0; i < 3; i++) {
+        const dx = (i - 1) * bw * 0.24, ph = t * 7 - i * 0.7;
+        const dy = mood === 'thinking' && !still ? -Math.max(0, Math.sin(ph)) * bh * 0.16 : mood === 'sad' ? bh * 0.1 : 0;
+        c.fillStyle = mood === 'happy' && i === 1 ? '#e53935' : JULI.dot; c.globalAlpha = mood === 'thinking' && !still ? 0.55 + 0.45 * Math.max(0, Math.sin(ph)) : 1;
+        c.beginPath(); c.arc(cx + dx, by + bh / 2 + dy, R * 0.085, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
+      }
+      if (mood === 'happy' || o.spark !== false) {   // the sparkle at the top right (Juli's mark); it shines when she is happy
+        const sx = cx + R * 0.62, sy = y - R * 0.6, s = R * (mood === 'happy' && !still ? 0.26 + 0.06 * Math.sin(t * 9) : 0.2);
+        c.fillStyle = JULI.spark; c.beginPath(); c.moveTo(sx, sy - s); c.quadraticCurveTo(sx, sy, sx + s, sy); c.quadraticCurveTo(sx, sy, sx, sy + s); c.quadraticCurveTo(sx, sy, sx - s, sy); c.quadraticCurveTo(sx, sy, sx, sy - s); c.fill();
+      }
+      if (mood === 'thinking' && o.ring !== false) {
+        const a0 = still ? -Math.PI / 2 : t * 4.2;
+        c.lineWidth = Math.max(1.5, R * 0.1); c.lineCap = 'round'; c.strokeStyle = K.alpha(JULI.spark, 0.9);
+        c.beginPath(); c.arc(cx, y, R + c.lineWidth * 1.4, a0, a0 + Math.PI * 0.7); c.stroke();
+        c.strokeStyle = K.alpha(JULI.spark, 0.3); c.beginPath(); c.arc(cx, y, R + c.lineWidth * 1.4, a0 + Math.PI, a0 + Math.PI * 1.35); c.stroke();
+      }
+    });
+  };
+  /** K.game.player(id, x, y, w, h, {name, score, color, active, juli, mood, align: 'left'|'right'}) - a player's card: their piece (or
+   *  Juli's avatar), name and score; the active player's card is lifted and lit in their colour; a new point pops */
+  const seenScore = {};
+  G.player = (id, x, y, w, h, o) => {
+    o = o || {}; const act = K.anim('gk:pl:' + id, o.active ? 1 : 0, 10), col = o.color || K.C.accent, right = o.align === 'right';
+    const sc = +o.score || 0;
+    const bump = K.springTo('gk:plpop:' + id, 1, { k: 420, d: 14 });
+    if (seenScore[id] != null && seenScore[id] !== sc) K.springKick('gk:plpop:' + id, 7);   // a new point pops
+    seenScore[id] = sc;
+    if (act > 0.02) G.glow(x + w / 2, y + h / 2, Math.max(w, h) * 0.62, col, 0.16 * act);
+    K.rect(x, y - 2 * act, w, h, { r: Math.min(18, h / 2), fill: K.alpha('#ffffff', 0.06 + 0.05 * act), stroke: K.alpha(col, 0.15 + 0.55 * act), sw: 1 + act });
+    const cy = y + h / 2 - 2 * act, ir = Math.min(h * 0.3, 18), ix = right ? x + w - 12 - ir : x + 12 + ir;
+    if (o.juli) G.avatar(ix, cy, ir, { mood: o.mood || 'idle' }); else G.piece(ix, cy, ir * 0.92, col, { style: 'disc', shadow: false });
+    const tx = right ? ix - ir - 10 : ix + ir + 10, al = right ? 'right' : 'left', maxW = Math.max(40, w - 2 * ir - 64);
+    K.text(o.name || '', tx, cy - (o.sub ? 6 : -5), 'subhead', K.alpha(K.C.text, 0.62 + 0.38 * act), { align: al, weight: 600, maxW });
+    if (o.sub) K.text(o.sub, tx, cy + 13, 'caption', K.alpha(col, 0.55 + 0.45 * act), { align: al, maxW, weight: 600 });
+    const nx = right ? x + 14 : x + w - 14, ny = cy + 1;
+    push(); translate(nx, ny); scale(bump); translate(-nx, -ny);
+    K.num(String(sc), nx, cy + 10, 'score', K.C.text, { align: right ? 'left' : 'right', size: Math.min(28, h * 0.46) });
+    pop();
+  };
+  /** K.game.button(id, x, y, w, h, label, {color, icon, style: 'solid'|'soft'|'ghost', role}) -> true on tap: a game's call to action. Lit
+   *  like a piece (a gradient and a gloss band), it presses in with a spring; no blurred shadow (it stays cheap while a card slides) */
+  G.button = (id, x, y, w, h, label, o) => {
+    o = o || {}; const col = o.color || K.C.accent, style = o.style || 'solid', held = !!K.holdIn(x, y, w, h), tap = K.tapIn(x, y, w, h);
+    K.uiRect(x, y, w, h); K.registerControl(id, x, y, w, h);
+    const s = K.springTo('gk:btn:' + id, held ? 0.965 : 1, { k: 520, d: 26 }), cx = x + w / 2, cy = y + h / 2, r = Math.min(h / 2, o.r == null ? h / 2 : o.r);
+    K.with((c) => {
+      c.translate(cx, cy); c.scale(s, s); c.translate(-cx, -cy);
+      if (style === 'solid') {
+        let g = c.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, K.lighten(col, 0.16)); g.addColorStop(1, G.shade(col, 0.18));
+        c.fillStyle = g; K.pathRR(c, x, y, w, h, r); c.fill();
+        c.save(); K.pathRR(c, x, y, w, h, r); c.clip(); g = c.createLinearGradient(0, y, 0, y + h * 0.55); g.addColorStop(0, 'rgba(255,255,255,0.26)'); g.addColorStop(1, 'rgba(255,255,255,0.02)'); c.fillStyle = g; c.fillRect(x, y, w, h * 0.55); c.restore();
+        c.lineWidth = 1; c.strokeStyle = 'rgba(255,255,255,0.22)'; K.pathRR(c, x + 0.5, y + 0.5, w - 1, h - 1, Math.max(0, r - 0.5)); c.stroke();
+      } else if (style === 'soft') { c.fillStyle = K.alpha(col, held ? 0.3 : 0.2); K.pathRR(c, x, y, w, h, r); c.fill(); c.lineWidth = 1; c.strokeStyle = K.alpha(col, 0.45); c.stroke(); }
+      else if (held) { c.fillStyle = 'rgba(255,255,255,0.08)'; K.pathRR(c, x, y, w, h, r); c.fill(); }
+    });
+    const fg = style === 'solid' ? K.onColor(col) : style === 'soft' ? K.lighten(col, 0.55) : K.C.text2, role = o.role || (h < 40 ? 'subhead' : 'button');
+    const tw = K.measure(label, role, { weight: 700 }), isz = o.icon ? Math.min(22, h * 0.44) : 0, gap = o.icon ? 8 : 0, lx = cx - (tw + isz + gap) / 2;
+    push(); translate(cx, cy); scale(s); translate(-cx, -cy);
+    if (o.icon) K.icon(o.icon, lx + isz / 2, cy, isz, fg, { weight: 2.4 });
+    K.text(label, lx + isz + gap, cy + 0.5, role, fg, { base: 'middle', weight: 700 });
+    pop();
+    if (tap) G.sound.play('tap');
+    return !!tap;
+  };
+  /** K.game.results(id, o) -> null | 'again' | 'board': the end-of-game card, from the bottom with a spring, modal (the game behind it
+   *  is inert). o = {open, outcome: 'win'|'lose'|'draw', title, sub, color, score: {you, juli, draw}, prev (the score before this game:
+   *  the changed number rolls up from it), names: {you, juli}, colors: {you, juli}, streak: {who, n}, note (a short line under the score),
+   *  progress: {n, of, text} (a run toward something to earn, as pips and a line: "3 in a row: 7 more to unlock a new opponent"; it takes
+   *  the streak's place), again: 'Play again'}. 'board' = the person wants to look at the board (close it). */
+  const resOpen = {};
+  G.results = (id, o) => {
+    o = o || {};
+    if (o.open && !resOpen[id]) for (const kk of ['you', 'draw', 'juli']) if (K.countReset) K.countReset('gk:res:' + id + ':' + kk, (o.prev || o.score || {})[kk] || 0);
+    resOpen[id] = !!o.open;
+    const k = K.springTo('gk:res:' + id, o.open ? 1 : 0, { k: 210, d: 23 });
+    if (k < 0.004 && !o.open) return null;
+    const pg = o.progress && o.progress.of > 0 ? o.progress : null, po = pg ? 12 : 0;   // the run's pips and line need a little room
+    let act = null; const W = K.W, H = K.H, cw = Math.min(W - 24, 440), ch = 398 + po, bot = Math.max(14, K.safe.bottom + 6);
+    const x = (W - cw) / 2, y = Math.max(8, H - (ch + bot) * clamp(k, 0, 1.08)), col = o.color || K.C.accent;
+    const draw = () => {
+      K.rect(0, 0, W, H, { r: 0, fill: 'rgba(6,4,14,' + (0.5 * clamp(k, 0, 1)) + ')' });
+      if (o.open && K.tapIn(0, 0, W, y - 10)) act = 'board';
+      G.glow(x + cw / 2, y + 40, cw * 0.55, col, 0.22 * clamp(k, 0, 1));
+      K.rect(x, y, cw, ch + 40, { r: 26, grad: ['#2b1d58', '#120c24'], stroke: K.alpha(col, 0.45), sw: 1.5 });   // no blurred shadow: it slides
+      K.rect(x + cw / 2 - 18, y + 8, 36, 5, { r: 3, fill: 'rgba(255,255,255,0.18)' });
+      const cx = x + cw / 2, em = y + 52;
+      if (o.outcome === 'lose') G.avatar(cx, em, 26, { mood: 'happy' });
+      else { G.glow(cx, em, 46, col, 0.5); K.circle(cx, em, 27, { fill: K.alpha(col, 0.22), stroke: K.alpha(col, 0.7), sw: 2 }); K.icon(o.outcome === 'win' ? 'trophy' : 'grid', cx, em, 28, o.outcome === 'win' ? '#ffd76a' : K.C.text, { weight: 2.4 }); }
+      const title = String(o.title || ''), size = Math.min(32, 32 * (cw - 40) / Math.max(1, K.measure(title, 'title', { size: 32, weight: 800, family: 'ROUNDED' })));
+      G.glow(cx, y + 106, Math.min(cw * 0.42, 150), col, 0.22);   // a light behind the title (a cached sprite, not a text blur)
+      K.text(title, cx, y + 116, 'title', K.C.text, { align: 'center', size, weight: 800, family: 'ROUNDED' });
+      if (o.sub) K.text(o.sub, cx, y + 142, 'subhead', K.C.text2, { align: 'center', maxW: cw - 40 });
+      const sc = o.score || {}, names = o.names || {}, cols = o.colors || {}, colW = (cw - 32) / 3;
+      [['you', names.you || 'You', cols.you], ['draw', 'Draws', null], ['juli', names.juli || 'Juli', cols.juli]].forEach(([kk, nm, cc], i) => {
+        const bx = x + 16 + i * colW + colW / 2, v = Math.round(K.count('gk:res:' + id + ':' + kk, +sc[kk] || 0, 700));
+        if (cc) G.piece(bx - K.measure(nm, 'caption') / 2 - 10, y + 172, 6, cc, { shadow: false });
+        K.text(nm, bx + (cc ? 4 : 0), y + 176, 'caption', K.C.text3, { align: 'center' });
+        K.num(String(v), bx, y + 210, 'score', K.C.text, { align: 'center', size: 30 });
+      });
+      if (pg) {   // the run toward an unlock: a pip a win, the next one breathing, then the line
+        const of = Math.max(1, Math.min(20, pg.of | 0)), n = clamp(pg.n | 0, 0, of), gap = Math.min(24, (cw - 72) / of), x0 = cx - gap * (of - 1) / 2, run = cols.you || col;
+        for (let i = 0; i < of; i++) {
+          const nx = i === n && !G.reduced ? 0.5 + 0.5 * Math.sin(K.t * 4) : 0;
+          if (i < n) { G.glow(x0 + i * gap, y + 236, 11, run, 0.35); K.circle(x0 + i * gap, y + 236, 5.5, { fill: run }); }
+          else K.circle(x0 + i * gap, y + 236, 4.5, Object.assign({ fill: 'rgba(255,255,255,' + (0.12 + 0.12 * nx) + ')' }, i === n ? { stroke: K.alpha(run, 0.35 + 0.4 * nx), sw: 1.5 } : {}));
+        }
+        if (pg.text) K.text(String(pg.text), cx, y + 262, 'footnote', K.C.text, { align: 'center', maxW: cw - 40, weight: 600 });
+      } else if (o.streak && o.streak.n >= 2 && o.streak.who) K.chip(cx - K.chipWidth((o.streak.n) + ' in a row', { icon: 'flame' }) / 2, y + 222, o.streak.n + ' in a row', { icon: 'flame', color: o.streak.who === 1 ? (cols.you || col) : (cols.juli || col) });
+      if (o.note) K.text(String(o.note), cx, y + 276 + po, 'footnote', K.C.text2, { align: 'center', maxW: cw - 40 });
+      if (G.button('gk:res:' + id + ':again', x + 20, y + 300 + po, cw - 40, 50, o.again || 'Play again', { icon: 'refresh', color: col })) act = 'again';
+      if (G.button('gk:res:' + id + ':board', x + 20, y + 354 + po, cw - 40, 34, 'See the board', { style: 'ghost' })) act = 'board';
+    };
+    if (o.open) K.modal(true, draw); else if (K.inert) K.inert(draw); else draw();
+    return act;
+  };
+  /** K.game.unlock(id, o) -> null | 'action' | 'again': the celebration card for something the person EARNED (a new opponent, a board, a
+   *  level): it rises with a spring and a little overshoot, its badge glows gold with slowly turning rays, then the title, a line or two,
+   *  the action (o.action, e.g. 'Choose your opponent') and a quieter second button (o.again, e.g. 'Play again'). Modal, like the results
+   *  card. o = {open, title, sub, icon ('trophy'), color (gold), action, again}. Burst K.game.celebrate() when it opens. */
+  G.unlock = (id, o) => {
+    o = o || {};
+    const k = K.springTo('gk:unl:' + id, o.open ? 1 : 0, { k: 190, d: 17 });
+    if (k < 0.004 && !o.open) return null;
+    let act = null; const W = K.W, H = K.H, cw = Math.min(W - 24, 440), ch = 404, bot = Math.max(14, K.safe.bottom + 6), gold = o.color || '#ffd76a';
+    const x = (W - cw) / 2, y = Math.max(8, H - (ch + bot) * clamp(k, 0, 1.1)), cx = x + cw / 2, kk = clamp(k, 0, 1);
+    const draw = () => {
+      K.rect(0, 0, W, H, { r: 0, fill: 'rgba(6,4,14,' + (0.62 * kk) + ')' });
+      G.glow(cx, y + 70, cw * 0.62, gold, 0.3 * kk);
+      K.rect(x, y, cw, ch + 40, { r: 26, grad: ['#3a2a10', '#140d06'], stroke: K.alpha(gold, 0.7), sw: 2 });
+      K.rect(x + cw / 2 - 18, y + 8, 36, 5, { r: 3, fill: 'rgba(255,255,255,0.2)' });
+      const by = y + 74, t = G.reduced ? 0 : K.t;
+      K.with((c) => {   // the badge's rays, turning slowly (still with reduced motion)
+        c.translate(cx, by); c.rotate(t * 0.35); c.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 12; i++) { c.rotate(Math.PI / 6); c.fillStyle = K.alpha(gold, i % 2 ? 0.1 : 0.2); c.beginPath(); c.moveTo(-5, 34); c.lineTo(5, 34); c.lineTo(15, 74); c.lineTo(-15, 74); c.closePath(); c.fill(); }
+      });
+      G.glow(cx, by, 62, gold, 0.55);
+      K.circle(cx, by, 36, { fill: K.alpha(gold, 0.24), stroke: gold, sw: 2.5 });
+      K.icon(o.icon || 'trophy', cx, by, 38, gold, { weight: 2.4 });
+      const title = String(o.title || ''), size = Math.min(30, 30 * (cw - 40) / Math.max(1, K.measure(title, 'title', { size: 30, weight: 800, family: 'ROUNDED' })));
+      K.text(title, cx, y + 158, 'title', '#fff4d6', { align: 'center', size, weight: 800, family: 'ROUNDED' });
+      if (o.sub) K.para(String(o.sub), x + 24, y + 176, cw - 48, 'subhead', K.C.text2, { align: 'center', maxLines: 4 });
+      if (G.button('gk:unl:' + id + ':act', x + 20, y + 290, cw - 40, 52, o.action || 'Continue', { icon: o.actionIcon || 'sparkle', color: gold })) act = 'action';
+      if (o.again && G.button('gk:unl:' + id + ':again', x + 20, y + 350, cw - 40, 38, o.again, { style: 'ghost' })) act = 'again';
+    };
+    if (o.open) K.modal(true, draw); else if (K.inert) K.inert(draw); else draw();
+    if (o.open) G.hot(200);   // the rays turn smoothly while it shows
+    return act;
+  };
+  /** K.game.celebrate({colors}) - the big moment: confetti from both bottom corners, a second wave, then a rain from the top (fewer pieces
+   *  with reduced motion) */
+  G.celebrate = (o) => {
+    o = o || {}; const W = K.W, H = K.H, cols = o.colors && o.colors.length ? o.colors : ['#ffd76a', '#fff4d6', '#ff9f5a', '#7ee0ff', K.C.accent];
+    const tl = G.timeline();
+    for (const at of [0, 520]) tl.call(() => {   // the pool holds 240 pieces: two waves of 90 and a rain of 60
+      G.confetti(W * 0.08, H * 0.98, { n: 45, colors: cols, angle: -Math.PI / 2 + 0.32, spread: 0.6, power: 2300 });
+      G.confetti(W * 0.92, H * 0.98, { n: 45, colors: cols, angle: -Math.PI / 2 - 0.32, spread: 0.6, power: 2300 });
+    }, { at });
+    tl.call(() => G.confetti(W / 2, -20, { n: 60, colors: cols, angle: Math.PI / 2, spread: 2.8, power: 280, life: 4200 }), { at: 1100 });
+    G.hot(4600);
+    return tl.play();
+  };
+
+  // ------------------------------------------------------------------ accessibility: a screen reader hears what happens and can press
+  const AX = { root: null, live: null, btns: new Map(), last: '', timer: null };
+  function axRoot() {
+    if (AX.root || !DOM() || !document.body) return AX.root;
+    try {
+      const root = document.createElement('div');
+      Object.assign(root.style, { position: 'fixed', left: '0', top: '0', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', whiteSpace: 'nowrap', opacity: '0.01' });
+      const live = document.createElement('div'); live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite'); root.appendChild(live);
+      document.body.appendChild(root); AX.root = root; AX.live = live;
+    } catch (e) { AX.root = null; }
+    return AX.root;
+  }
+  /** K.game.a11y: say(text) - a spoken update (a screen reader reads it: "Juli dropped a disc in column C"); controls([{id, label,
+   *  disabled, press}]) - buttons a screen reader (and a keyboard) can reach and press, kept in step with what the canvas shows; title(text)
+   *  - the canvas's own label. Nothing shows on the screen. */
+  G.a11y = {
+    say(text) {
+      text = String(text || ''); if (!text || text === AX.last || !axRoot()) return; AX.last = text;
+      clearTimeout(AX.timer); AX.timer = setTimeout(() => { try { AX.live.textContent = text; } catch (e) { /* */ } }, 60);
+    },
+    controls(list) {
+      if (!axRoot()) return; const seen = new Set();
+      for (const it of list || []) {
+        if (!it || !it.id) continue; seen.add(it.id); let b = AX.btns.get(it.id);
+        if (!b) { b = document.createElement('button'); b.type = 'button'; b.addEventListener('click', () => { const f = b._press; if (f && !b.disabled) { lastInput = now(); snd.gesture(); try { f(); } catch (e) { report(e); } } }); AX.root.appendChild(b); AX.btns.set(it.id, b); }
+        const label = String(it.label || it.id); if (b.textContent !== label) b.textContent = label;
+        if (b.disabled !== !!it.disabled) b.disabled = !!it.disabled; b._press = it.press;
+      }
+      for (const [k, b] of Array.from(AX.btns)) if (!seen.has(k)) { try { b.remove(); } catch (e) { /* */ } AX.btns.delete(k); }
+    },
+    title(text) { try { const cv = document.querySelector('canvas'); if (cv && cv.getAttribute('aria-label') !== text) { cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', String(text)); } } catch (e) { /* */ } },
+    get controlsList() { return Array.from(AX.btns.keys()); },
+  };
+
+  // ------------------------------------------------------------------ frame pacing (games only: once a match started; K.game.pacing = false
+  // keeps 60): 60 fps while anything moves, 30 when calm. Every other app keeps the Kit's own 60 fps
+  let calmSince = 0, rate = 60, hotUntil = 0;
+  /** K.game.hot(ms) - keep 60 fps for ms more (a game's own animation the Game Kit cannot see) */
+  G.hot = (ms) => { hotUntil = Math.max(hotUntil, now() + (ms || 300)); };
+  G.fps = { samples: [], get rate() { return rate; } };
+  function pace() {
+    const f = G.fps.samples; f.push(K.ms || 16.7); if (f.length > 240) f.shift();
+    if (typeof frameRate !== 'function' || G.pacing === false || !G._match) return;
+    const busy = live.tl.size || live.bodies.size || P.length || PT.size || now() - lastInput < 1600 || now() < hotUntil || jolting() || (K.inTransition && K.inTransition()) || (G._match && G._match.animating);
+    if (busy) { calmSince = 0; if (rate !== 60) { rate = 60; try { frameRate(60); } catch (e) { /* */ } } }
+    else if (!calmSince) calmSince = now();
+    else if (rate !== 30 && now() - calmSince > 1200) { rate = 30; try { frameRate(30); } catch (e) { /* */ } }
+  }
+  /** what automated tests read: window.__game (the match's phase, turn, moves, who moved last, the score, the counts, a stuck turn) */
+  function snapshot() {
+    const M = G._match; if (!WN) return;
+    try {
+      WN.__game = M && M.st ? { phase: M.phase, turn: M.st.turn, over: M.st.over ? M.st.over.who : null, moves: M.st.moves, games: M.st.games, by: M.st.by, stuck: M.stuck ? M.stuck.kind : null,
+        score: Object.assign({}, M.st.score), thinking: !!M.thinking, animating: M.animating, stats: Object.assign({}, M.stats), fps: rate, sprites: SPR.size, fx: P.length, reduced: G.reduced, sound: snd.on } : null;
+    } catch (e) { /* */ }
+  }
+  installInput();
+  try {
+    if (WN && WN.p5 && WN.p5.prototype && WN.p5.prototype.registerMethod) {
+      WN.p5.prototype.registerMethod('pre', function () { if (K._ready) { stepInput(); G.step(K.ms || 16.7); } });
+      WN.p5.prototype.registerMethod('post', function () { if (K._ready) { pace(); snapshot(); } });
+    }
+  } catch (e) { /* the game can call K.game.step(ms) itself */ }
+  K.game = G;
+})(typeof K !== 'undefined' ? K : null);
+// ===== end of the Game Kit =====

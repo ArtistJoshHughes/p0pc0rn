@@ -21,6 +21,7 @@
 import { openDB } from './idb.js';
 import { neutralise } from './gemma4.js';
 import { createKB, kbMatch, KB_DB } from './kb.js';
+import { nearWord, flatMath, PERSONA, searchHits, searchSuggestion } from './lookupwords.js';   // 3.9 (juliqa r4)
 
 // The Api-User-Agent comes from ONE config value (config.json -> userAgentUrl: the public repo's address, chosen at launch).
 // A neutral placeholder until then; anything that looks like an email address is refused (it is sent to every wiki).
@@ -369,7 +370,7 @@ const OK_HOST = /^https:\/\/(?:en\.wikipedia\.org|[a-z0-9-]{2,40}\.fandom\.com)\
 const INSTRUCTION_LINE = /\b(ignore (all |any )?(the )?(previous|prior|above)|disregard|new instructions?|system prompt|you are (now |an? )|as an ai\b|developer mode|jailbreak|respond (only )?with|reply (only )?with|output only|do not (tell|mention|reveal)|call the tool|use the tool|assistant:|system:|user:|begin (instructions|prompt)|end (instructions|prompt))/i;
 export function scrub(s, maxlen = LIMITS.srcChars) {
   if (!s) return '';
-  let t = String(s)
+  let t = flatMath(String(s))   // 3.9 (juliqa r4): a formula's column of lines back into its sentence
     .replace(/<!--[\s\S]*?-->/g, ' ')         // comments (EchoLeak hid injections here)
     .replace(/<[^>]+>/g, ' ')                 // stray HTML
     .replace(/https?:\/\/\S+/g, ' ')          // URLs
@@ -472,7 +473,7 @@ function sigWords(s) {
   }
   return out;
 }
-const SUFFIX = ['s', 'es', 'ing', 'ings', 'ed', 'er', 'ers', 'ic', 'ics', 'al', 'ation', 'ations', 'ist', 'ists', 'ism', 'y', 'ly', 'ian', 'ians'];
+const SUFFIX = ['s', 'es', 'ing', 'ings', 'ed', 'er', 'ers', 'ic', 'ics', 'al', 'ation', 'ations', 'ist', 'ists', 'ism', 'y', 'ly', 'ian', 'ians', 'ity', 'ous'];   // 3.9 (juliqa r4): + toxic/toxicity, poison/poisonous
 function sameWord(a, b) {
   if (a === b) return true;
   const [s, l] = a.length <= b.length ? [a, b] : [b, a];
@@ -483,7 +484,7 @@ const relHits = (qw, text) => { const toks = nameToks(text); return new Set([...
 export function relevant(query, title, ...leads) {
   const qw = sigWords(query);
   if (!qw.size) return true;
-  if (relHits(qw, title).size) return true;
+  if (relHits(qw, title).size || [...nameToks(title)].some((t) => [...qw].some((w) => nearWord(w, t)))) return true;   // 3.9 (juliqa r4): + a typo of a title word
   const lead = leads.filter(Boolean).map((t) => String(t).slice(0, 600)).join(' ');
   if (!lead.trim()) return false;
   const need = qw.size <= 2 ? qw.size : qw.size - 1;
@@ -761,6 +762,7 @@ export function quoteCheck(row, portion, ctx) {
   if (at === 0 && !/^[\p{Lu}\d"']/u.test(q)) return 'starts mid-sentence';   // a portion's first words that are not a sentence's
   if (!(/^\s*$/.test(after) || /^[.!?;:,)"]/.test(after) || /^\s-\s/.test(after) || /^\s\(/.test(after))) return 'ends mid-clause';
   if (namesIt(q, ctx.names, ctx.cls, ctx.surname)) return null;
+  if (conceptHit(ctx.concept, q)) return null;   // 3.9 (juliqa): a concept article ("Grape toxicity in dogs"): most of its title's words
   if (ctx.pron.test(q)) {   // "Constructed between 1931 and 1936, it was dedicated ...": the sentences before decide who "it" is
     let about = false;
     for (const sent of (before.trim() ? before.trim().split(SENT_END) : [])) about = namesIt(sent, ctx.names, ctx.cls, ctx.surname) || (about && ctx.pron.test(sent));
@@ -774,12 +776,14 @@ export function readQuotes(parts, title, scrubbed, site = 'wikipedia', extraName
   if (/^list of /i.test(String(title || ''))) return { facts: [], stats };
   const names = aliasesOf(title, scrubbed, extraNames), cls = classNoun(scrubbed);
   const person = personSign(scrubbed) === 'yes', tw = String(title || '').replace(/\s*\(.*?\)\s*$/, '').trim().split(/\s+/);
-  const ctx = { names, cls, surname: person && tw.length > 1 && tw[tw.length - 1].length >= 3 ? tw[tw.length - 1] : null, pron: pronounLead(person, cls) };
+  const ctx = { names, cls, surname: person && tw.length > 1 && tw[tw.length - 1].length >= 3 ? tw[tw.length - 1] : null, pron: pronounLead(person || PERSONA.has(cls), cls) };   // 3.9 (juliqa r4): a character's he / she
+  const cw = sigWords(String(title || '').replace(/\s*\(.*?\)\s*$/, ''));   // 3.9 (juliqa): a concept article's own words
+  ctx.concept = !person && !nameWords(String(title || '').replace(/\s*\(.*?\)\s*$/, '')).size && cw.size >= 2 ? cw : null;
   const kept = [];
   for (const part of parts || []) {
     for (const row of parseQuotes(part.raw)) {
       stats.rows++;
-      if (!subjectIs(row.subject, names) && !(cls && nameNorm(row.subject) === cls)) {   // "The band" = the article's class noun
+      if (!subjectIs(row.subject, names) && !(cls && nameNorm(row.subject) === cls) && !conceptHit(ctx.concept, row.subject + ' ' + row.quote)) {   // 3.9 (juliqa): + a concept article's words   // "The band" = the article's class noun
         stats.other++; stats.why.push({ quote: String(row.quote).slice(0, 220), why: `about ${String(row.subject).slice(0, 60)}` }); continue; }
       const why = quoteCheck(row, part.text, ctx);
       if (why) { stats.dropped++; stats.why.push({ quote: String(row.quote).slice(0, 220), why }); continue; }
@@ -793,6 +797,19 @@ export function readQuotes(parts, title, scrubbed, site = 'wikipedia', extraName
   return { facts, stats: Object.assign(stats, { kept: facts.length, portions: (parts || []).length, cls, names }) };
 }
 export const quoteFact = (q) => ({ relation: 'quote', value: q, kind: 'quote', quote: q });
+/** 3.9 (juliqa): does a sentence carry most of a concept title's significant words (all of 2, all but one of 3 or more)? */
+function conceptHit(cw, text) { return !!cw && relHits(cw, text).size >= (cw.size <= 2 ? cw.size : cw.size - 1); }
+/** 3.9 (juliqa): a title that shares only one word of a topic of 2+ significant words that is not a proper name ("Homemade Astronauts" for
+ *  "homemade pasta", "The Cat Returns" for "Cat diet": opensearch's near matches) */
+function weakTitle(topic, title) { const tw = sigWords(topic); return tw.size >= 2 && !nameWords(topic).size && relHits(tw, title).size <= 1; }
+/** 3.9 (juliqa r4): a search hit or a weak title carries the topic: most of its words (all of 2) in the title, the words Wikipedia
+ *  matched in it (redirect, snippet) and the lead; with a title that shares none of them, its first word too ("Cohoba" is never
+ *  "Cookie dough toxicity": dough and toxicity, no cookie; "Persin" is "Avocado toxicity": the avocado's toxin) */
+function carries(q, title, seen, lead) {
+  const qw = sigWords(q); if (!qw.size) return true;
+  const hits = relHits(qw, [title, seen, String(lead || '').slice(0, 600)].join('. '));
+  return hits.size >= (qw.size <= 2 ? qw.size : qw.size - 1) && (relHits(qw, title).size > 0 || hits.has([...qw][0]));
+}
 /** kept quote facts (the KB and the cache): plain strings within the limits, nothing else */
 export function validQuotes(facts) {
   return (Array.isArray(facts) ? facts : []).filter((f) => f && f.relation === 'quote' && typeof f.value === 'string' && f.value.length >= 10 && f.value.length <= QUOTE_LIMITS.chars + 2
@@ -1062,18 +1079,40 @@ export class Research {
     const ck = 'w3:' + norm(topic), hit = await this.cacheGet(ck, this.liveRevid);   // v022.1: quotes (a v022 'w:' entry has labelled facts)
     if (hit) { const br = bioRefused(topic, hit.title, hit.lead, hit.facts, hit.categories); return br ? miss(topic, br) : Object.assign({}, hit, { cached: true }); }
     const os = await this.api(`${WIKI_API}?action=opensearch&format=json&origin=*&limit=3&namespace=0&search=${enc(topic)}`, { signal });
-    const titles = (os && os[1]) || [];
-    if (!titles.length) return miss(topic, 'no Wikipedia article');
-    let firstReason = '';
+    let titles = (os && os[1]) || [], firstReason = '';
+    const asked = new Set(titles), seenOf = new Map();
+    let sq = topic;   // round 4: the words the search found its hits for (Wikipedia's suggestion, when the topic found none)
+    // 3.9 (juliqa): no usable article by its title: Wikipedia's own full-text search, once, every candidate through the same checks
+    // ("Chocolate toxicity in cats" -> "Theobromine poisoning", "Raw cookie dough" -> "Cookie dough": opensearch matches title starts);
+    // round 4: with its spelling suggestion when it finds nothing ("avocardo" -> "avocado"), and the words it matched in each article
+    // (the redirect, the snippet) count for the topic ("Cracking knuckles" -> "Joint cracking", whose lead never says knuckles)
+    for (let pass = 0; pass < 2; pass++) {
+    if (pass === 1) {
+      let hits = [];
+      for (let k = 0, q = topic; k < 2 && q; k++) {
+        let sr = null;
+        try { sr = await this.api(`${WIKI_API}?action=query&format=json&formatversion=2&origin=*&list=search&srnamespace=0&srlimit=3&srprop=snippet|redirecttitle&srinfo=suggestion&srsearch=${enc(q)}`, { signal }); }
+        catch (e) { if (e && e.name === 'AbortError') throw e; sr = null; }
+        hits = searchHits(sr).filter((h) => !asked.has(h.title));
+        if (hits.length) sq = q;
+        q = hits.length ? '' : searchSuggestion(sr, q);
+      }
+      for (const h of hits) seenOf.set(h.title, h.seen);
+      titles = hits.map((h) => h.title);
+      if (!titles.length) break;
+    }
     for (const t0 of titles) {
       const why = (r) => { if (!firstReason) firstReason = r; };
+      if (/^list of /i.test(t0)) { why(`"${t0}" is a list, not one subject`); continue; }   // 3.9 (juliqa r4): a list is never read (read()): the next candidate
       if (!modelOk(topic, [t0])) { why(`nearest article "${t0}" is a different model`); continue; }
       if (!nameOk(topic, [t0])) { why(`nearest article "${t0}" drops part of the name`); continue; }
       const page = await this.wikiPage(t0, signal);
       if (!page) { why(`"${t0}" came back empty`); continue; }
       if (page.title !== t0 && !(nameOk(topic, [page.title]) && modelOk(topic, [page.title]))) { why(`"${t0}" redirects to "${page.title}", a different name`); continue; }
       if (page.disambiguation) { why(`"${page.title}" is a disambiguation page`); continue; }
-      if (!relevant(topic, page.title) && !relevant(topic, page.title, page.extract)) { why(`nearest article "${page.title}" is not about "${topic}"`); continue; }
+      const seen = seenOf.get(t0) || (page.title !== t0 ? t0 : '');   // 3.9 (juliqa r4): what Wikipedia matched: a search hit's redirect + snippet, or the name that redirected here
+      if (!relevant(topic, page.title) && !relevant(pass === 1 ? sq : topic, page.title, page.extract, seen)) { why(`nearest article "${page.title}" is not about "${topic}"`); continue; }   // 3.9 (juliqa r4): + the words Wikipedia's search found in it ("Persin" for "Avocado toxicity")
+      if ((pass === 1 || weakTitle(topic, page.title)) && !carries(pass === 1 ? sq : topic, page.title, seen, page.extract)) { why(`nearest article "${page.title}" is not about "${topic}"`); continue; }   // 3.9 (juliqa): a search hit, or a title that shares one word only ("The Cat Returns" for "Cat diet"), carries most of the topic's words (round 4: or Wikipedia found them in it)
       const br = bioRefused(topic, page.title, page.extract, null, page.categories);
       if (br) { why(br); continue; }
       const title = safeTitle(page.title);
@@ -1096,7 +1135,8 @@ export class Research {
       await this.cachePut(ck, rec);
       return rec;
     }
-    return miss(topic, firstReason || 'no usable Wikipedia article');
+    }   // 3.9 (juliqa): the two passes
+    return miss(topic, firstReason || (asked.size ? 'no usable Wikipedia article' : 'no Wikipedia article'));
   }
   async wikiPage(title, signal) {
     const d = await this.api(`${WIKI_API}?action=query&format=json&formatversion=2&origin=*&redirects=1&prop=extracts|revisions|categories|info|pageprops`

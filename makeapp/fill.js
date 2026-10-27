@@ -2,6 +2,8 @@
 // slot rules, ONE repair round for whatever is missing or wrong, then a critic that reads a plain summary of the result. Juli never
 // writes code: the skeleton holds it. Live numbers (weather, prices) never come from Juli: those apps fetch them. Whatever the request
 // asks for that the skeleton can't do is said out loud (gaps), not faked.
+// H39: a make may carry a skill's know-how (make-an-app and the person's own: assistant/skills.js) in the router and fill prompts, only
+// where the prompt has room for it with its whole answer (opts.skill: the host fits it). Without one, every prompt is as before.
 //   const r = await makeApp(llm, skels, 'a chore list for the kids with points');   // llm(messages, opts) -> text
 import { ICONS, validateSlots, slotsIn } from './check.js';
 
@@ -32,14 +34,14 @@ function specText(spec) {
   return Object.entries(spec).map(([k, f]) => line(k, f, '- ')).join('\n');
 }
 
-export const routerMessages = (req, skels) => [{ role: 'system', content: 'You choose which app skeleton best fits a request. The skeletons:\n' +
+export const routerMessages = (req, skels, skill = '') => [{ role: 'system', content: 'You choose which app skeleton best fits a request. The skeletons:\n' +
   skels.map((s) => `- ${s.manifest.id}: ${s.manifest.description}`).join('\n') +
-  '\n- none: nothing above fits.\nReply with JSON only, like {"skeleton": "' + skels[0].manifest.id + '"}.' }, { role: 'user', content: String(req).slice(0, 600) }];
+  '\n- none: nothing above fits.\n' + (skill ? '\n' + skill + '\n\n' : '') + 'Reply with JSON only, like {"skeleton": "' + skels[0].manifest.id + '"}.' }, { role: 'user', content: String(req).slice(0, 600) }];
 
-export const fillMessages = (s, req) => [{ role: 'system', content:
+export const fillMessages = (s, req, skill = '') => [{ role: 'system', content:
   `You fill in the slots of the "${s.manifest.name}" app skeleton so the app matches what the person asked for. ${s.manifest.description}\n\nSLOTS:\n${specText(s.manifest.slots)}\n` +
   `- _gaps: a list of short phrases: things the person asked for that this app cannot do (empty list if none)\n\n` +
-  `Icon names: ${ICONS.join(', ')}.\n\nNotes: ${s.notes_for_juli || ''}\n\nRules: reply with ONE JSON object and nothing else (no code fences, no comments). ` +
+  `Icon names: ${ICONS.join(', ')}.\n\nNotes: ${s.notes_for_juli || ''}\n\n${skill ? skill + '\n\n' : ''}Rules: reply with ONE JSON object and nothing else (no code fences, no comments). ` +
   'Fill EVERY slot that is not optional. Use specific content for the request; never copy the example’s content. Stay within every limit. ' +
   'Never invent live facts (weather, prices, news, places the person did not name). No advice to buy, sell or hold anything.' }, { role: 'user', content: String(req).slice(0, 600) }];
 
@@ -103,12 +105,27 @@ export function tidy(spec, obj) {
   return Object.fromEntries(Object.entries(obj || {}).map(([k, v]) => [k, spec[k] ? fix(spec[k], v) : v]));
 }
 
-/** fill + validate + one repair + defaults for anything still wrong. -> {slots, gaps, problems (after repair), repaired, defaulted} */
-export async function fillSlots(llm, s, req, { onStage = () => {}, signal } = {}) {
+/** H39: a model call's messages with the skill text its prompt has room for (opts.skill: async (stage, build, want) -> text, see
+ *  assistant/skills.js makeSkillFor; a string is used as it is) -> [messages, true when a skill went in]. None, or none that fits:
+ *  the plain prompt. */
+async function withSkill(skill, stage, build, want) {
+  let k = '';
+  if (typeof skill === 'function') { try { k = String((await skill(stage, build, want)) || ''); } catch (e) { k = ''; } }
+  else if (typeof skill === 'string') k = skill;
+  return k ? [build(k), true] : [build(''), false];
+}
+/** H39: the fill asked again after an answer that was not JSON: decoding is greedy, so the same prompt would give the same answer;
+ *  this one has no skill text and says the JSON rule once more, last */
+export const retryMessages = (s, req) => { const m = fillMessages(s, req); return [m[0], { role: 'user', content: m[1].content + '\n\nReply with the JSON object only: start with { and end with }.' }]; };
+
+/** fill + validate + one repair + defaults for anything still wrong. -> {slots, gaps, problems (after repair), repaired, defaulted,
+ *  skilled (H39: a skill was in the fill prompt)} */
+export async function fillSlots(llm, s, req, { onStage = () => {}, signal, skill = null } = {}) {
   onStage('fill');
-  let raw = await llm(fillMessages(s, req), { maxTokens: 900, temperature: 0.2, signal }), obj;
+  const [fm, skilled] = await withSkill(skill, 'fill', (k) => fillMessages(s, req, k), 900);
+  let raw = await llm(fm, { maxTokens: 900, temperature: 0.2, signal }), obj;
   try { obj = parseJSON(raw); } catch (e) { obj = null; }
-  if (!obj) { onStage('retry'); raw = await llm(fillMessages(s, req), { maxTokens: 900, temperature: 0.5, signal }); obj = parseJSON(raw); }
+  if (!obj) { onStage('retry'); raw = await llm(retryMessages(s, req), { maxTokens: 900, temperature: 0.5, signal }); obj = parseJSON(raw); }
   const gaps = (Array.isArray(obj._gaps) ? obj._gaps : []).map((g) => String(g).slice(0, 80)).filter(Boolean).slice(0, 4);
   let slots = omit(obj, ['_gaps']);
   for (const k of Object.keys(slots)) if (!s.manifest.slots[k]) delete slots[k];   // unknown slots are dropped, never passed to the app
@@ -132,20 +149,22 @@ export async function fillSlots(llm, s, req, { onStage = () => {}, signal } = {}
     defaulted.push(n);
   }
   problems = validateSlots(s.manifest.slots, slots);
-  return { slots, gaps, problems, repaired, defaulted };
+  return { slots, gaps, problems, repaired, defaulted, skilled };
 }
 
 /** the whole make: router -> fill -> critic. llm(messages, opts) -> text. skels = checked bundles. */
-export async function makeApp(llm, skels, req, { onStage = () => {}, signal, critic = true, only = null } = {}) {
+export async function makeApp(llm, skels, req, { onStage = () => {}, signal, critic = true, only = null, skill = null } = {}) {   // H39: skill (withSkill)
   let s = only ? skels.find((x) => x.manifest.id === only) : null, routed = null;
+  const skilled = { route: false, fill: false };   // H39: which prompts carried a skill's text (the results say so)
   if (!s) {
     onStage('route');
-    try { routed = parseJSON(await llm(routerMessages(req, skels), { maxTokens: 40, temperature: 0, signal })).skeleton; } catch (e) { routed = null; }
+    const [rm, rk] = await withSkill(skill, 'route', (k) => routerMessages(req, skels, k), 40); skilled.route = rk;
+    try { routed = parseJSON(await llm(rm, { maxTokens: 40, temperature: 0, signal })).skeleton; } catch (e) { routed = null; }
     s = skels.find((x) => x.manifest.id === routed) || null;
-    if (!s) return { ok: false, routed, reason: 'none', message: "None of the app skeletons on this phone fits that request. The shelf shows what each one does; you can also import a new skeleton." };
+    if (!s) return { ok: false, routed, reason: 'none', skilled, message: "None of the app skeletons on this phone fits that request. The shelf shows what each one does; you can also import a new skeleton." };
   }
-  const f = await fillSlots(llm, s, req, { onStage, signal });
-  if (f.problems.length) return { ok: false, skel: s.manifest.id, reason: 'slots', problems: f.problems, message: `Juli couldn't fill the ${s.manifest.name} skeleton correctly.` };
+  const f = await fillSlots(llm, s, req, { onStage, signal, skill }); skilled.fill = !!f.skilled;
+  if (f.problems.length) return { ok: false, skel: s.manifest.id, reason: 'slots', problems: f.problems, skilled, message: `Juli couldn't fill the ${s.manifest.name} skeleton correctly.` };
   let review = null;
   if (critic) {
     onStage('critic');
@@ -155,6 +174,6 @@ export async function makeApp(llm, skels, req, { onStage = () => {}, signal, cri
   // a slot that had to go back to its starting value AND a critic that says the app doesn't fit: the app would show the skeleton's
   // own content (Spanish cards for "photography terms"), so nothing is made and the person hears why
   if (f.defaulted.length && review && !review.match)
-    return { ok: false, skel: s.manifest.id, reason: 'critic', defaulted: f.defaulted, review, message: `Juli couldn’t fill the ${s.manifest.name} skeleton well for that (${review.problem || 'it did not fit'}). Try saying it a little differently.` };
-  return { ok: true, skel: s.manifest.id, slots: f.slots, gaps: f.gaps, repaired: f.repaired, defaulted: f.defaulted, review };
+    return { ok: false, skel: s.manifest.id, reason: 'critic', defaulted: f.defaulted, review, skilled, message: `Juli couldn’t fill the ${s.manifest.name} skeleton well for that (${review.problem || 'it did not fit'}). Try saying it a little differently.` };
+  return { ok: true, skel: s.manifest.id, slots: f.slots, gaps: f.gaps, repaired: f.repaired, defaulted: f.defaulted, review, skilled };
 }

@@ -3,6 +3,7 @@
  "manifest": {
   "id": "daily-counter",
   "name": "Daily Counter",
+  "plain": "Counts something toward a daily goal, like glasses of water, each time you tap. It keeps your counts on this phone and never goes online; when you reach your goal it can post a note in Juli’s chat.",
   "description": "Counts something toward a daily goal with a big progress ring, a +step button, undo and the last 7 days. Fits: water, pages read, push-ups, breaks, cups of tea, any daily count.",
   "category": "non-agentic",
   "version": "1.0",

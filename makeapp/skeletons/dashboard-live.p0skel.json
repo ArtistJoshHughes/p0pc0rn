@@ -3,6 +3,7 @@
  "manifest": {
   "id": "dashboard-live",
   "name": "Price dashboard",
+  "plain": "Shows the prices you pick, like crypto, when you open it. It looks them up on CoinGecko by name only and keeps your list on this phone. It shows prices, never advice.",
   "description": "A dashboard of things whose value changes: a big number with its change (day / week / month / year; real 1-day and 1-week charts for crypto), a watchlist, a detail page and 4 stat tiles. Live crypto prices from CoinGecko. Fits: crypto prices, savings, scores. Prices only, no advice.",
   "category": "non-agentic",
   "version": "1.1",

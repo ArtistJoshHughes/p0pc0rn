@@ -3,6 +3,7 @@
  "manifest": {
   "id": "list-tasks",
   "name": "Tasks & habits",
+  "plain": "A to-do list and habit tracker you fill in. It works only when you open it, keeps everything on this phone and never goes online.",
   "description": "A to-do list with Today / Upcoming / Done, swipe to delete and an add sheet, plus a Habits tab with daily streaks and counters. Fits: chores, errands, checklists, packing lists, habits.",
   "category": "non-agentic",
   "version": "1.0",

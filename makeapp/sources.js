@@ -3,6 +3,8 @@
 // page's CSP connect-src too), caches, rate-limits and hands back trimmed JSON. No keys, no cookies, no personal data in a request:
 // only the place (rounded to about 1 km) or the words the app passes. Each source is named on the permission sheet and the privacy page.
 
+import { createBudget } from './budget.js';   // 3.9 (Wallet Watch): the hard cap on a source with a free tier (Snowtrace)
+import { SNOWTRACE } from './snowtrace.js';   // 3.9 (Wallet Watch): Snowtrace, the public Avalanche explorer (read only)
 const r2 = (v) => Math.round(+v * 100) / 100;                 // ~1 km: enough for weather and fires, never a street address
 const ll = (p) => {
   const lat = +p.lat, lon = +p.lon;
@@ -66,23 +68,50 @@ export const SOURCES = {
         updated: str(x.last_updated, 40), spark: ((x.sparkline_in_7d || {}).price || []).slice(-200).map(n).filter((v) => v != null),
         chg: { D: n(x.price_change_percentage_24h_in_currency), W: n(x.price_change_percentage_7d_in_currency), M: n(x.price_change_percentage_30d_in_currency), Y: n(x.price_change_percentage_1y_in_currency) } })) };
     } },
+  'chain.snowtrace': SNOWTRACE,   // 3.9 (Wallet Watch): public Avalanche C-Chain activity of the addresses an app adds (makeapp/snowtrace.js)
 };
 export const SOURCE_IDS = Object.keys(SOURCES);
 
 /** the host side of p0.fetch: a cache + per-source rate limit around SOURCES[id].get. fetchJSON(url) does the network call
  *  (credentials omitted, no referrer, 15 s timeout); now() is injectable for tests. scope = the asking app's id: each app has its own
- *  cache, so no app can tell from a fast answer what another app looked up (the rate limit per source stays shared). */
-export function createFetcher({ fetchJSON = defaultFetchJSON, now = () => Date.now() } = {}) {
-  const cache = new Map(), calls = new Map();
-  return async function fetchSource(id, params = {}, scope = '') {
+ *  cache, so no app can tell from a fast answer what another app looked up (the rate limit per source stays shared).
+ *  3.9 (Wallet Watch): a source with a `budget` (a free tier: Snowtrace, keyless) has a HARD CAP (budget.js): ONE for every app on this
+ *  phone and a ceiling for each app (scope). Before each of its requests o.gate (the host's idle rule: a check that yields to the
+ *  person's jobs) must say nothing is busy, else BUSY; then the budget must allow it: paced to its per-second rate (the fetcher waits for
+ *  the next token, at most 1.5 s: never a burst), within its per-minute, per-day and per-app caps. A refused request is never sent and
+ *  throws BUSY, DAILY_CAP, APP_CAP, RATE_LIMIT or BACKOFF (with `until`). A 429, or the source's own "rate limit" answer (S.rateLimited),
+ *  rests the source: 1 minute, then 2, 4 ... up to an hour; the next answer that works ends the rest. Its answers carry `quota` (the
+ *  day's usage, this app's share in it). store = where the day's count is kept (localStorage; injectable, null = this page only); sleep
+ *  is injectable; a source's ttl may be a function. */
+export function createFetcher({ fetchJSON = defaultFetchJSON, now = () => Date.now(), store, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const cache = new Map(), calls = new Map(), budgets = new Map();
+  const ls = store !== undefined ? store : (() => { try { return globalThis.localStorage || null; } catch (e) { return null; } })();
+  const budgetOf = (id, S) => { if (!S.budget) return null; if (!budgets.has(id)) budgets.set(id, createBudget(S.budget, { store: ls, now })); return budgets.get(id); };
+  const capErr = (S, r) => Object.assign(new Error(r.code === 'DAILY_CAP' ? `${S.budget.name}: today's requests are used up (p0pc0rn keeps to half of its free limit)`
+    : r.code === 'APP_CAP' ? `${S.budget.name}: this app's requests for today are used up (each app keeps to its share)`
+    : r.code === 'BACKOFF' ? `${S.budget.name} asked p0pc0rn to slow down` : `${S.budget.name}: one request at a time`), { code: r.code, until: r.until || 0 });
+  return async function fetchSource(id, params = {}, scope = '', o = {}) {
     const S = SOURCES[id]; if (!S) throw Object.assign(new Error('unknown source ' + id), { code: 'UNKNOWN_SOURCE' });
+    const B = budgetOf(id, S), ttl = typeof S.ttl === 'function' ? S.ttl(params || {}) : S.ttl;
     const key = String(scope) + '\n' + id + ' ' + JSON.stringify(params || {}), hit = cache.get(key), t = now();
-    if (hit && t - hit.t < S.ttl) return hit.v;
+    if (hit && t - hit.t < ttl) { if (B) hit.v.quota = B.usage(scope); return hit.v; }
     const recent = (calls.get(id) || []).filter((x) => t - x < 60e3);
     if (recent.length >= S.perMin) { if (hit) return hit.v; throw Object.assign(new Error(`${S.label}: too many requests, try again in a minute`), { code: 'RATE_LIMIT' }); }
     recent.push(t); calls.set(id, recent);
-    const v = await S.get(params || {}, (url) => { if (new URL(url).hostname !== S.host) throw new Error('host not allowed'); return fetchJSON(url); });
-    v.source = S.attribution; v.fetchedAt = t;
+    const gate = () => { const g = o && typeof o.gate === 'function' ? o.gate() : ''; if (g) throw Object.assign(new Error(`${S.label}: waiting for the phone to be idle (${String(g).slice(0, 80)})`), { code: 'BUSY', until: 0 }); };
+    const net = async (url) => {
+      gate();   // the phone got busy: nothing is sent; the rest waits for its next idle check
+      if (!B) return fetchJSON(url);
+      let r = B.take(scope);
+      if (!r.ok && r.code === 'RATE_LIMIT' && r.waitMs <= 1500) { await sleep(r.waitMs); gate(); r = B.take(scope); }   // paced: the next token, never a burst
+      if (!r.ok) throw capErr(S, r);   // nothing is sent
+      let d;
+      try { d = await fetchJSON(url); } catch (e) { if (e && e.code === 'HTTP_429') { B.note429(); throw capErr(S, { code: 'BACKOFF', until: B.usage().backoffUntil }); } throw e; }
+      if (S.rateLimited && S.rateLimited(d)) { B.note429(); throw capErr(S, { code: 'BACKOFF', until: B.usage().backoffUntil }); }
+      B.noteOk(); return d;
+    };
+    const v = await S.get(params || {}, (url) => { if (new URL(url).hostname !== S.host) throw new Error('host not allowed'); return net(url); });
+    v.source = S.attribution; v.fetchedAt = t; if (B) v.quota = B.usage(scope);
     cache.set(key, { t, v }); if (cache.size > 200) cache.delete(cache.keys().next().value);
     return v;
   };

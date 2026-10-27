@@ -261,9 +261,9 @@ const brain = await PF.createEngine({ model: 'gemma4-e2b' });   // packUrl + OPF
 
   - How it works, in plain words: [docs/TWO-PROCESSES.md](docs/TWO-PROCESSES.md).
   - The KV mirror: a layer in the page that reads the keys and values of a layer in the worker gets them back with every hop
-    (`Gemma4.mirrorKV()` lists those layers; lworker.js `kvRows`, split.js `_mirrorIn`). Bolt E4B splits at 23: layers 0-22 run in the
-    second process, and layer 22's keys and values come back for the page's layers that share them and for the drafter. E2B, split
-    at 13, needs no mirror.
+    (`Gemma4.mirrorKV()` lists those layers; lworker.js `kvRows`, split.js `_mirrorIn`). Bolt E4B splits at 24 (3.9; 23 in 3.8): layers
+    0-23 run in the second process, and the keys and values of layers 22 and 23 come back for the page's layers that share them and
+    for the drafter. E2B, split at 13, needs no mirror.
   - The page and the worker speak one version of their messages (split.js `SPLIT_PROTO` = 3, lworker.js `PROTO`); the page refuses a
     worker part of another version.
   - Each token or verify pass sends the hidden rows and the per-layer inputs to the worker and takes the rows back: 1-3% of the time
@@ -305,9 +305,9 @@ const brain = await PF.createEngine({ model: 'gemma4-e2b' });   // packUrl + OPF
       WebKit. If the page ends while it is loaded it turns itself off on that device (`pf.app.brain4Off`), but only for that set-up
       (its `cfg`, drafter + chunk, against `E4B_CFG()`): a changed set-up gets a fresh try. Settings › Juli has "Turn the Bigger brain
       back on".
-  - On an iPhone 16 Pro Max (iOS 27.0.1), Bolt E4B split at 23 with its drafter holds about 1.6 GB in the page and about 1.44 GB in the
-    second process (whose own ceiling is about 1.6 GB); E2B split at 13 about 1.27 GB and 0.44 GB. On a desktop browser, where both
-    ways run, the split gives the same words as one process.
+  - On an iPhone 16 Pro Max (iOS 27.0.1), Bolt E4B split at 24 (3.9) with its drafter holds about 1.53 GB in the page and about 1.50 GB
+    in the second process, whose own ceiling is about 1.6 GB (3.8's split at 23: 1.6 GB and 1.44 GB); E2B split at 13 about 1.27 GB
+    and 0.43 GB. On a desktop browser, where both ways run, the split gives the same words as one process.
 
 ## 10. Songs (`model: 'acestep15-turbo'`, p0pc0rn v019)
 
@@ -1079,7 +1079,7 @@ already destroyed that WebKit has not given back yet, and no counter on the page
 ## 23. Cast (Josh, Oct 14: "Voice clone successful. Wire it in to cast under settings") + Make them talk (EXPERIMENTAL)
 
 ### Cast (`cast/cast.js`, `cast/cast_ui.js`, IndexedDB `p0pc0rn-cast`)
-- Settings › Cast lists the people this phone may use by name.
+- Cast (its own screen since 3.9; Settings links to it) lists the people this phone may use by name.
 - **Add a person** has three steps:
   1. The name.
   2. The consent step: "This is me" or "Someone else", plus the tick "This is me, or I have this person's permission. Not a minor. No
@@ -1157,3 +1157,227 @@ already destroyed that WebKit has not given back yet, and no counter on the page
   (`sb.castLead` records who). `dirOf(P)`: the planner's direction gets "The lead is <name>." when it does not name them.
 - The likeness gate never treats a Cast name (full or first, lower case) as a protected person: `mvRecords` drops KB records titled
   with a Cast name, and `mvRealPeople` never looks one up.
+
+## 25. 3.9: the home screen, conversations, Music, games, skills, changing an app, About me and routines
+
+### The shell (`ui/shell.js`; pure parts `ui/shell_core.js`, `ui/gesture.js`)
+
+```js
+SHELL.register({ id, title, icon, view, dock, home, order, badge, onOpen, onClose, hidden })
+SHELL.open(id, { from })   // a 3.8 view goes through go(tab); from = the icon the screen grows from
+SHELL.home()
+SHELL.badge(id, n)         // a red number at the icon's top left (0 = none); SHELL.refresh() re-reads every badge()
+SHELL.pin({ id, title, letter, color, open }) / SHELL.unpin(id)   // made apps on the home screen
+SHELL.on('open' | 'close' | 'home', fn)
+```
+
+- `window.SHELL` is the same object; the event `p0:shell-ready` fires at start.
+- Ids: the 3.8 views (`create`, `assistant`, `apps`, `library`, `settings`), `home`, `music`, `browser`, `games` (the Apps shelf's
+  Games group), `skills` and `connection` (a placeholder: a tap shows "Coming soon" only).
+- The dock: Juli, Create, Music, Settings. The home screen: cards of agentic apps with news on top (at most 3; one swiped away stays away
+  until that app's news is newer), then Library, Apps, Browser,
+  Games, Skills, Connection, then pinned apps. A new install starts in Juli's chat; every other start opens the home screen.
+
+### Conversations (`ui/threads.js`, `ui/chatactions.js`, `ui/chat.js`)
+
+- One conversation is one agent session (`p0pc0rn-assistant`, unchanged). The Chats list is an index in IndexedDB `p0pc0rn-chats`
+  (store `threads`: per conversation a name, its last line, the time and the unread count), built once from 3.8's sessions and
+  then kept current by every message; its writes are serialised.
+- `createChat(...)` also returns `unread()`, `openList()` and `openThread(id)`; the unread total goes to `SHELL.badge('assistant', n)`.
+- Option bubbles per result kind (`ui/chatactions.js`), each running an existing path:
+  - a picture: Make again, Edit this, Animate, Clip to another picture, Save, Open in Library;
+  - a clip: Make again, Save, Open in Library;
+  - a song: Make again, Animate (its music video), Save as .m4a / .wav, Open in Library;
+  - a music video: Edit video, Save, Open in Library;
+  - a Cast voice line: Lip-sync (experimental), Save.
+  Make again is the same job with a new seed; it needs the original job, which the queue keeps for 3 days.
+
+### Music (`ui/music_core.js`, `ui/music.js`)
+
+- `MUSIC = { screen, open, close, badge, libChanged, pause, check, player, register }`, made in app.js by `createMusic(musicApi())`.
+- Storage: localStorage `p0pc0rn:music` (version 1; up to 100 playlists of up to 500 songs; names up to 40 characters). Data from a
+  newer version is kept aside, not overwritten.
+- One audio element for the visit; the first tap unlocks it; the next song loads when one ends; three failures in a row stop the
+  player with a message. One sound at a time in the app.
+- Media Session: the title, artist "p0pc0rn", the playlist as the album, the song's cover (else the app icon), the position, and
+  every action the browser supports.
+- The badge: songs made since Music first looked at the Library and not yet played in Music.
+- `MUSIC.check()` (or `#music-check` in the address): the phone check: three generated tones (never in the Library) whose titles say
+  what to do (lock the screen, wait for the next one, try the lock-screen buttons), then a card with Copy.
+
+### Games: Juli picks a move (`makeapp/choose.js`; Kit 1.6)
+
+```js
+const r = await p0.juli.choose({ about, options, skill, hint });   // in the sandbox; K.choose(about, options, { skill, hint }) wraps it
+// r = { index, option, by: 'juli' | 'fallback' }
+```
+
+- 2-12 options of up to 60 characters; `about` (the board as text) up to 1,200 characters; `hint` up to 300; `skill` = a skill's
+  name. At most 240 calls an hour, only from the open app (a check gets `CHECK`); a bad option list throws `BAD_CHOICE`.
+- The host runs an `appchoose` job on Juli's own model (Gemma 4 E2B by default; the Bigger brain only for a job the app asks with `big: true`, below): the rules, the
+  skill (up to 500 tokens), the board, the hint and the numbered options; a 4-token greedy answer, read as the option's words, its
+  number or a unique last word; one retry without the skill and the board; then the first option (`by: 'fallback'`), which is also
+  the answer when Juli isn't downloaded or a move is already waiting.
+- The game hold: the open game is not closed by its own move's job; Juli's model stays loaded 60 s after each move and is released
+  when the game closes.
+- Manifest: `kind: "game"` (the shelf's Games group) and `permissions.juli: ["choose"]` (non-agentic apps only; `"ask"` stays
+  agentic-only). The permission sheet says "Juli picks her moves in this app (on this phone only)".
+- The mover: app.js `RUN.appchoose` = Juli's own model, always; the Bigger brain only for a job with `big` (`K.choose(..., {big:
+  true})`: Four in a Row's opponent, earned with 10 wins in a row) while it is downloaded and on (`p0.juli.models()` /
+  `K.juliModels()` say so); never one model for the other (`by: 'fallback'`, why "the Bigger brain is not on"). Both answer with the
+  number of their choice (`choose.js` also has a tool-call framing, `choose_move {choice}`, the runner's `o.tool`: the Bigger brain
+  read worse that way). The game hold keeps whichever answered. Her answer is her move: no answer naming a choice comes back
+  `by: 'fallback'` with `why`, and the game asks again or says so.
+- One move at a time per open game: a move still waiting from a game that was closed does not block the game opened again. An
+  app's waiting saves (debounced 400 ms) are written before Juli's job starts (it may load her model in a planned fresh page),
+  before the app opens again and when the page is hidden.
+- The Game Kit (`K.game` 1.0, part of `makeapp/kit.js`; the Skeleton Guide has its API): `K.game.match` (turns, the saved game,
+  the score; her model makes every move from all the legal ones, an unclear answer is asked again, no answer = stuck with "Ask Juli
+  again", never a move made for her), `K.game.search` (alpha-beta for two-player games, time-sliced) and `K.game.work` (long work in
+  slices), boards and aiming, cached art (`board`, `piece`, `backdrop`, `glow`), motion (`timeline`, `fall` with bounce, `jolt`;
+  `reduced` motion), effects (`confetti`, `sparks`), synthesised sound (silent until the first tap, a remembered mute), Juli's
+  `avatar`, the `results` card (with a run toward an unlock: `progress`), `unlock` + `celebrate` (something earned), the match's
+  `st.keep` and `tally` (values that last across games, saved with the score) and `a11y` (spoken updates and screen-reader buttons).
+  It paces the frame: 60 fps while anything moves, 30 when calm.
+
+### Skills (`assistant/skills.js`; bundled: `skills/index.json` + `skills/<name>.md`)
+
+```
+---
+name: play-four-in-a-row         # 3-40 characters: a-z, 0-9, -
+description: One line: what it helps Juli do and when (up to 200 characters).
+for: [game]                      # make | change | chat | game | app (default chat)
+---
+The body: plain Markdown, up to 900 tokens and 6 KB (600 tokens advised), no links, scripts or frames.
+```
+
+- Pure: `parseSkill(md)`, `skillProblems(skill)`, `bundleSkillProblems`, `skillIndex`, `pickSkill(text, skills, kind)` (shared
+  words), `explicitSkill` ("use my <name> skill" and close variants), `skillBody(skill, budget)`, `skillText`, `makeSkillFor`,
+  `textTokens`.
+- The registry `createSkills({ db, fetchText, base, skelName })`: `loadSkills`, `list`, `getSkill`, `skillsFor(kind)`,
+  `checkImport`, `importSkill`, `setEnabled`, `removeSkill` (the person's own only), `setBundle`, `removeBundle`, `clash`,
+  `bundleClashes`.
+- Storage: IndexedDB `p0pc0rn-apps` version 2, store `skills` (version 1's data kept). A skeleton bundle may carry
+  `skills: { <name>: <md> }` (up to 3): stored once the person allows the bundle, removed with it.
+- Use: making an app gets make-an-app's sections, changing one gets change-an-app, a game's moves get its how-to-play skill, and a
+  chat turn gets a `for: chat` skill picked by words or by name. A skill goes in only when it fits the model's room; on the Bigger
+  brain's 2,048-token context the skill is the first thing dropped.
+
+### Wallet Watch: the Snowtrace source and its hard restrictions (`makeapp/snowtrace.js`, `makeapp/budget.js`; 3.9)
+
+- Source `chain.snowtrace` (`SOURCES`, host `api.routescan.io`, Routescan's Etherscan-style API for Avalanche C-Chain mainnet,
+  `.../v2/network/mainnet/evm/43114/etherscan/api`; keyless). `p0.fetch('chain.snowtrace', {op, ...})`:
+  - `watch` `{items: [{address, kind: 'wallet' | 'contract', since}]}` (1-5) -> `{balances: {address: wei}, items: [{address, kind,
+    first, txs, tok, int, full, done}], stopped}`: one `balancemulti`, then per address `txlist` + `tokentx` (+ `txlistinternal` for a
+    wallet) from block `since` (inclusive; none = a first look at the newest 25 rows), 100 rows a list, newest first.
+  - `history` `{address}` (100 + 100 + 50 rows), `contract` `{address}` -> `{verified, name, compiler, proxy, impl, license}`,
+    `labels` `{addresses}` (1-6) -> the explorer's public name tags, only with an organisation category (`tagOf`).
+  - Rows: `{h, b, t, f, to, v, fn, err}`, tokens `+ {c, sym, dec}` (a symbol that is a message or a web address is dropped: `cleanSym`).
+- The hard cap (`createBudget(cfg, {store, now})`): before every request the fetcher calls `take(scope)` (scope = the app's id):
+  per-second and per-minute token buckets (in memory) and a per-day counter in `localStorage` (`p0pc0rn:quota:<key>`, UTC day) for every
+  app together and per app. Snowtrace: `SNOWTRACE_CAP` = 1 a second, 60 a minute, 5,000 a day, 1,600 a day for one app (the free tier:
+  2 a second, 10,000 a day). A refusal throws `DAILY_CAP`, `APP_CAP`, `RATE_LIMIT` or `BACKOFF` (with `until`) and nothing is sent;
+  `watch` answers with what came back and `stopped`. A 429, or the API's own "rate limit" answer (`S.rateLimited`), calls `note429()`:
+  1 minute, then 2, 4 ... 1 hour, kept in storage; a working answer ends it. Answers carry `quota` (`{used, cap, left, appUsed, appCap,
+  n429, resetAt, backoffUntil, paused}`). `pausedFor` / `pauseLine` / `quotaRow` are the host's words.
+- The idle rule (`SNOWTRACE.idleOnly`, `phoneBusy(Q, modelBusy, own)` in `host.js`): an app that reads the source is checked at most
+  every `minMinutes` of its interval trigger (15), whatever asks (p0pc0rn opening, the app closed), and only when no model is in memory
+  and no job of the person's is queued, running or waiting (Juli answering them included). Its check's requests pass `{gate}` to the
+  fetcher (a busy phone = `BUSY`, nothing sent) and its `K.ask` yields (`BUSY` before, cancelled when a job arrives): the app's own
+  words go then. The worst case of one app at the floor: 96 checks x (1 + 3 x 5 wallets) + 30 = 1,566 requests a day.
+- Host: an app whose source rests is not checked (`due()`), its card says "Paused until 5:00 PM to stay within Snowtrace’s free
+  limit" (or "waiting for your phone to be idle"); `apps.quota(skelId, appId)` gives the settings page's rows. A check's `{next}`
+  (minutes) sets its next check within its interval trigger's `minMinutes` .. `calmMinutes`.
+- Credit: "Powered by Routescan.io APIs" with links to https://routescan.io and https://x.com/routescan_io (`SOURCE_CREDITS`, `creditsOf` in
+  `ui/storefront_core.js`) on the permission sheet, the app's settings page and the bar under the running app (`#app-credit`); links
+  open in a new tab (the phone's browser sheet), are never fetched and need no CSP change.
+- Skills: `for: app` = know-how an app names in `K.ask(prompt, {skill})` (`p0.juli.ask(prompt, {json, skill})`); the host adds it to
+  the `appask` job when it is on (`appSkill`, cut to 500 tokens, framed by `skillHead`).
+- Icons: a design that comes with p0pc0rn may ship `icons/apps/<id>-180.png` / `-120.png` (`designArt`, `ART_DESIGNS` in
+  `ui/storefront_core.js`): its card, its made apps and their home tiles use it; an icon Juli makes for one app still wins.
+
+### Changing an app (`makeapp/edit.js`; the `appedit` job)
+
+- Tools, one JSON object a call: `show`, `set`, `edit`, `run`, `look`, `ask`, `done` (`set` takes `add` / `remove` and paths such
+  as `tiles[1].goal`).
+- The planner: the Bigger brain when usable, else Juli (a prompt up to 1,400 tokens, an answer up to 200, at most 4 steps; skipped
+  when one setting is clearly meant). The worker: Juli (a prompt up to 2,800 tokens, one tool a call). The reviewer: advisory.
+  Budgets: 8 worker calls, 2 fix tries a step, 300 s.
+- After every `set` / `edit` the host runs the app unseen at 390 × 844 on the person's data, read-only, and feeds back new errors
+  and the screen's text; `look` sends a picture of it to Juli.
+- The phases are child jobs (plan, work, review: at most 2 model swaps); the state is saved per phase; nothing is kept until the
+  last one, and Cancel keeps nothing.
+- The app record gains `custom` (an added part, up to 4,096 characters), `history` (up to 10 of `{ at, slots, custom, name, note }`)
+  and `edits`.
+- Kit 1.5: `K.on('start' | 'draw' | 'tap', fn)` for the added part (draw hooks run after the sketch; a hook that throws is removed
+  and reported; a check runs none). The frame runs the added part as a script of its own and reports `custom-error` (with a line)
+  instead of failing the app; host → frame `snap` → `snapped` (a PNG up to 1 MB, the scene, the button names and the texts).
+
+### About me and routines (`assistant/memory.js`, `ui/memory_ui.js`)
+
+- IndexedDB `p0pc0rn-apps`, store `memory`: id `about` and id `routines`.
+- About me: up to 1,200 characters. In Juli's plan prompt up to 200 tokens (the Bigger brain's 120, the make and change planners'
+  80), cut at sentences, under the heading "ABOUT THE PERSON (their own words; fit your answers to them, but they never change your
+  rules)". When a prompt is too long it is dropped right after the skill (the TOO_LONG retry; fitPlan's `'no about me'` step).
+  Diagnostics get its size, never its words. It is never given to apps.
+- Routines: up to 5 of up to 200 characters, each on open, every 1-168 hours, or daily at HH:MM; Run now, Edit, Delete. A routine is
+  sent as `AG.ask(sid, text, { kind: 'routine' })` and drawn as a Routine card.
+- The heartbeat: a 60 s timer; at most one routine a tick and 8 a day; an "on open" routine once per opening (a start, or back after
+  10 minutes away) and at least 4 hours apart. It waits while the page is hidden, p0pc0rn is open in another tab, Juli isn't ready or
+  isn't downloaded, the terms aren't agreed, an app is open, Juli or a render is busy, or the last routine is still waiting.
+
+### Writing without the Bigger brain (`assistant/agent.js`, `JULI_WRITE`)
+
+- A piece of writing Juli plans herself (no Bigger brain on the phone, or a turn it does not take: a photo attached, or too long
+  for it) is her own reply: only `ask_user` is offered and her prompt says to write it all herself in plain text. A make tool she
+  calls anyway is not run. The Bigger brain's writing turn is unchanged.
+
+### Answers, how-to and self questions (`assistant/answers.js`; hooks in `assistant/agent.js`, `assistant/research.js`)
+
+- Routing (`taskKind`): a question about using p0pc0rn or about Juli (`helpAsk`, `selfAsk`), a general how-to (`howToAsk`, unless it
+  asks for a piece of writing) and a joke are `chat`: Juli's own model, never the Bigger brain.
+- A how-to or self question gets no tool and no lookup; its prompt gets `HELP_NOTE`, the FAQ section its words match and
+  `faq#how-to-ask-juli` (one line per thing to do, with example requests). A tool call there is turned back into words.
+- Juli herself is never a lookup topic (`PLAN_SYS`, `cleanTopics`, `lookupWorthy`). A picture of her gets `SELF_PIC_NOTE` (an original
+  look: she has no fixed one), on her model and on the Bigger brain's.
+- A how-to (`howToAsk`, or a terse task: `taskAsk`) in a chat with nothing made yet gets `HOWTO_NOTE` (steps from what she knows)
+  and no tool; it is not looked up, a lookup or make call is turned back into words, and a bare tool name as the reply is asked for
+  once more in words. Not for `dangerAsk`.
+- An everyday question on Juli's own model (lookups on, no photo, no make tool offered, not held by the safety screen, not
+  `dangerAsk`) gets `ANSWER_NOTE` (from the facts looked up for it: numbers, dates and names only from them, "how many" = each one
+  named, then the count; `ANSWER_NOTE_OWN` when there are none: no number, date or name from memory) and its notes lose the
+  render-only safety sections. A reply that refuses or only defers is asked again once (`NUDGE`, `shouldNudge`); if it still refuses,
+  the facts' own words answer (`factsAnswer`, only from an article about the question). A request that could hurt someone, a refused
+  tool call and the screen's holds are never pushed.
+- A question whether something is safe to eat, drink, give or use (`safetyAsk`) that nothing looked up answers (`safetyCovered`) gets
+  one more lookup, "<the thing> toxicity" (`safetyTopic`: "Avocado toxicity" finds "Persin"), used only when it says whether it is
+  safe and is about the thing (`safetyFound`: its title or first quote names it). Still nothing: `safetyNote` (the cautious answer
+  itself), never asked again, and a reply that still says it is safe (`assertsSafe`) or refuses becomes `cautionLine` (best avoided
+  until a vet, a pharmacist or a doctor says it is OK). Facts that say it is harmful and a reply that says "safe" anyway: the facts'
+  own words (`harmLine`).
+- `finish()`: the model's own Rights & Copyright sentence is dropped unless the message is about copyright, trademarks, likeness or
+  real people, or this turn refused a make call or took a likeness out of one (`stripPointer`); a "Yes:" before the answer to a
+  question that is not a yes-or-no one goes (`stripYes`). The message that a job started says where its result will show up.
+- Research (`wikipedia()`): when no title match (opensearch) is usable, one full-text search (`list=search` on `en.wikipedia.org`: no
+  new host; once more with its spelling suggestion when it finds nothing) offers up to 3 more candidates, each through the same checks
+  plus "carries most of the topic's words" (in the title, the lead, or the redirect and snippet Wikipedia matched), which a near title
+  sharing one word only (`weakTitle`) needs too. A list article is skipped, never read. A title word one letter off the topic's is the
+  same word (`nearWord` in `assistant/lookupwords.js`). The quote reader keeps a concept article's sentences that carry most of its
+  title's words (`conceptHit`: "Grape toxicity in dogs" never repeats its title); a proper name must still be named; a character's
+  article (`PERSONA` class nouns: superhero, character ...) is "he" / "she" like a person's; a formula's column of lines in a plain-text
+  extract goes back into its sentence (`flatMath`).
+
+### Made apps: p5's names and the home indicator (`makeapp/p5names.js`, `makeapp/check.js`, `makeapp/host.js`, `makeapp/frame.html`, `makeapp/kit.js`)
+
+- p5 (1.11.13, `makeapp/p5.min.js`) starts after the app's script and writes its own functions and values onto `window`: a top-level
+  `function` or `var` with one of those names is p5's from then on; a top-level `let` / `const` / `class` stays the app's and hides
+  p5's (measured in Edge). `checkBundle` refuses the first for any p5 name, the second for a name the Kit itself uses from p5
+  (`KIT_USES`), and `K` in any form: `sketch.js uses the name "save", which p5 uses: rename it (e.g. saveState)`.
+  `topDeclarations(code)` reads the sketch without running it (comments, strings, templates and regular expressions blanked; braces
+  counted; function and class expressions, names inside functions, blocks and objects, and `let` / `const` in a `for` head are not
+  top-level). `p5Clashes(code, { strict: true })` also lists every `let` / `const` with a p5 function's name.
+- The safe area: `frameSafeTop(frame)` / `frameSafeBottom(frame)` (host.js) = how far the frame reaches into the page's top / bottom
+  safe-area inset (CSS pixels; 0 when it sits under p0pc0rn's bar or above the credit bar). The boot message carries them as
+  `safe: { top, bottom }`, a window resize or a change of the frame's own size sends `{ t: 'safe', top, bottom }`, the frame keeps
+  them as `p0.safe` (`{ top, bottom, host: true }`) and fires `p0:safe`; the Kit's `K.safe.top` / `K.safe.bottom` = the host's
+  (inside a frame, env() reports the screen's insets wherever the frame sits).

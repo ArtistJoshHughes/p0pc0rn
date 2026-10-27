@@ -248,6 +248,7 @@ export class JobQueue {
     const runner = this.runners[j.kind];
     if (RENDER_KINDS.has(j.kind) && runner.needsConsent !== false && !this.consent()) return this.block(j, 'NO_CONSENT', 'Agree to the p0pc0rn terms (the lesson) first.');
     const model = this.modelOf(j);
+    if (model && runner.consentBeforeLoad && !this.consent()) return this.block(j, 'NO_CONSENT', 'Agree to the p0pc0rn terms before using the assistant.');   // 3.9: never load a model for a job its engine would refuse (Juli: ~1.5 GB)
     Object.assign(j, { status: 'running', startedAt: j.startedAt || Date.now(), attempts: (j.attempts || 0) + 1, error: null, interrupted: false });
     await this.save(j);                              // persisted BEFORE any GPU work: a kill from here on is detected at the next start
     const ctl = new AbortController();

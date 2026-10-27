@@ -1,0 +1,15 @@
+/* clipthumbs.css - p0pc0rn 3.9: the Library's clip tiles (ui/clipthumbs.js): a centred play button over the clip's poster, in the style of
+   the stage's own (app.css .st-play); the length pill stays (app.css .badge). A tile whose picture is missing or broken shows its kind on
+   the app's surface instead of an empty box. App tokens only (dark and light); nothing animates. */
+.tile .ct-play { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; display: grid;
+  place-items: center; background: rgba(0,0,0,.5); box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 2px 10px rgba(0,0,0,.25); color: #fff;
+  pointer-events: none; }
+.tile .ct-play svg { width: 22px; height: 22px; margin-left: 3px; fill: currentColor; stroke: none; }
+/* a song's cover draws its own note, length and BPM in the corner the pill sits in (app.js songCover): the pill only covered them. It stays
+   while no cover shows (a missing one being made again) */
+.tile.song:not(.ct-noart) .badge { display: none; }
+.tile.ct-noart { background: linear-gradient(160deg, var(--surface-3), var(--surface-1)); box-shadow: inset 0 0 0 1px var(--hairline); }
+.tile.ct-noart img { visibility: hidden; }
+.tile .ct-mark { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; display: grid; place-items: center;
+  color: var(--text-3); pointer-events: none; }
+.tile .ct-mark svg { width: 32px; height: 32px; stroke-width: 1.3; }

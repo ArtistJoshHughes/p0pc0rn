@@ -1,0 +1,160 @@
+/* ui/chat.css - p0pc0rn 3.9: Juli's chat as a text-message conversation (ui/chat.js) and Chats, the list of conversations.
+   Loaded after app.css: it restyles app.css's chat classes and adds its own, with the theme's tokens only (dark by default, light in
+   app.css's prefers-color-scheme block). Motion is transform / opacity; the typing dots are the one loop, they show only while Juli works,
+   and they rest while a picture or clip is being made (html[data-busy], as app.css asks) or when the phone asks for less motion. */
+
+/* ---------- the conversation bar: Chats on the left, the conversation's name, the queue and New chat on the right */
+.chat-view { gap: var(--s-2); }
+.as-bar { position: sticky; top: calc(-1 * var(--s-2)); z-index: 4; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center;
+  gap: var(--s-2); margin: calc(-1 * var(--s-2)) calc(-1 * var(--gutter-r)) 0 calc(-1 * var(--gutter-l)); padding: 2px var(--gutter-r) 2px var(--gutter-l);
+  background: color-mix(in srgb, var(--bg) 84%, transparent); -webkit-backdrop-filter: saturate(1.6) blur(18px); backdrop-filter: saturate(1.6) blur(18px);
+  box-shadow: 0 1px 0 var(--hairline); }
+.as-back { justify-self: start; display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 6px 0 0; color: var(--accent); font-size: 17px; line-height: 22px; }
+.as-back .ic { width: 22px; height: 22px; margin-left: -6px; transform: rotate(180deg); }
+.as-back-n { min-width: 20px; height: 20px; margin-left: 4px; padding: 0 6px; border-radius: 10px; background: var(--danger); color: #fff; font-size: 12px; line-height: 20px;
+  font-style: normal; font-weight: 600; text-align: center; }
+.as-title { margin: 0; max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; text-align: center; }
+.as-bar-r { justify-self: end; display: flex; align-items: center; gap: 2px; }
+.as-bar .qlink { min-height: 44px; min-width: 44px; justify-content: center; padding: 0; }
+.as-bar .qlink > span, .as-bar .qlink .chev { display: none; }   /* the bar keeps the queue's icon; its words stay in the button's label */
+.as-newbtn { color: var(--accent); }
+.as-newbtn .ic { width: 22px; height: 22px; }
+
+/* ---------- Chats: every conversation, newest first (swipe a row left for Delete, or press and hold) */
+.chat-view.listing > :not(.as-list) { display: none !important; }
+.chat-bar.listing { display: none !important; }
+.as-list { display: flex; flex-direction: column; gap: var(--s-3); animation: rise var(--d-3) var(--ease-out) both; }
+.as-list-top { display: flex; align-items: center; justify-content: space-between; min-height: 52px; }
+.as-list-top .title { margin: 0; font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -.02em; }
+.as-threads { display: flex; flex-direction: column; border-radius: var(--r-md); overflow: hidden; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--hairline); }
+.as-threads:empty { display: none; }
+.as-thread { position: relative; overflow: hidden; }
+.as-thread + .as-thread .as-thread-main::after { content: ''; position: absolute; top: 0; left: 68px; right: 0; height: 1px; background: var(--hairline); }
+.as-thread-del { position: absolute; top: 0; right: 0; bottom: 0; width: 88px; background: var(--danger); color: #fff; font-size: 15px; font-weight: 600; }
+.as-thread-main { position: relative; z-index: 1; display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 76px; padding: var(--s-2) var(--s-4) var(--s-2) var(--s-3);
+  text-align: left; background: var(--surface-1); color: var(--text-1); touch-action: pan-y; transition: transform var(--d-3) var(--ease-out), background-color var(--d-1); }
+.as-thread-main:active { background: var(--surface-2); }
+.as-av { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 19px; font-weight: 700;
+  background: linear-gradient(160deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #000)); }
+.as-av.has-icon { border-radius: 22%; background: none; overflow: hidden; }   /* ART's Juli icon (part 8): rounded like the home screen's icons */
+.as-av-img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.as-thread-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.as-thread-top { display: flex; align-items: baseline; gap: var(--s-2); }
+.as-thread-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-thread-time { flex: none; color: var(--text-3); }
+.as-thread-prev { color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.as-thread-main.unread .as-thread-title { font-weight: 700; }
+.as-thread-main.unread .as-thread-time { color: var(--accent); }
+.as-thread-n { flex: none; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; background: var(--danger); color: #fff; font-size: 13px; line-height: 22px;
+  font-weight: 600; text-align: center; }
+.as-none, .as-list-tip { text-align: center; }
+
+/* ---------- bubbles: groups from the same side within a few minutes sit close; the last one has the tail */
+.as-log { gap: var(--s-3); padding-top: var(--s-1); }
+.as-log > .msg.g-me:not(.g-first), .as-log > .msg.g-bot:not(.g-first) { margin-top: calc(2px - var(--s-3)); }
+.msg.g-me, .msg.g-bot { max-width: 78%; }
+.msg.me { border-radius: 20px; }
+.msg.bot.g-bot { border-radius: 20px; }
+.msg.me.g-last, .msg.bot.g-bot.g-last { position: relative; }
+.msg.me.g-last { border-bottom-right-radius: 6px; }
+.msg.bot.g-bot.g-last { border-bottom-left-radius: 6px; }
+.msg.me.g-last::before, .msg.bot.g-bot.g-last::before { content: ''; position: absolute; bottom: 0; width: 16px; height: 16px; pointer-events: none; }
+.msg.me.g-last::after, .msg.bot.g-bot.g-last::after { content: ''; position: absolute; bottom: 0; width: 12px; height: 16px; background: var(--bg); pointer-events: none; }
+.msg.me.g-last::before { right: -6px; background: var(--accent); border-bottom-left-radius: 14px 12px; }
+.msg.me.g-last::after { right: -12px; border-bottom-left-radius: 10px; }
+.msg.bot.g-bot.g-last::before { left: -6px; background: var(--surface-2); border-bottom-right-radius: 14px 12px; }
+.msg.bot.g-bot.g-last::after { left: -12px; border-bottom-right-radius: 10px; }
+.msg.bot.g-bot.k-text, .msg.bot.g-bot.k-question { box-shadow: none; }   /* the tail can't carry a hairline: neither do Juli's word bubbles (cards keep theirs) */
+.as-day { align-self: center; margin: var(--s-3) 0 0; color: var(--text-3); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.as-time { margin: calc(4px - var(--s-3)) 6px 0; color: var(--text-3); font-size: 12px; animation: rise var(--d-2) var(--ease-out) both; }
+.as-time.me { align-self: flex-end; }
+.as-time.bot { align-self: flex-start; }
+.msg[data-time] { cursor: default; -webkit-tap-highlight-color: transparent; }
+
+/* status lines and job cards: quiet, full width */
+.msg.bot.k-status { align-self: stretch; }
+.msg.bot.k-status > .msg-text { font-size: 13px; line-height: 18px; text-align: center; }
+
+/* ---------- Juli is typing: three dots that bounce, what she is doing underneath */
+.msg.typing { flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 14px; }
+.msg.typing .dots { display: inline-flex; gap: 5px; padding: 5px 2px; letter-spacing: 0; animation: none; }
+.msg.typing .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); animation: as-bob 1.2s ease-in-out infinite; }
+.msg.typing .dots i:nth-child(2) { animation-delay: .15s; }
+.msg.typing .dots i:nth-child(3) { animation-delay: .3s; }
+.msg.typing .tp-text:empty { display: none; }
+@keyframes as-bob { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-4px); opacity: 1; } }
+html[data-busy] .msg.typing .dots i { animation: none; opacity: .7; }
+
+/* ---------- results: Juli's words in a bubble, the picture / clip / song as its own bubble, the action bubbles under it */
+.msg.bot.k-result { align-self: stretch; max-width: 100%; padding: 0; background: none; box-shadow: none; gap: 4px; }
+.msg.bot.k-result > div:first-child:not(.res-media) { align-self: flex-start; max-width: 78%; padding: 10px 14px; border-radius: 20px 20px 20px 6px; background: var(--surface-2); }
+.msg.bot.k-result > div:first-child:not(.res-media):has(> .msg-text:empty) { display: none; }
+.res-media { align-items: flex-start; gap: var(--s-2); }
+.res-media .res-img, .res-media .res-vid { width: min(76vw, 300px, calc(50dvh * var(--ar, 1))); max-width: 100%; height: auto; max-height: none; border-radius: 18px;
+  background: var(--surface-2); object-fit: cover; }
+.res-media .song-card { width: min(86%, 340px); border-radius: 18px; }
+.as-acts { display: flex; gap: var(--s-2); max-width: calc(100% + var(--gutter-r)); margin-right: calc(-1 * var(--gutter-r)); padding: 2px var(--gutter-r) 4px 0;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.as-acts::-webkit-scrollbar { display: none; }
+.as-act { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px 0 11px; border-radius: 20px; background: var(--surface-1);
+  color: var(--accent); font-size: 15px; line-height: 20px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--hairline-2);
+  transition: transform var(--d-1) var(--ease-out), background-color var(--d-1); }
+.as-act .ic { width: 18px; height: 18px; }
+.as-act:active { transform: scale(.96); background: var(--accent-soft); }
+.as-act:disabled { opacity: .5; }
+.as-act[data-act="save"], .as-act[data-act="open"] { color: var(--text-1); }
+
+/* ---------- the composer: a text message's field */
+#as-in::placeholder { color: var(--text-3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .msg.typing .dots i { animation: none; opacity: .7; }
+  .as-thread-main, .as-act { transition: none; }
+  .as-list, .as-time { animation: none; }
+}
+
+/* ---------- 3.9 polish (Josh, Oct-26: "Juli chat is a general chat now with a research agent capabilities via Wikipedia and fandom. The
+   chats instructions only say creation prompts. And the chat as I am looking at it rn could use a little polish as well") */
+/* the bar: Juli's small picture beside the conversation's name, as a text thread shows who it is with (her icon, else an accent tile) */
+.as-title { position: relative; max-width: 58vw; padding-left: 30px; }
+.as-title::before { content: ""; position: absolute; left: 0; top: 50%; width: 24px; height: 24px; margin-top: -12px; border-radius: 7px;
+  background: url("../icons/ui/juli-120.png") center / cover no-repeat, linear-gradient(160deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #000)); }
+
+/* the start screen: Juli's icon, what she does, an example of each (a tap puts it in the composer) */
+.as-hello { align-items: center; gap: var(--s-2); padding: var(--s-6) 0 var(--s-2); text-align: center; }
+.as-hello-av { width: 60px; height: 60px; margin-bottom: var(--s-2); border-radius: 22%; box-shadow: 0 8px 24px rgba(0,0,0,.28); }
+.as-hello .title { margin: 0; }
+.as-hello-what { max-width: 32em; color: var(--text-2); text-wrap: balance; }
+.as-hello .as-try { align-self: stretch; align-items: stretch; gap: var(--s-4); margin-top: var(--s-6); text-align: left; }
+.as-kind { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.as-kind-h { display: flex; align-items: center; gap: 6px; padding-left: 4px; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--text-2); }
+.as-kind-h .ic { width: 16px; height: 16px; color: var(--accent); }
+.as-kind-off { font-weight: 400; color: var(--text-3); }
+.as-hello .as-chip { max-width: 92%; }
+.as-hello .as-musichint { align-self: stretch; text-align: left; }
+.as-hello-note { max-width: 32em; margin-top: var(--s-4); color: var(--text-3); text-wrap: balance; }
+
+/* Juli typing: a small bubble of three dots with a little tail; what she is doing, in quiet words under it */
+#as-log .msg.typing { background: none; box-shadow: none; padding: 0; gap: 5px; max-width: 86%; }
+#as-log .msg.typing::before, #as-log .msg.typing::after { display: none; }
+#as-log .msg.typing .dots { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 36px; padding: 0 14px; border-radius: 18px; background: var(--surface-2); }
+#as-log .msg.typing .dots::after { content: ""; position: absolute; left: -3px; bottom: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface-2); }
+#as-log .msg.typing .dots i { width: 7px; height: 7px; }
+#as-log .msg.typing .tp-text { padding: 0 4px; font-size: 12px; line-height: 16px; color: var(--text-3); }
+#as-log .msg.typing .rl-live { margin: 2px 4px 0; }
+
+/* an answer's Sources and what was looked up: one quiet row of small chips under its words; each opens under the row, full width */
+.msg-foot { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
+.msg-foot > details { min-width: 0; margin: 0; }
+.msg-foot > details[open] { flex-basis: 100%; }
+.msg-foot > details > summary { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 28px; min-height: 28px; padding: 0 9px 0 8px;
+  border-radius: 14px; font-size: 12px; line-height: 16px; font-weight: 600; color: var(--text-2); background: color-mix(in srgb, var(--text-1) 8%, transparent);
+  list-style: none; cursor: pointer; }
+.msg-foot > details > summary::-webkit-details-marker { display: none; }
+.msg-foot > details > summary::after { content: ""; position: absolute; inset: -8px -3px; }   /* a finger-sized target around the small chip */
+.msg-foot .foot-ic { width: 14px; height: 14px; }
+.msg-foot .chev { width: 13px; height: 13px; margin-right: -2px; color: var(--text-3); transition: transform var(--d-3) var(--ease-out); }
+.msg-foot details[open] > summary .chev { transform: rotate(90deg); }
+.msg-foot .src-list, .msg-foot .rlist { margin-top: 8px; }
+
+@media (prefers-reduced-motion: reduce) { .msg-foot .chev { transition: none; } }

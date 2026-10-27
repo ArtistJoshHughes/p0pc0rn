@@ -87,7 +87,7 @@ const ops = {
       await model.preload(null);
       model._ensureRope(m.ctxCap);
       model.allocKV(m.ctxCap, m.chunk);
-      const s = model.scratch(), Mmax = m.Mmax || 8, V = specAlloc(model, Mmax), D = model.D;
+      const s = model.scratch(), Mmax = m.Mmax || 8, V = specAlloc(model, Mmax, null, { head: false }), D = model.D;   // 3.9 (E4B room): no head here: 8.6 MB less
       const mirror = (m.mirror || []).map((l) => ({ l, c: model.kv[l] }));   // 3.8: the page's mirror layers (their KV rows go back with each answer)
       if (mirror.some((x) => !x.c)) throw new Error('a mirror layer has no KV cache in this part: ' + JSON.stringify(m.mirror));
       const perPos = mirror.reduce((a, x) => a + 2 * model.NKV * x.c.hd * 2, 0), rowsMax = Math.max(m.chunk || 256, Mmax);

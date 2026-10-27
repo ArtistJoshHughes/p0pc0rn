@@ -17,7 +17,9 @@ This is the usual rule for open projects. It means a changed version is never mi
 - **Pick your own name and icon.** A modified version you share must not be called "p0pc0rn", must not use the popcorn
   icon, and must not use a name or icon confusingly similar to them (`LICENSE.md` section 3.3).
 - **Credit the original.** Keep the line "Based on p0pc0rn by Joshua Hughes", the copyright notice, `LICENSE.md` and
-  `NOTICE`. You may say truthfully that your version is "based on p0pc0rn".
+  `NOTICE`. Show the credit, with a link to the official site, in your version's own screens and at the top of its
+  README, for as long as copyright lasts; this also covers any part, port or translation (`LICENSE.md` section 3.6). You
+  may say truthfully that your version is "based on p0pc0rn".
 - **Say it's modified.** Make clear it is not the Official Distribution.
 - **Contributions** accepted into the Official Distribution are part of p0pc0rn and keep the name.
 

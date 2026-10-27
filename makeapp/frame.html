@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <!-- The sandbox every app made in p0pc0rn runs in (iframe sandbox="allow-scripts", an opaque origin): no network of its own
      (connect-src 'none', WebRTC removed by the boot script, the page's frame-src keeps it from navigating away), no storage, no
-     access to the page. The host sends p5, the p0pc0rn Kit and the app's code; the app reaches the host only through window.p0
+     access to the page. The host sends p5, the p0pc0rn Kit, the app's code and its added part; the app reaches the host only through window.p0
      (postMessage), which checks the app's permissions. The code starts as blob: scripts made by the boot script below, which does
      nothing at all unless this page really is that sandbox (a frame with an opaque origin, under a page of this site). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-MMwnnV9OMiihjrTxQtKqCIkdH0thzz+HOq9FK+PYLtM=' blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-klA6Cc6ggvl+feeDHzCkUbqr7Z8pFx4RMqOXsj9pDA4=' blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
 <title>app</title>
 <style>html,body{margin:0;padding:0;overflow:hidden;background:transparent;touch-action:none;-webkit-user-select:none;user-select:none}</style>
@@ -80,6 +80,10 @@
     try { stop(); } catch (e) { /* stop() throws for the app's own calls */ }
   }).observe(document, { childList: true, subtree: true });
   var host = window.parent, MODE = 'run', NAME = '', booted = false, seq = 0, pend = {}, checkFn = null, store = {}, used = 0;
+  // 3.9 platform: inside this frame env() gives the SCREEN's safe-area insets wherever the frame sits; the host says how far the
+  // frame really reaches into the top and bottom unsafe areas (0 under p0pc0rn's bar; the home indicator below), the Kit's K.safe takes
+  // them (p0.safe) and measures again on the event 'p0:safe'
+  var SAFE_B = 0, SAFE_T = 0, safeIn = function (v) { v = +v; return v > 0 && v < 400 ? Math.round(v * 10) / 10 : 0; };
   function send(m) { try { host.postMessage(m, '*'); } catch (e) { /* the host is gone */ } }
   function call(fn, args) {
     return new Promise(function (res, rej) { var id = ++seq; pend[id] = { res: res, rej: rej }; send({ t: 'call', id: id, fn: fn, args: args === undefined ? null : JSON.parse(JSON.stringify(args)) }); });
@@ -94,28 +98,54 @@
   };
   var p0 = {
     version: 1, get mode() { return MODE; },
+    get safe() { return { top: SAFE_T, bottom: SAFE_B, host: true }; },   // 3.9 platform: the host's insets for this frame (read-only)
     fetch: function (source, params) { return call('fetch', [String(source), params || {}]); },
-    juli: { ask: function (prompt, o) { return call('juli.ask', [String(prompt).slice(0, 4000), { json: !!(o && o.json) }]); } },
+    juli: { ask: function (prompt, o) { return call('juli.ask', [String(prompt).slice(0, 4000), { json: !!(o && o.json), skill: String((o && o.skill) || '').slice(0, 40) }]); },
+      // 3.9: Juli picks one of the app's options while it is open (a game's move); the host checks the app may, and that she named an option
+      choose: function (o) { o = o || {}; return call('juli.choose', [{ about: String(o.about == null ? '' : o.about).slice(0, 1200), options: (Array.isArray(o.options) ? o.options : []).slice(0, 13).map(function (x) { return String(x).slice(0, 60); }),
+        hint: String(o.hint == null ? '' : o.hint).slice(0, 300), skill: String(o.skill == null ? '' : o.skill).slice(0, 40), big: o.big === true }]); },
+      // 3.9 polish: which of Juli's models can answer choose here ({juli, big}: the Bigger brain downloaded and on)
+      models: function () { return call('juli.models', []); } },
     chat: { post: function (n) { n = n || {}; return call('chat.post', [{ title: String(n.title || '').slice(0, 80), severity: String(n.severity || 'info'), text: String(n.text || '').slice(0, 500) }]); } },
     location: { get: function () { return call('location.get', []); } },
     app: Object.freeze({ badge: function (n) { return call('app.badge', [Math.max(0, Math.min(99, n | 0))]); }, get name() { return NAME; } }),
     onCheck: function (fn) { if (typeof fn === 'function') checkFn = fn; }
   };
   Object.defineProperty(window, 'p0', { value: Object.freeze(p0), writable: false, configurable: false });
-  window.addEventListener('error', function (e) { send({ t: 'error', message: String((e && e.message) || e).slice(0, 300) }); });
+  // an app's ADDED PART (a change made by chat) runs as its own blob script after the app's: its errors are its own ('custom-error', at
+  // most 5), never the app's, and never stop the app. Its line numbers count from its own first line.
+  var CU = null, cerrs = 0;
+  var cerr = function (msg, line, where) { if (++cerrs > 5) return; send({ t: 'custom-error', message: Str(msg).slice(0, 300), line: line == null ? null : line, where: Str(where || '').slice(0, 20) }); };
+  var cline = function (e) { var st = Str((e && e.stack) || ''), i = CU ? st.indexOf(CU + ':') : -1, mm = i >= 0 ? /^:(\d+)/.exec(st.slice(i + CU.length)) : null; return mm ? Math.max(1, +mm[1] - 1) : null; };
+  window.addEventListener('error', function (e) {
+    if (CU && e && e.filename === CU) { e.stopImmediatePropagation(); e.preventDefault(); cerr(e.message, e.lineno ? Math.max(1, e.lineno - 1) : null, 'load'); return; }
+    send({ t: 'error', message: String((e && e.message) || e).slice(0, 300) });
+  });
   window.addEventListener('unhandledrejection', function (e) { send({ t: 'error', message: String((e && e.reason && (e.reason.message || e.reason)) || e).slice(0, 300) }); });
   window.addEventListener('message', function (ev) {
     if (ev.source !== host) return;
     var m = ev.data || {};
+    if (m.t === 'safe') { SAFE_B = safeIn(m.bottom); SAFE_T = safeIn(m.top); try { window.dispatchEvent(new Event('p0:safe')); } catch (e) { /* */ } return; }   // 3.9 platform
     if (m.t === 'reply' && pend[m.id]) { var p = pend[m.id]; delete pend[m.id]; if (m.ok) p.res(m.value); else p.rej(Object.assign(new Error(m.error || 'failed'), { code: m.code || null })); return; }
     if (m.t === 'boot' && !booted) {
       booted = true;
       store = m.store || {}; MODE = m.mode === 'check' ? 'check' : 'run'; NAME = String(m.name || '');
       window.SLOTS = m.slots || {};
+      SAFE_B = safeIn(m.safe && m.safe.bottom); SAFE_T = safeIn(m.safe && m.safe.top);   // 3.9 platform: before the Kit's setup measures
       // memory (the phone's page cap): canvases at most 2x, and a CHECK runs without p5 at all (no canvas: only the app's onCheck runs)
       var dpr = Math.min(2, window.devicePixelRatio || 1);
       try { Object.defineProperty(window, 'devicePixelRatio', { get: function () { return dpr; }, configurable: true }); } catch (e) { /* p5's own default then */ }
       var fatal = function (msg) { send({ t: 'error', fatal: true, message: String(msg).slice(0, 300) }); };
+      var custom = Str(m.custom || '').slice(0, 4096);
+      try { Object.defineProperty(window, '__p0custom', { value: Object.freeze({ error: function (e, where) { cerr((e && e.message) || e, cline(e), where); } }), writable: false, configurable: false }); } catch (e) { /* */ }
+      var startCustom = function (next) {   // the added part, after the app, in its own scope: its own errors are caught (the Kit's hooks report theirs)
+        if (!custom.trim()) { next(); return; }
+        var u = URL.createObjectURL(new Blob(["try { (function () { 'use strict';\n" + custom + "\n}).call(window); } catch (e) { window.__p0custom.error(e, 'start-up'); }"], { type: 'text/javascript' })), s = document.createElement('script');
+        CU = u;
+        s.onload = function () { URL.revokeObjectURL(u); next(); };
+        s.onerror = function () { URL.revokeObjectURL(u); cerr('the added part could not start (its script was blocked)', null, 'load'); next(); };
+        s.src = u; document.head.appendChild(s);
+      };
       // each part runs as a blob: script (the frame's CSP allows only this boot script and blob: scripts; no eval)
       var run = function (code, next) {
         var u = URL.createObjectURL(new Blob([code], { type: 'text/javascript' })), s = document.createElement('script');
@@ -125,11 +155,35 @@
       };
       var start = function () {
         run(String(m.kit) + '\n;\n' + String(m.code) + '\n//# sourceURL=sketch.js', function () {   // one script: the kit's const K is visible to the sketch
-          try { if (MODE !== 'check') new window.p5(); send({ t: 'booted', check: !!checkFn }); } catch (e) { fatal((e && e.message) || e); }
+          try { if (MODE !== 'check') new window.p5(); } catch (e) { fatal((e && e.message) || e); return; }
+          startCustom(function () { send({ t: 'booted', check: !!checkFn }); });
         });
       };
       if (MODE === 'check') { window.p5 = function () {}; window.p5.prototype = { registerMethod: function () {} }; start(); }
       else run(String(m.p5), start);
+      return;
+    }
+    if (m.t === 'snap') {   // the host's test run: a picture of the canvas (a PNG <= 1 MB, smaller if it must) and what the screen shows
+      var shot = { t: 'snapped', id: m.id, ok: true, png: null, w: 0, h: 0, scene: '', buttons: [], texts: [], errors: [] };
+      try {
+        var ctls = window.__controls || {}, cv = R(it, R(qD, document, ['canvas']), [0]);
+        shot.scene = Str(ctls.screen || '').slice(0, 40);
+        shot.buttons = (Array.isArray(ctls.buttons) ? ctls.buttons : []).slice(0, 40).map(function (b) { return Str(b && b.name).slice(0, 40); });
+        shot.texts = (Array.isArray(ctls.texts) ? ctls.texts : []).slice(0, 80).map(function (x) { return { s: Str(x && x.s).slice(0, 80), x: +(x && x.x) || 0, y: +(x && x.y) || 0, c: x && x.c ? 1 : 0 }; });
+        try { shot.errors = (typeof K !== 'undefined' && K && Array.isArray(K.errors) ? K.errors : []).slice(0, 3).map(function (x) { return Str(x).slice(0, 200); }); } catch (e) { /* */ }
+        if (cv) { shot.w = cv.clientWidth || cv.width; shot.h = cv.clientHeight || cv.height; }
+        if (m.png && cv) {
+          var sizes = [1, 0.5, 0.33];
+          for (var kk = 0; kk < sizes.length && !shot.png; kk++) {
+            var url = '';
+            if (sizes[kk] === 1) url = cv.toDataURL('image/png');
+            else { var cc = document.createElement('canvas'); cc.width = Math.max(1, Math.round(cv.width * sizes[kk])); cc.height = Math.max(1, Math.round(cv.height * sizes[kk])); cc.getContext('2d').drawImage(cv, 0, 0, cc.width, cc.height); url = cc.toDataURL('image/png'); }
+            if (typeof url === 'string' && url.length <= 1e6 && url.indexOf('data:image/png') === 0) shot.png = url;
+          }
+          if (!shot.png) { shot.ok = false; shot.error = 'the picture of the screen was over 1 MB'; }
+        }
+      } catch (e) { shot.ok = false; shot.error = Str((e && e.message) || e).slice(0, 200); }
+      send(shot);
       return;
     }
     if (m.t === 'check') {

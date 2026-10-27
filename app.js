@@ -22,7 +22,7 @@ import * as store from './store.js';
 import { researchList, lyricsEl } from './ui/research.js';   // v026.2
 import * as rights from './rights.js';
 import * as opfs from './opfs.js';
-import { $, ls, clock, about, aboutLong, gb, size as fmtSize, reducedMotion, standalone, isAbort, wake, mediaFile, saveFile, share, shrinkPhoto, makeThumb, posterOf, gestures } from './util.js';
+import { $, ls, clock, about, aboutLong, gb, size as fmtSize, reducedMotion, standalone, isAbort, wake, mediaFile, saveFile, share, shrinkPhoto, makeThumb, gestures } from './util.js';
 import { popcorn } from './popcorn.js';
 import { stageOf, stageText } from './ui/stage.js';   // v026.9: the popcorn runs per stage
 import { initBack } from './ui/back.js';   // v026.9: the Android back button closes the open sheet
@@ -30,6 +30,8 @@ import { tagMedia, SHARE_TEXT, AI_TAG } from './export.js';   // v026.4: every s
 import { createQueue, EngineHost, RENDER_KINDS } from './assistant/queue.js';
 import { createRunners, FLF_DROP, flfKeep, keepHead } from './assistant/runners.js';   // v026.3: + the first/last-frame trim
 import { createAgent, loadCookbooks } from './assistant/agent.js';
+import { startMemory } from './ui/memory_ui.js';   // 3.9: About me + Routines (Settings › Juli) and their heartbeat
+let MEM = null;   // 3.9: startMemory(memApi()) once the Apps tab has started (init)
 import { createResearch } from './assistant/research.js';
 import { createStarterEngine } from './assistant/starter.js';   // v022: the starter knowledge pack (Settings › Models), research's second local source
 import { setSafetyTerms, MAIN_TOOLS, FRAMES as TFRAMES, CLIP_SIZE, properNames } from './assistant/tools.js';
@@ -43,11 +45,20 @@ import { sayRunner, sayTurn, wrapAsk } from './cast/castsay.js';
 import { initCast } from './cast/cast_ui.js';
 import { lipsyncRunner, talkRunner } from './cast/talk.js';
 import { initTalk } from './cast/talk_ui.js';
+import { initSettings, revealSetting } from './ui/settings.js';   // 3.9 polish: Settings in groups that open; Cast on its own screen
 import { NUDGE_MAX, shotsOfFrame } from './assistant/storyboard.js';   // v023
 import { createApps } from './makeapp/host.js';   // 3.8: the Apps tab (apps made from skeletons, agentic and non-agentic)
+import { openAppOf, reopenApp, freshMoves } from './makeapp/freshapp.js';   // 3.9: the open app (a game) across a planned fresh page
 import { createBench, benchRunner } from './ui/bench.js';   // 3.8: Settings › Benchmark
+import { createAppIcon, iconPlanRunner, iconRenderRunner } from './ui/appicon.js';   // 3.9: "Make an icon" for a made app on the home screen (ui/appicon.js)
+let ICON = null;   // 3.9: the app icon maker, made in init() (also globalThis.P0APPICON for the shell and the Apps tab)
+import { createMusic } from './ui/music.js';   // 3.9: Music (songs, playlists, the lock screen)
+import { createClipThumbs, clipPoster, clipLibrary } from './ui/clipthumbs.js';   // 3.9: the Library's clip posters + play buttons (Josh, 10-26)
+let CLIPT = null;   // 3.9: the Library's clip posters (ui/clipthumbs.js), made in init() (also globalThis.P0CLIPT)
+let MUSIC = null;   // 3.9: the Music screen (ui/music.js), made in init()
+import { SHELL } from './ui/shell.js';   // 3.9: the phone-OS shell (home screen, dock, badges, wallpaper)
 
-const APP_VERSION = '3.8 · v042';
+const APP_VERSION = '3.9 · v043';
 const MODELS = {
   image: { id: 'flux2-klein-4b', name: 'FLUX.2 Klein 4B', what: 'Pictures', noun: 'picture', total: 4.62e9 },
   video: { id: 'sanavideo2-5b', name: 'SANA-Video 2.0 5B', what: 'Videos', noun: 'video', total: 5.72e9 },
@@ -118,6 +129,9 @@ const CAPTION = { load: 'Getting ready', text: 'Reading your words', encode: 'St
 const SONG_CAPTION = { load: 'Getting ready', plan: 'Planning the song', text: 'Reading the style', lyrics: 'Reading the words', cond: 'Tuning the band', decode: 'Mixing', encode: 'Saving the song' };
 const SONG_HEAT = new Set(['load', 'plan', 'text', 'lyrics', 'cond']);
 const NOUN = { makeapp: 'app', appask: 'app question', bench: 'benchmark', picture: 'picture', edit: 'picture', clip: 'clip', animate: 'clip', between: 'clip', resume: 'clip', song: 'song', musicvideo: 'music video', assemble: 'music video', mvflf: 'music video', mvplan: 'storyboard', say: 'voice line', talk: 'lip-sync', lipsync: 'lip-sync' };
+NOUN.appicon = 'app icon'; NOUN.appiconplan = 'icon idea';   // 3.9: "Make an icon" (ui/appicon.js)
+NOUN.appedit = 'app change';   // H39: an app changed by chat (makeapp/edit.js)
+NOUN.appchoose = 'game move';   // 3.9: Juli's move in a game app (makeapp/choose.js)
 const DECODE = [450, 560, 700];
 // v030: clips decode with 700 MB by default (720p -36% against v027.3 on an iPhone 16 Pro Max: one tile, peak ~580 MB). Android
 // (experimental, not yet run on a device) keeps 450. A clip that runs out of memory still offers "Use 450 MB and retry".
@@ -143,7 +157,7 @@ const consented = () => !!rights.consent();
 
 const S = {
   phase: 'boot',        // boot | stop | setup (iPhone: "Add to Home Screen first") | ready | working | result | error
-  tab: 'create', mode: ls.get('pf.app.mode') === 'video' ? 'video' : 'image',
+  tab: 'home', mode: ls.get('pf.app.mode') === 'video' ? 'video' : 'image',   // 3.9: the home screen (ui/shell.js) is where the app starts
   caps: null, persisted: false, st: { image: null, video: null, reader: null, brain: null, drafter: null, brain4: null, drafter4: null, music: null, planner: null, voice: null, lipsync: null, k9b: null },
   dl: Object.fromEntries(DL.map((k) => [k, dlState(MODELS[k].total)])),
   stop: null,           // {title, text, detail, retry: 'reload' | 'boot'}
@@ -345,7 +359,8 @@ async function restoreUi() {
   const root = document.documentElement, ui = (PLANNED_IN && PLANNED_IN.ui) || null;
   try {
     if (ui && ['ready', 'working', 'result', 'error'].includes(S.phase)) {
-      if (['create', 'assistant', 'library', 'settings'].includes(ui.tab)) go(ui.tab);
+      if (['create', 'assistant', 'library', 'settings'].includes(ui.tab) || SHELL.restorable(ui.tab)) go(ui.tab);   // 3.9: + the home screen and the shell's screens
+      if (ui.app && APPS) await Promise.race([reopenApp(APPS, ui.app), new Promise((r) => setTimeout(r, 8000))]);   // 3.9: the app that was open opens again
       if (ui.tab === 'assistant' && S.chatShown) await Promise.race([S.chatShown, new Promise((r) => setTimeout(r, 4000))]);
       if (ui.board && Q && Q.get(ui.board)) openBoard(ui.board);
       else if (ui.queue && CH) CH.openQueue();
@@ -380,7 +395,7 @@ function unsupportedText(reason = '') {
 async function enterApp() {
   const first = S.phase !== 'ready';
   if (!done(S.mode) && !(S.dl[S.mode].have > 0)) S.mode = KEYS.find(done) || S.mode;   // open on a model that is there
-  const home = first ? await homeTab() : S.tab;
+  const home = first ? SHELL.startTab(await homeTab()) : S.tab;   // 3.9: an install that opened on Create opens on the home screen
   set({ phase: 'ready' });
   if (first) { const c = $('compose'); c.classList.add('stagger'); setTimeout(() => c.classList.remove('stagger'), 700); freeSpace(); }
   syncPrompt(); placeAll();   // the shell is visible now, so the selectors can be measured
@@ -391,13 +406,19 @@ async function enterApp() {
 const onPhone = () => DL.some((k) => done(k) || S.dl[k].have > 0);
 // ---- onboarding (Josh: "like Ollama does"): a NEW install opens in the Assistant chat, whose first message offers the assistant and the
 // starter knowledge (ui/chat.js); the other models are offered there when they are asked for, and in Settings › Models. An install that
-// already has a model, Library items or chats keeps opening on Create, as before. Decided on the first open of this version, then kept.
+// already has a model, Library items or chats keeps opening on Create, as before. Decided on the first open of this version, then kept;
+// 3.9 (review): an install that started in the chat while it was empty opens on the home screen once it has a model, a picture or a chat.
 const HOME = 'p0pc0rn:home';
 async function homeTab() {
   const h = ls.get(HOME, null);
-  if (h === 'assistant' || h === 'create') return h;
+  if (h === 'create') return h;
   let had = onPhone() || (await store.list().catch(() => [])).length > 0;
   if (!had && AG) had = (await AG.db.all('sessions').catch(() => [])).some((s) => s && s.messages && s.messages.length);
+  if (h === 'assistant') {   // 3.9 (review): the chat was the start only while the install was empty
+    if (!had) return h;
+    ls.set(HOME, 'create'); diag('first open', { home: 'create', was: 'assistant' });
+    return 'create';
+  }
   const tab = had ? 'create' : 'assistant';
   ls.set(HOME, tab); diag('first open', { home: tab });
   return tab;
@@ -891,7 +912,7 @@ async function freshPage(stage, jobId) {
   const min = /^(song|say|k9b) |^load brain4/.test(stage) ? 64e6 : /^lipsync /.test(stage) ? 384e6 : /^render /.test(stage) ? (RENDERED ? 0 : 64e6) : FRESH_MIN;   // Cast: say = a song's rule; lip-sync: light
   if (mode !== 'always' && freed < min) return false;
   const ids = Q ? Q.list().filter((j) => j.status === 'running').map((j) => j.id) : [];
-  const ui = { tab: S.tab, board: MB.id || null, queue: !!($('queue') && !$('queue').hidden) };   // v026.1: the same screen after the reload
+  const ui = { tab: S.tab, board: MB.id || null, queue: !!($('queue') && !$('queue').hidden), app: openAppOf(APPS) };   // v026.1: the same screen after the reload (3.9: + the open app)
   try { localStorage.setItem(FRESH_DONE, JSON.stringify(done.concat({ key, t: now }).slice(-40))); localStorage.setItem(PLANNED, JSON.stringify({ t: now, ids, stage, key, ui })); } catch (x) { return false; }
   diag('fresh page', { stage, freedMB: Math.round(freed / 1e6), freed60MB: Math.round(f60 / 1e6), jobs: ids.length });
   // v026.1: reload only once the marker reads back; if the page is still here 8 s later, carry on in it (and say so)
@@ -943,10 +964,68 @@ function crumb(j, step) {
     diag('step', { kind: j.kind, step, ...m });
   } catch (x) { /* best effort */ }
 }
+// 3.9 phone fit (Josh's iPhone 16 Pro Max, iOS 27.0.1, Oct-27): in the Home Screen app iOS sizes the page as the screen minus the
+// status bar but draws it from the top, so the bottom 62 px are a strip the page cannot paint (an open WebKit bug for black-translucent
+// installs: 313800, 317153, 301994). iOS is reported to grow the page back once the document is taller than it, so only there (a Home
+// Screen app on an iPhone whose page is 20-90 px short): make the document as tall as the screen and keep it if the page grows; else lift
+// the scroll lock too (no bounce) and try again; else put everything back. Settings > About > Diagnostics shows what happened (vpLine).
+const VP = { seen: 0, step: '', log: [], runs: 0, last: 0 };
+const vpBox = (css) => { const p = document.createElement('div'); p.style.cssText = 'position:fixed;left:0;top:0;width:0;visibility:hidden;pointer-events:none;' + css; document.body.appendChild(p); const r = p.getBoundingClientRect(), cs = getComputedStyle(p); p.remove(); return { h: Math.round(r.height), pt: parseFloat(cs.paddingTop) || 0, pb: parseFloat(cs.paddingBottom) || 0 }; };
+function vpMeasure() {
+  const standalone = !!((window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true);
+  const portrait = innerHeight >= innerWidth, sw = screen.width || 0, sh = screen.height || 0;
+  const screenW = portrait ? Math.min(sw, sh) : Math.max(sw, sh), screenH = portrait ? Math.max(sw, sh) : Math.min(sw, sh);
+  const b = vpBox('bottom:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)');
+  return { standalone, screenW, screenH, pageH: b.h, inner: innerHeight, visual: window.visualViewport ? Math.round(window.visualViewport.height) : null, top: b.pt, bottom: b.pb };
+}
+const vpLine = () => `screen ${VP.screen || '?'} · page ${VP.page || '?'} (inner ${VP.inner ?? '?'}, visual ${VP.visual ?? '?'}) · insets ${VP.top ?? '?'}/${VP.bottom ?? '?'}`
+  + `${VP.end ? ` -> ${VP.end.top}/${VP.end.bottom}` : ''} · ${VP.standalone ? 'Home Screen app' : 'browser'} · short by ${VP.seen}`
+  + `${VP.step ? ` · fill: ${VP.step}` : ''}${VP.log.length ? ` [${VP.log.join(' ')}]` : ''}${VP.end ? ` · lvh ${VP.end.lvh} dvh ${VP.end.dvh} svh ${VP.end.svh}` : ''}`;
+async function fitViewport() {
+  VP.runs += 1; VP.last = Date.now();
+  const H = document.documentElement, B = document.body, wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const finish = (step) => {
+    VP.step = step;
+    try { const e = vpBox('bottom:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)'); VP.end = { top: e.pt, bottom: e.pb, lvh: vpBox('height:100lvh').h, dvh: vpBox('height:100dvh').h, svh: vpBox('height:100svh').h }; } catch (e) { /* the numbers so far */ }
+    H.dataset.vp = vpLine();
+  };
+  try {
+    const m = vpMeasure(), grown = () => innerHeight >= m.screenH - 2;
+    Object.assign(VP, { standalone: m.standalone, screen: `${m.screenW}x${m.screenH}`, page: `${innerWidth}x${m.pageH}`, inner: m.inner, visual: m.visual, top: m.top, bottom: m.bottom, seen: m.screenH - m.pageH });
+    VP.log = [];
+    if (!(m.standalone && /iPhone|iPad|iPod/.test(navigator.userAgent || '') && VP.seen >= 20 && VP.seen <= 90)) return finish('not needed');
+    H.style.minHeight = m.screenH + 'px';   // (a) the document as tall as the screen
+    for (const t of [300, 500, 700]) { await wait(t); VP.log.push(`a${t}:${innerHeight}`); if (grown()) return finish('filled (taller page)'); }
+    H.style.overflow = 'visible'; B.style.overflow = 'visible'; H.style.overscrollBehavior = 'none'; B.style.overscrollBehavior = 'none';   // (b) + no scroll lock
+    try { window.scrollTo(0, 1); window.scrollTo(0, 0); } catch (e) { /* */ }
+    for (const t of [300, 500, 700]) {
+      await wait(t); VP.log.push(`b${t}:${innerHeight}`);
+      if (grown()) {   // the lock back on, if the page stays grown with it
+        B.style.overflow = ''; H.style.overflow = ''; await wait(500); VP.log.push(`lock:${innerHeight}`);
+        if (grown()) return finish('filled (scroll lock back on)');
+        H.style.overflow = 'visible'; B.style.overflow = 'visible'; return finish('filled (scroll lock off)');
+      }
+    }
+    H.style.minHeight = ''; H.style.overflow = ''; B.style.overflow = ''; H.style.overscrollBehavior = ''; B.style.overscrollBehavior = '';   // (c) as it was
+    try { window.scrollTo(0, 0); } catch (e) { /* */ }
+    finish('no change (put back)');
+  } catch (e) { finish('error: ' + String((e && e.message) || e).slice(0, 80)); }
+}
+fitViewport();
+addEventListener('resize', () => {   // the page came back short (e.g. after leaving the app's scope): once more, at most every 5 s
+  try {
+    const H = document.documentElement;
+    if (innerHeight < innerWidth) { H.style.minHeight = ''; return; }   // sideways: no screen-tall document (it would scroll)
+    const sh = Math.max(screen.width || 0, screen.height || 0);
+    if (sh - innerHeight < 20 || Date.now() - VP.last < 5000 || VP.runs > 20) return;
+    fitViewport();
+  } catch (e) { /* */ }
+});
+
 function diagText() {
   const rows = ls.get(DIAG_KEY, []) || [];
   const head = `p0pc0rn ${APP_VERSION} · ${navigator.userAgent}${navigator.deviceMemory ? ` · deviceMemory ${navigator.deviceMemory} GB` : ''}`;
-  return [head].concat(rows.map((r) => { const { t, step, mem, ...rest } = r; const m = mem || {}; return `${t} ${step}${Object.keys(rest).length ? ' ' + JSON.stringify(rest) : ''} | gpu ${m.gpuMB ?? '?'} MB (peak ${m.gpuPeakMB ?? '?'})${m.jsMB != null ? ` js ${m.jsMB} MB` : ''}`; })).join('\n');
+  return [head, vpLine()].concat(rows.map((r) => { const { t, step, mem, ...rest } = r; const m = mem || {}; return `${t} ${step}${Object.keys(rest).length ? ' ' + JSON.stringify(rest) : ''} | gpu ${m.gpuMB ?? '?'} MB (peak ${m.gpuPeakMB ?? '?'})${m.jsMB != null ? ` js ${m.jsMB} MB` : ''}`; })).join('\n');
 }
 addEventListener('error', (e) => diag('page error', { message: String((e && e.message) || e).slice(0, 300) }));
 addEventListener('p0pc0rn:manifest', (e) => { const d = (e && e.detail) || {}; diag('pack list refused', { pack: d.pack || null, kept: !!d.kept }); });   // v027.3 (engine/core/pin.js)
@@ -982,7 +1061,16 @@ async function initAssistant() {
   APPS = createApps(appsApi());
   RUN.makeapp = APPS.runner(() => brainFor('app'), { ctxOf: (id) => (MODELS.brain4 && id === MODELS.brain4.id ? BRAIN4_CTX : 0), small: MODELS.brain.id });   // 3.8 (v040): the Bigger brain makes apps when it can
   RUN.appask = APPS.askRunner(MODELS.brain.id);   // an app's own questions stay on Juli
+  RUN.appedit = APPS.editRunner({ big: () => brainFor('app'), small: MODELS.brain.id, ctxOf: (id) => (MODELS.brain4 && id === MODELS.brain4.id ? BRAIN4_CTX : 0) });   // H39: a change by chat: the Bigger brain plans and reviews when it can, Juli does the work
+  // 3.9 polish (Josh: "the user can choose the opponent after they beat Juli e2B 10 times in a row"): a game's mover is Juli's own
+  // model, always; the Bigger brain only when the game asks for it (big: the opponent the person earned and chose) and it is
+  // downloaded and on, and never one model for the other. Both answer with the number of their choice (the Bigger brain read the
+  // desk's 36 positions all right that way, 89% as a choose_move tool call). Either runs next to the open game; the game hold
+  // keeps it for the next move
+  RUN.appchoose = freshMoves(APPS.chooseRunner((j) => (j && j.params && j.params.big && brain4Usable() ? MODELS.brain4.id : MODELS.brain.id), {
+    isBig: (id) => !!MODELS.brain4 && id === MODELS.brain4.id, big: () => brain4Usable() }), () => Q);   // a move an earlier page asked needs none (script 16)
   RUN.bench = benchRunner({ MODELS, RUN });
+  RUN.appiconplan = iconPlanRunner(MODELS.brain.id); RUN.appicon = iconRenderRunner(MODELS.image.id, RUN.picture);   // 3.9: Juli's idea for an app icon (her own model), then ONE FLUX.2 [klein] 4B shot
   // v019 has no sound effects yet: the assistant is never offered add_sound, and the foley cookbook is left out of its notes
   const fi = MAIN_TOOLS.indexOf('add_sound'); if (fi >= 0) MAIN_TOOLS.splice(fi, 1);
   // v023: no music video from chat (Josh: the landed song's bubble offers Animate); the v019 runners stay for old queue jobs
@@ -991,6 +1079,7 @@ async function initAssistant() {
     planned: (j) => !!(PLANNED_IN && (PLANNED_IN.ids || []).includes(j.id)),   // v024.2: a planned fresh page is not a kill
     holdMs: (id) => (id === MODELS.brain.id || (MODELS.brain4 && id === MODELS.brain4.id) ? 5000 : 0) });   // 3.8: Juli stays loaded 5 s for a follow-up job (iOS 27, see queue.js runJob)
   wireQueue(); wireMv();
+  { const hold0 = Q.holdMs; Q.holdMs = (id) => Math.max(APPS && APPS.holdFor ? APPS.holdFor(id) : 0, hold0 ? hold0(id) : 0); }   // 3.9: the game hold (makeapp/host.js holdFor)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && Q) Q.endHold(); });   // 3.8: no model held in a hidden page
   addEventListener('pagehide', () => { if (Q) Q.endHold(); });
   Q.on('change', (j) => { if (j.kind === 'say' && CASTUI) CASTUI.onJob(j); if (j.kind === 'lipsync' && j.status === 'done') saveAssistantResult(j.id).catch(() => {}); });
@@ -1010,6 +1099,7 @@ async function initAssistant() {
       castNames: () => CAST.names(), castJob: (job, tool, args, text) => castJob(job, tool, args, text),   // p0pc0rn Cast: the likeness gate + photo references
       brainModel: () => (brain4Usable() ? MODELS.brain4.id : null) } });   // 3.8 (v040): the Bigger brain plans and writes (agent.js BRAIN)
     RUN.attach(AG);
+    AG.hooks.skills = (kind) => (APPS && APPS.state.skills ? APPS.state.skills.skillsFor(kind) : []);   // H39: the skills that are on (Apps › Skills): a 'for: chat' one that fits goes into Juli's plan
     const chat = RUN.chat;   // a turn woken only to say "here's your song" (or that a job stopped) needs no model: no reload of the assistant
     // p0pc0rn Cast: "make <name> say <line>" is answered in code (no assistant model): the 'say' chat job queues the voice and posts the audio
     const SAYTURN = sayTurn({ cast: CAST, agent: AG, queue: Q, installed }), sayChat = (j) => !!j && j.kind === 'chat' && !!j.params && j.params.purpose === 'say';
@@ -1025,15 +1115,21 @@ async function initAssistant() {
   }
   CH = createChat(chatApi());
   APPS.init().catch((e) => diag('apps: init failed', { message: String((e && e.message) || e).slice(0, 200) }));
+  MEM = startMemory(memApi());   // 3.9: About me + Routines (Settings › Juli) and their heartbeat
   try { BENCH = createBench(benchApi()); } catch (e) { diag('bench: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }
+  try { ICON = createAppIcon(iconApi()); globalThis.P0APPICON = ICON; ICON.init(); } catch (e) { diag('app icon: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }   // 3.9
+  try { MUSIC = createMusic(musicApi()); } catch (e) { diag('music: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }   // 3.9
+  try { CLIPT = createClipThumbs({ Q: () => Q, lib: () => S.lib, visible: () => S.tab === 'library', viewerOpen: () => !$('viewer').hidden, songCover, diag }); } catch (e) { diag('clip posters: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }   // 3.9
 }
 /** 3.8: what the Apps tab may use from the app (makeapp/host.js): the queue, the chat (an app's notice), sheets and toasts */
 function appsApi() {
   return { Q: () => Q, toast, sheet: mvSheet, installed: (k) => done(k), consented, openLesson: () => openLesson(), diag,
+    homeButton: (a, open) => SHELL.homeButton(a, open),   // 3.9: My apps' "Add to Home" (ui/shell.js)
     settle: () => settle(), endHold: () => { if (Q) Q.endHold(); },   // 3.8 (iOS 27): a few seconds after a model leaves; Juli held for a follow-up lets go
     busy: () => S.phase === 'working' || !!(Q && Q.active && RENDER_KINDS.has(Q.active.job.kind)),
     modelBusy: () => S.phase === 'working' || !!(Q && (Q.holding || (Q.active && Q.modelOf(Q.active.job)) || (Q.next() && Q.modelOf(Q.next())))),   // a model is (about to be) in memory, Juli answering an app included (3.8: or held for a follow-up)
     confirm: (title, text, ok, fn) => openSheet(title, text, ok, fn),
+    about: (budget) => (MEM ? MEM.about(budget) : ''),   // 3.9: About me for the make and change prompts (the framed block; '' when none)
     async notice(app, n) {   // an app's notice in Juli's chat: kept out of the model's history (it is never an instruction to Juli)
       if (!AG || !CH) throw new Error('Juli is not ready');
       const sid = await CH.session(); if (!sid) throw new Error('no chat');
@@ -1041,8 +1137,40 @@ function appsApi() {
       if (S.tab !== 'assistant') toast(`${app} posted in Juli’s chat`, { action: 'Show', onAction: () => go('assistant'), ms: 5000 });
     } };
 }
+/** 3.9: what About me and Routines (ui/memory_ui.js) may use: the Apps tab's database (its store `memory`), Juli and her chat, whether a
+ *  model or an open app holds the phone's memory, sheets and toasts */
+function memApi() {
+  return { db: () => (APPS && APPS.state && APPS.state.db) || null, AG: () => AG, CH: () => CH, installed: () => done('brain'),
+    consented: () => consented(), modelBusy: () => appsApi().modelBusy(), appOpen: () => !!(APPS && APPS.state && APPS.state.open), readOnly: () => !!(Q && Q.readOnly),
+    jobOpen: (id) => { const j = Q && id ? Q.get(id) : null; return !!j && !['done', 'failed', 'cancelled'].includes(j.status); },
+    toast: (t, o) => toast(t, o), sheet: (id, title) => mvSheet(id, title), el: (tag, cls, text) => mvEl(tag, cls, text), btn: (label, cls) => mvBtn(label, cls),
+    confirm: (t, x, ok, fn) => openSheet(t, x, ok, fn), share, saveFile, diag: (step, data) => diag(step, data), openChat: () => go('assistant') };
+}
+/** 3.9: what Music may use from the app (ui/music.js): the Library's songs and their files, toasts and sheets */
+function musicApi() {
+  return { lib: () => S.lib, getBlob: (id) => store.getBlob(id), toast, sheet: mvSheet, confirm: (title, text, ok, fn) => openSheet(title, text, ok, fn), diag };
+}
+/** 3.9 (Settings › Benchmark › Full's feature checks, ui/bench_features.js): what the checks read: Juli, her chat, About me + Routines,
+ *  Music, the screen shown, the page's graphics memory (read only: the diagnostics' peak stays), the helper process's heartbeat (iOS 27),
+ *  and how this page opened (the app's own planned fresh page, or the page before ended: where), for a run the page's reload cut */
+function bench39() {
+  return { AG: () => AG, CH: () => CH, MEM: () => (typeof MEM === 'undefined' ? null : MEM), MUSIC: () => (typeof MUSIC === 'undefined' ? null : MUSIC), tab: () => S.tab, settle,
+    splitHere: () => !!SPLIT_HERE,
+    mem: () => { const pm = performance && performance.memory; return { gpuMB: GPUM.on ? Math.round(GPUM.live / 1e6) : null, jsMB: pm ? Math.round(pm.usedJSHeapSize / 1e6) : null }; },
+    splitBeat: (k) => { const e = E[k], p = e && e.pipe; return p ? { split: !!p.split, lastHb: (p._wk && p._wk.lastHb) || 0, now: performance.now() } : null; },
+    pageOpen: () => { const d = ls.get(INFLIGHT, null); return { planned: !!PLANNED_IN, stage: (PLANNED_IN && PLANNED_IN.stage) || null, diedAtFresh: PLANNED_DIED ? String(PLANNED_DIED.stage || 'a fresh page') : null,
+      died: d && d.kind ? `${d.kind}: ${String(d.step || '').slice(0, 60)}${d.engineMB != null ? ` (engine ${d.engineMB} MB)` : ''}` : null }; } };
+}
+/** 3.9: what "Make an icon" may use (ui/appicon.js): the queue, sheets and toasts, whether Juli and the picture model are on this phone,
+ *  the agreement, a made app's skeleton (its name and description are the words Juli reads) and the shell's pin */
+function iconApi() {
+  return { Q: () => Q, toast: (t, o) => toast(t, o), sheet: (id, title) => mvSheet(id, title), el: (tag, cls, text) => mvEl(tag, cls, text), btn: (label, cls) => mvBtn(label, cls),
+    consented: () => consented(), installed: (k) => done(k), diag: (step, data) => diag(step, data), shell: () => SHELL,
+    skelOf: (app) => { const sk = APPS && APPS.state && APPS.state.skels && APPS.state.skels.get(app.skel); return sk ? { name: sk.manifest.name, about: sk.manifest.description } : {}; },
+    pin: (app, open) => { const ok = SHELL.pin({ id: 'app:' + app.id, title: app.name, ref: app.id, open }); toast(ok ? `${app.name} is on the Home Screen` : 'The Home Screen is full: remove a pinned app first'); return ok; } };
+}
 function benchApi() {
-  return { ls, toast, sheet: mvSheet, Q: () => Q, done, MODELS, consented, ltxOk, wake, learn, version: APP_VERSION, apps: () => APPS,
+  return { ...bench39(), ls, toast, sheet: mvSheet, Q: () => Q, done, MODELS, consented, ltxOk, wake, learn, version: APP_VERSION, apps: () => APPS,
     e4bHere: () => (typeof E4B_HERE === 'function' ? !!E4B_HERE() && !(typeof E4B_BLOCKED === 'function' && E4B_BLOCKED()) : false), e4bWhy: () => (typeof E4B_WHY === 'function' ? E4B_WHY() : null),   // 3.8 v040: the Bigger brain
     planned: (id) => !!(PLANNED_IN && (PLANNED_IN.ids || []).includes(id)),
     device: () => { const ua = navigator.userAgent; return `${/iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : 'Desktop'} · ${[...new Set((($('s-gpu') && $('s-gpu').textContent) || 'GPU').split(/\s+/))].join(' ')}${navigator.deviceMemory ? ` · ${navigator.deviceMemory} GB` : ''}`; } };
@@ -1091,7 +1219,7 @@ function safeOpen(back, died) {
     for (const r of roots) { try { await Q.cancel(r.id); } catch (x) { /* already gone */ } }
     close(); Q.resume(); toast('Discarded');
   };
-  dg.onclick = () => { close(); go('settings'); setTimeout(() => { const d = $('s-diag'); if (d) { d.open = true; d.scrollIntoView({ block: 'start' }); } }, 300); toast('The queue is paused: resume it from the queue when you are ready', { ms: 5000 }); };
+  dg.onclick = () => { close(); go('settings'); setTimeout(() => { const d = $('s-diag'); if (d) { revealSetting(d); d.open = true; d.scrollIntoView({ block: 'start' }); } }, 300); toast('The queue is paused: resume it from the queue when you are ready', { ms: 5000 }); };
   sheet.append(retry, drop, dg);
 }
 function startQueue() {
@@ -1149,12 +1277,15 @@ function startQueue() {
 }
 
 // ---- engines for the queue: EngineHost loads ONE model for a job and unloads it before the next model (and when the queue is idle)
+// 3.9 (agent E): Juli's engine went on in ONE process in this page (her second process failed or did not start: ~1.67 GB here, not ~1.27)
+// while the split is still on here: her next load takes a planned fresh page, where a fresh second process is tried (once in 10 minutes)
+const juliSplitAgain = () => { if (!(E.brain && E.brain.opts && E.brain.opts.split === false && splitOn())) return false; const t = +ls.get('pf.app.splitAgainAt', 0) || 0; if (Date.now() - t < 6e5) return false; ls.set('pf.app.splitAgainAt', Date.now()); return true; };
 async function hostCreate(id) {
   const k = KEY_OF[id];
   if (!k) throw Object.assign(new Error('no engine for ' + id), { code: 'UNSUPPORTED' });
   // v024.2: a fresh page before a model loads, if this page destroyed a lot (WebKit). Not between two assistant turns (the assistant
   // unloads whenever the queue is idle; a reload per turn would flash every reply): only after another model, e.g. a song
-  if (k !== 'brain' || (LAST_UNLOADED && LAST_UNLOADED !== MODELS.brain.id)) await freshPage('load ' + k, activeJobId());
+  if (k !== 'brain' || (LAST_UNLOADED && LAST_UNLOADED !== MODELS.brain.id) || juliSplitAgain()) await freshPage('load ' + k, activeJobId());   // 3.9: + Juli's split again
   else { const w = await settle(); if (w) diag('waited before loading Juli', { ms: w }); }   // 3.8 (iOS 27): Juli again right after she left
   if (k === 'k9b') {   // v026.6: FLUX.2 [klein] 9B, its own module (engine/k9b), staged: text -> encode -> denoise -> decode
     if (!E.k9b) throw Object.assign(new Error("the Klein 9B engine couldn't start"), { code: 'UNSUPPORTED' });
@@ -1242,10 +1373,10 @@ const fasterOn = () => {
 };
 /** 3.8: the engine options of Juli (E2B) and of the Bigger brain (E4B: split on WebKit or not at all; its drafter; 128-token read-in) */
 const brainOpts = () => ({ drafter: fasterOn(), modelOpts: BRAIN_OPTS, split: splitOn(), splitFallback: true, oneProcessOpts: WEBKIT ? { chunk: 128 } : null, reloadSettleMs: WEBKIT ? SETTLE_MS : 0 });
-// the Bigger brain on WebKit: split at 23 (layer 22 in the second process too, its KV mirrored back) so its drafter fits beside the head;
+// the Bigger brain on WebKit: split at 24 (3.9; 3.8: 23): layers 0-23 in the second process, the KV of 22 and 23 mirrored back, so its drafter fits beside the head;
 // 64-token read-in chunks (Josh's iPhone, 10-24: split at 22 + drafter ended the page at 1,709 MB)
 const brain4Opts = () => ({ drafter: true, modelOpts: { chunk: WEBKIT ? 64 : 128 }, split: WEBKIT ? 'required' : false, reloadSettleMs: WEBKIT ? SETTLE_MS : 0 });
-const E4B_CFG = () => { const o = brain4Opts(); return `${o.drafter ? 'd' : 'nd'}-c${o.modelOpts.chunk}`; };   // a stop counts only for the set-up it happened with
+const E4B_CFG = () => { const o = brain4Opts(); return `${o.drafter ? 'd' : 'nd'}-c${o.modelOpts.chunk}-m39`; };   // a stop counts only for the set-up it happened with (3.9: + the memory set-up, m39)
 const songFormat = () => { let ok = false; try { ok = localStorage.getItem('p0pc0rn:aacOk') === '1'; } catch (x) { ok = false; } return WEBKIT && !ok ? 'wav' : 'm4a'; };
 const musicAdapter = (e) => ({ id: MODELS.music.id,
   async textToMusic(o) {
@@ -1561,11 +1692,25 @@ function chatApi() {
     animateSong, openBoard, mvStatus: (j) => mvStatusOf(j),   // v023: Animate on a landed song's bubble, the music video's storyboard and progress
     talkFromSay: (jobId, sid) => { const j = Q && Q.get(jobId); if (j && TALKUI) TALKUI.fromSay(j, sid); },   // p0pc0rn Cast: Lip-sync (experimental) on a say bubble
     readOnly: () => !!(Q && Q.readOnly), agentError: () => S.agentError || null,
-    openSettings: (id) => { go('settings'); const el = id && $(id); if (el) setTimeout(() => el.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' }), 60); },
+    routineCard: (m) => (MEM ? MEM.card(m) : null),   // 3.9: a routine (Settings › Juli) as a card
+    openSettings: (id) => { go('settings'); const el = id && $(id); revealSetting(el); if (el) setTimeout(() => el.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' }), 60); },
     // onboarding: the assistant + starter knowledge as one download, what the first message says about the phone, the Cast's say asks
     // (answered in code, with or without the assistant) and a request handed to Create when the assistant is not on the phone yet
     assistDl, assistTap, isSayAsk: (t) => !!sayIntent(t), toCreate,
-    phone: () => ({ android: ANDROID, homeApp: standalone(), free: S.free }) };
+    phone: () => ({ android: ANDROID, homeApp: standalone(), free: S.free }),
+    act: (id, what) => chatAct(id, what), picOK: () => picOK(), confirm: (title, text, ok, fn) => openSheet(title, text, ok, fn) };   // 3.9: the chat's action bubbles (ui/chatactions.js), its Delete sheet
+}
+/** 3.9: an action bubble under a result in Juli's chat: the Library viewer's own path for that Library item (id 'a-<job>'):
+ *  Edit this, Animate (a picture into a clip), Clip to another picture */
+async function chatAct(id, what) {
+  if (S.phase === 'working') { go('create'); return toast('Wait — something is being made'); }
+  if (!S.lib.some((m) => m.id === id)) await loadLib();
+  const m = S.lib.find((x) => x.id === id), b = m ? await store.getBlob(id).catch(() => null) : null;
+  if (!m || !b) return toast("It isn't in the Library yet");
+  if (what === 'edit') { S.form.prompt = ''; backToCompose(false); setMode('image'); setPhoto(b, m.width, m.height, false); S.form.size = sizeFor(m.width, m.height) || S.form.size; saveDraft(); syncPrompt(); render(); return; }
+  if (!picOK()) return toast('Pictures become clips once the video model and its picture reader are on this phone (Settings › Models).');
+  if (what === 'animate') return animateFrom(m, b);
+  if (what === 'clip2') return clipToAnother(m, b);
 }
 /** onboarding: without the assistant, the chat hands a picture or clip request to Create as its prompt (Create needs no assistant) */
 function toCreate(prompt, mode) {
@@ -1767,18 +1912,21 @@ function backToCompose(focus) {
 
 // ------------------------------------------------------------------------------------------------ library + viewer
 const thumbs = new Map();   // id -> object URL, alive only while the Library tab is open
-async function loadLib() { try { S.lib = await store.list(); } catch (e) { S.lib = []; } if (S.tab === 'library') renderLibrary(); }
+async function loadLib() { try { S.lib = await store.list(); } catch (e) { S.lib = []; } if (S.tab === 'library') renderLibrary(); if (MUSIC) MUSIC.libChanged(); }
 async function saveToLibrary(res) {
   try {
     const clip = isClip(res), song = isSong(res);
     const meta = { id: res.id, createdAt: res.createdAt, media: res.media, kind: res.kind, prompt: res.prompt, seed: res.seed, width: res.width, height: res.height,
-      seconds: res.seconds, thumb: song ? await songCover(res) : clip ? await posterOf(res.blob, res.width, res.height) : await makeThumb(res.blob) };
+      seconds: res.seconds, thumb: song ? await songCover(res) : clip ? await clipPoster(res) : await makeThumb(res.blob) };   // 3.9: a clip's poster frame (ui/clipthumbs.js; posterOf timed out on the iPhone)
     if (clip) Object.assign(meta, { frames: res.frames, fps: res.fps, vmode: res.vmode || 't2v', sources: res.sources || null });
     else if (song) Object.assign(meta, { title: res.title || '', tags: res.tags || '', lyrics: res.lyrics || '', bpm: res.bpm || null, key: res.key || null, timeSignature: res.timeSignature || null, lm: res.lm, codec: res.codec || null });
     else Object.assign(meta, { steps: res.steps, reference: res.reference });
+    if (clip && res.poster) meta.poster = res.poster;   // 3.9: the thumbnail is a real frame of the clip (made once, reused)
     for (const k of ['by', 'duration', 'title', 'mvId', 'mvVersion', 'mvSong', 'research', 'model', 'hq']) if (res[k] != null && meta[k] == null) meta[k] = res[k];   // v026.6: + model, hq   // v026.2: + research   // v023: a music video's job, version and song   // v019: who made it (the assistant), a song / music video's length
     await store.add(meta, res.blob);
     S.lib = [meta, ...S.lib.filter((m) => m.id !== meta.id)]; if (S.tab === 'library') renderLibrary();
+    if (MUSIC) MUSIC.libChanged();   // 3.9: a new song joins Music (its list and badge)
+    SHELL.note('create');   // 3.9: Create's red badge counts the results not seen yet
     toast(store.available ? (song ? (res.kind === 'say' ? 'Saved to Library' : 'Song saved to Library') : isMV(res) ? 'Music video saved to Library' : res.vmode === 'lipsync' ? 'Lip-sync saved to Library (experimental)' : 'Saved to Library') : 'Saved for this visit only');
   } catch (e) {
     toast(e && e.name === 'QuotaExceededError' ? 'Storage full — save to Photos and delete some' : "Couldn't add it to the Library");
@@ -1936,6 +2084,7 @@ async function deleteItem(id) {
   try { await store.remove(id); } catch (e) { return toast(`Couldn't delete that ${what}`); }
   const i = S.lib.indexOf(meta), next = S.lib[i + 1] || S.lib[i - 1];
   S.lib = S.lib.filter((m) => m.id !== id);   // everything is keyed by id, never by list position
+  if (MUSIC) MUSIC.libChanged();   // 3.9: a deleted song leaves Music's queue and playlists
   const u = thumbs.get(id); if (u) { URL.revokeObjectURL(u); thumbs.delete(id); }
   if (!$('viewer').hidden) { if (next) viewerLoad(next.id); else closeViewer(); }
   if (S.tab === 'library') renderLibrary();
@@ -2002,7 +2151,7 @@ async function renderStorage() {
   if (!r) { list.replaceChildren(Object.assign(document.createElement('p'), { className: 'li footnote dim', textContent: "This browser can't list its files." })); btn.disabled = true; why.textContent = ''; return; }
   const rows = r.top.map((t) => row(`${t.name}${t.dir ? '/' : ''}`, t.uses.length ? t.uses.map(useName).join(' + ') : 'Not used by p0pc0rn', fmtSize(t.bytes) + (t.unknown ? '+' : '')));
   if (lib) rows.push(row('Library', `${lib.pictures} ${lib.pictures === 1 ? 'picture' : 'pictures'}, ${lib.clips} ${lib.clips === 1 ? 'clip' : 'clips'}${lib.songs ? `, ${lib.songs} ${lib.songs === 1 ? 'song' : 'songs'}` : ''} · browser database`, fmtSize(lib.bytes)));
-  if (Q) { let qb = 0; try { for (const b of await Q.db.all('blobs')) qb += b.size || 0; } catch (e) { /* */ } if (tok !== storTok) return; rows.push(row('Juli', 'chats, research and the queue (p0pc0rn-assistant, p0pc0rn-research, p0pc0rn-queue) · browser database', fmtSize(qb))); }
+  if (Q) { let qb = 0; try { for (const b of await Q.db.all('blobs')) qb += b.size || 0; } catch (e) { /* */ } if (tok !== storTok) return; rows.push(row('Juli', 'chats, research and the queue (p0pc0rn-assistant, p0pc0rn-chats, p0pc0rn-research, p0pc0rn-queue) · browser database', fmtSize(qb))); }
   if (!rows.length) rows.push(Object.assign(document.createElement('p'), { className: 'li footnote dim', textContent: 'Nothing stored yet.' }));
   list.replaceChildren(...rows);
   const n = r.remove.length, total = r.remove.reduce((s, i) => s + i.bytes, 0);
@@ -2272,7 +2421,7 @@ function acceptMdw() {
 }
 // ---- v026.4: Settings › About › Licences and notices: every licence text in full, the required notices, the copyright lines
 const LIC = [
-  ['p0pc0rn', [['p0pc0rn License 1.1 (draft) · Joshua Hughes', 'LICENSE.md'], ['Use policy (part of your terms)', 'USE-POLICY.md'], ['Trademarks', 'TRADEMARKS.md'], ['Notices', 'NOTICE.md'], ['Model licences', 'MODELS.md']]],
+  ['p0pc0rn', [['p0pc0rn License 1.2 · Joshua Hughes', 'LICENSE.md'], ['Use policy (part of your terms)', 'USE-POLICY.md'], ['Trademarks', 'TRADEMARKS.md'], ['Notices', 'NOTICE.md'], ['Model licences', 'MODELS.md']]],
   ['Apache License 2.0', [['The licence text', 'licenses/LICENSE-Apache-2.0.txt'],
     ['FLUX.2 [klein] 4B and the FLUX.2 autoencoder · Black Forest Labs; Qwen3-4B · Alibaba Cloud', 'licenses/LICENSE-Apache-2.0.txt'],
     ['SANA-Video 2.0 5B · Copyright 2024 Nvidia', 'licenses/LICENSE-SANA-Video.txt'],
@@ -2326,11 +2475,12 @@ async function openCredits() {
 }
 function go(tab) {
   if (tab === S.tab) return;
+  const from = S.tab;   // 3.9 shell
   if (S.tab === 'library') { freeThumbs(); S.sel = null; }
   if (S.tab === 'assistant' && CH) CH.hide();
   S.tab = tab;
-  for (const v of ['create', 'assistant', 'apps', 'library', 'settings']) $('v-' + v).hidden = v !== tab;
-  const el = $('v-' + tab); el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter');
+  for (const v of document.querySelectorAll('#main > .view')) v.hidden = v.id !== 'v-' + tab;   // 3.9: every screen's view (the home screen has none)
+  const el = $('v-' + tab); if (el) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); }
   $('main').scrollTop = 0;
   if (tab === 'library') renderLibrary();
   if (tab === 'settings') renderSettings();
@@ -2338,6 +2488,7 @@ function go(tab) {
   render(); if (tab === 'create') placeAll();
   if (tab === 'create' && S.phase === 'working' && S.job && pop) { pop.start(); popTo(pop, S.job); }   // v019: a job that started on another tab: size the popcorn now that the stage shows
   if (tab === 'assistant' && CH) S.chatShown = CH.show();   // v026.1: the restore waits for the chat
+  SHELL.went(from, tab);   // 3.9: the screen layer (it grows from its icon), the dock, badges
 }
 
 // ------------------------------------------------------------------------------------------------ rendering
@@ -2348,7 +2499,7 @@ function render() {
   root.toggleAttribute('data-busy', S.phase === 'working');
   if (inApp) root.dataset.tab = S.tab; else delete root.dataset.tab;
   if (!inApp) return renderGate();
-  $('title').textContent = { create: 'Create', assistant: 'Juli', apps: 'Apps', library: 'Library', settings: 'Settings' }[S.tab];
+  $('title').textContent = SHELL.titleOf(S.tab);   // 3.9: every screen's own title (ui/shell.js)
   for (const t of document.querySelectorAll('.tab')) { if (t.dataset.tab === S.tab) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); }
   $('cta-bar').hidden = S.tab !== 'create'; $('chat-bar').hidden = S.tab !== 'assistant';
   renderCreate(); renderPill(); renderQBtn(); renderViewerActions();
@@ -2647,7 +2798,7 @@ function tileShape(m) {
 function renderLibrary() {
   const [a, b] = $('grid').children; a.textContent = b.textContent = ''; let ha = 0, hb = 0;
   for (const m of S.lib) {   // two columns, each item goes to the shorter one (reads newest-first, left to right)
-    let u = thumbs.get(m.id); if (!u) { u = URL.createObjectURL(m.thumb); thumbs.set(m.id, u); }
+    let u = thumbs.get(m.id); if (!u && m.thumb instanceof Blob) { u = URL.createObjectURL(m.thumb); thumbs.set(m.id, u); }   // 3.9: an item without a thumbnail no longer stops the grid (ui/clipthumbs.js makes one)
     const t = document.createElement('button'); t.type = 'button'; t.className = 'tile'; t.dataset.id = m.id;
     const song = isSong(m), mv = isMV(m), shape = tileShape(m);
     if (shape) t.style.aspectRatio = `${shape[0]} / ${shape[1]}`;   // post-launch: the picture inside takes the same shape (app.css .tile img)
@@ -2655,7 +2806,7 @@ function renderLibrary() {
       : isClip(m) ? `${m.vmode === 'flf' ? 'Clip between two pictures' : m.vmode === 'i2v' ? 'Clip from a picture' : 'Clip'}, ${lenText(m.frames)} seconds: ${m.prompt}` : m.prompt);
     if (isClip(m)) t.classList.add('clip'); if (song) t.classList.add('song');
     const sn = document.createElement('span'); sn.className = 'selnum num'; sn.setAttribute('aria-hidden', 'true'); t.append(sn);
-    const img = document.createElement('img'); img.loading = 'lazy'; img.decoding = 'async'; img.alt = ''; img.src = u; t.append(img);
+    const img = document.createElement('img'); img.loading = 'lazy'; img.decoding = 'async'; img.alt = ''; if (u) img.src = u; t.append(img);
     if (isClip(m) || song) {   // poster frame (a song: its cover) + a play / note badge with the length
       const badge = document.createElement('span'); badge.className = 'badge num'; badge.setAttribute('aria-hidden', 'true');
       badge.innerHTML = song ? '<svg><use href="#i-note"/></svg>' : '<svg><use href="#i-play"/></svg>'; badge.append(song || mv ? clock(m.duration || 0) : `${lenText(m.frames)} s`); t.append(badge);
@@ -2665,6 +2816,7 @@ function renderLibrary() {
     if (ha <= hb) { a.append(t); ha += r; } else { b.append(t); hb += r; }
   }
   $('lib-empty').hidden = S.lib.length > 0; $('lib-mem').hidden = store.available;
+  try { clipLibrary($('grid'), S.lib, thumbs); } catch (e) { /* the tiles stay as they are */ }   // 3.9: play buttons, and the posters still to make (one at a time, when quiet)
   renderLibSel();
   if (!store.available) $('lib-mem').textContent = store.blocked ? 'Another p0pc0rn tab is open with an older version. Close it, then reopen this one to see your Library.' : "This browser can't keep pictures between visits. Save the ones you like to Photos.";
 }
@@ -2748,6 +2900,7 @@ function renderBrain4() {
 }
 function renderAssistantSettings() {
   $('s-research').checked = AS.research; $('s-review').checked = AS.review;
+  if (MEM) MEM.render();   // 3.9: About me, Routines and the heartbeat line
   radio($('brainmode'), AS.brainMode);
   const b = S.brainLoad, l = S.brainLast;
   $('s-brain-info').textContent = b ? `Last load: ${b.mode === 'lean' ? 'lighter' : 'full'}, ${b.seconds} s${b.residentMB ? `, ${b.residentMB} MB on the graphics chip` : ''}${b.split ? ` (${b.split.workerMB} MB more in a second process)` : ''}${b.drafter ? ', faster replies on' : ''}${l && l.tokPerS ? ` · ${l.tokPerS} tokens a second` : ''}.` : 'Loads for each chat and unloads before a picture, clip or song (one model on the graphics chip at a time).';
@@ -3223,6 +3376,7 @@ function init() {
     go('create'); if (S.phase === 'error' && !$('err').hidden) $('err').scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
   };
   for (const t of document.querySelectorAll('.tab')) t.onclick = () => go(t.dataset.tab);
+  SHELL.init({ go, tab: () => S.tab, toast, sheet: mvSheet, apps: () => APPS, chat: () => CH, diag });   // 3.9: the phone-OS shell (home screen, dock, badges, wallpaper)
   $('need-go').onclick = tapGuard(() => dlTap(S.mode));
   // killed-last-run banner
   $('k-retry').onclick = () => {
@@ -3342,6 +3496,7 @@ function init() {
   $('docv').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeWrap('docv'); });
   $('s-lic').onclick = openLic;
   $('s-credits').onclick = openCredits;
+  initSettings({ placeInd, cast: CAST, castUi: () => CASTUI, diag });   // 3.9 polish: Settings' groups (every 3.8 id and handler kept), the Cast screen
   $('sh-ok').onclick = () => { const f = sheetOk; sheetOk = null; closeSheet(); if (f) f(); };
   $('toast-btn').onclick = () => { const f = toastAct; toastAct = null; $('toast').classList.remove('on'); if (f) f(); };
   $('g-retry').onclick = () => (S.stop && S.stop.retry === 'boot' ? boot() : location.reload());
@@ -3360,6 +3515,6 @@ function init() {
 // v030: the first update that changes the page's elements, and GitHub Pages lets a phone keep a file for 10 minutes. index.html asks
 // for app.js?v=030, so a new page never meets an old app.js; a phone that kept the OLD index.html but fetched this app.js can't start
 // on it (no Gemma tick), so it loads the page once more, past its cache (once: the 'fresh' mark stops a loop)
-if (!document.getElementById('ltx-gemma') && !new URL(location.href).searchParams.has('fresh')) {
+if (!document.getElementById('home-grid') && !new URL(location.href).searchParams.has('fresh')) {   // 3.9 (review): only 3.9's page has it (3.8's had ltx-gemma too)
   const u = new URL(location.href); u.searchParams.set('fresh', Date.now().toString(36)); location.replace(u.href);
 } else init();

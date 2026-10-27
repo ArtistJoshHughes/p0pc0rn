@@ -5,7 +5,7 @@
 <!-- v027.3 (security review M2): what this page may load and talk to: its own files, the model packs on Hugging Face (and its CDN), and the lookups on Wikipedia, Wikimedia and Fandom; inline scripts by hash (csp_hashes.py).
      3.8: + the sources that apps made in p0pc0rn may read, only for an app the person allowed (makeapp/sources.js: NWS, Open-Meteo place search, NIFC wildfires, CoinGecko),
      and frame-src 'self' for the apps' sandbox page (makeapp/frame.html, iframe sandbox="allow-scripts": no network of its own, no storage, no access to this page). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-UXv8gDTrR7EN2aBKhbQrFFcKzMY8/Wc9OaYoFQhDHp0='; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com https://api.weather.gov https://geocoding-api.open-meteo.com https://services3.arcgis.com https://api.coingecko.com; frame-src 'self'; child-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-UXv8gDTrR7EN2aBKhbQrFFcKzMY8/Wc9OaYoFQhDHp0='; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com https://api.weather.gov https://geocoding-api.open-meteo.com https://services3.arcgis.com https://api.coingecko.com https://api.routescan.io; frame-src 'self'; child-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
@@ -29,13 +29,22 @@
 <link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
 <title>p0pc0rn</title>
-<link rel="stylesheet" href="app.css?v=042">
+<link rel="stylesheet" href="app.css?v=043">
 <link rel="stylesheet" href="cast/cast.css">
 <!-- Engine bridge (classic script, exposes window.PF). Then the app (ES module, runs after parsing). -->
+<link rel="stylesheet" href="ui/memory.css">
+<link rel="stylesheet" href="ui/shell.css"><!-- 3.9: the phone-OS shell -->
+<link rel="stylesheet" href="ui/chat.css">
+<link rel="stylesheet" href="ui/music.css">
+<link rel="stylesheet" href="ui/appicon.css">
+<link rel="stylesheet" href="ui/storefront.css"><!-- 3.9 polish (A1): the Apps, Games and Skills screens; apps that work for you -->
+<link rel="stylesheet" href="ui/homeplus.css"><!-- 3.9 polish (A1): the Home button, the Browser start page, an icon's menu, the install ring, the activity pill -->
+<link rel="stylesheet" href="ui/settings.css"><!-- 3.9 polish: Settings in groups, the Cast screen -->
+<link rel="stylesheet" href="ui/clipthumbs.css"><!-- 3.9: the Library's clip posters -->
 <script src="gpuclamp.js"></script>
 <script src="config.js"></script>
 <script src="pocketflux.js"></script>
-<script type="module" src="app.js?v=042"></script>
+<script type="module" src="app.js?v=043"></script>
 </head>
 <body>
 <!-- Icon sprite: 24-unit grid, 1.5 stroke, round caps. -->
@@ -93,10 +102,40 @@
   </div>
 </section>
 
-<!-- APP SHELL: header / scrolling main / sticky Make / tab bar -->
+<!-- APP SHELL (3.9, ui/shell.js: a phone OS): the wallpaper, the home screen, the dock + the p0pc0rn pill; on top, the open screen
+     (header with the Home button / scrolling main / sticky Make / Juli's composer), which grows from its icon -->
 <div id="shell" class="shell" hidden>
+  <svg class="sprite" width="0" height="0" aria-hidden="true">
+    <defs>
+      <symbol id="i-sh-house" viewBox="0 0 24 24"><path d="M4.5 11.2 12 4.8l7.5 6.4"/><path d="M6.5 9.6V19.2h4v-5h3v5h4V9.6"/></symbol>
+      <symbol id="i-sh-camera" viewBox="0 0 24 24"><path d="M12 19.5H6a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2l1.5-2h2.5"/><path d="M12 9.2a3.3 3.3 0 0 0 0 6.6"/><rect x="12.6" y="4.5" width="2.4" height="2.4" fill="currentColor" stroke="none"/><rect x="16" y="6.5" width="2.4" height="2.4" fill="currentColor" stroke="none"/><rect x="18.4" y="9.9" width="2.4" height="2.4" fill="currentColor" stroke="none"/><rect x="13.4" y="10.6" width="2.4" height="2.4" fill="currentColor" stroke="none"/><rect x="15.8" y="13.4" width="2.4" height="2.4" fill="currentColor" stroke="none"/><rect x="18.4" y="15.4" width="2.4" height="2.4" fill="currentColor" stroke="none"/><rect x="13.2" y="17.2" width="2.4" height="2.4" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-sh-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.6 5.4 3.6 8.5s-1.1 5.9-3.6 8.5c-2.5-2.6-3.6-5.4-3.6-8.5S9.5 6.1 12 3.5Z"/></symbol>
+      <symbol id="i-sh-game" viewBox="0 0 24 24"><path d="M7.5 8.5h9a4 4 0 0 1 3.9 4.9l-.7 3a2.3 2.3 0 0 1-3.9 1.1L14 15.5h-4l-1.8 2a2.3 2.3 0 0 1-3.9-1.1l-.7-3A4 4 0 0 1 7.5 8.5Z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.8" r=".7" fill="currentColor"/><circle cx="17.2" cy="13.4" r=".7" fill="currentColor"/></symbol>
+      <symbol id="i-sh-skill" viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H18v14H6.5A1.5 1.5 0 0 0 5 19.5Z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H18v-3"/><path d="M11.5 7.2c.3 1.7 1 2.4 2.6 2.6-1.6.3-2.3 1-2.6 2.6-.3-1.6-1-2.3-2.6-2.6 1.6-.2 2.3-.9 2.6-2.6Z"/></symbol>
+      <symbol id="i-sh-home" viewBox="0 0 24 24"><path d="M4.5 11.2 12 4.8l7.5 6.4"/><path d="M6.5 9.6V19h11V9.6"/><path d="M12 11.5v5M9.5 14h5"/></symbol>
+      <symbol id="i-sh-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    </defs>
+  </svg>
+  <div class="wall" id="wall" aria-hidden="true"><i id="wall-img"></i></div>
+  <section id="v-home" class="home" aria-label="Home Screen">
+    <div class="home-scroll" id="home-scroll">
+      <div class="home-top"><button class="home-status" id="home-status" type="button" hidden><i></i><span></span></button><button class="mini home-done" id="home-done" type="button" hidden>Done</button></div>
+      <div class="widgets" id="home-widgets" hidden></div>
+      <div class="hgrid" id="home-grid" aria-label="Apps on the Home Screen"></div>
+      <div class="home-edit" id="home-edit" hidden><button class="btn sm" id="home-wall" type="button">Wallpaper</button></div>
+    </div>
+  </section>
+  <div class="dockwrap" id="dockwrap">
+    <button class="brand-pill" id="brand-pill" type="button" aria-label="p0pc0rn: ask Juli"><img src="icon-180.png" alt="" width="22" height="22"><span>p0pc0rn</span></button>
+    <nav class="dock" id="dock" aria-label="Dock"></nav>
+  </div>
+  <div class="tab-hair" aria-hidden="true"><i id="tab-fill"></i></div>
+  <!-- 3.8's tab buttons, kept hidden: ui/chat.js still finds Juli's unread dot on hers (her badge is the chat's own count), and go(tab) still answers a click on one -->
+  <div class="tab-compat" hidden><button class="tab" type="button" data-tab="create" tabindex="-1">Create</button><button class="tab" type="button" data-tab="assistant" tabindex="-1">Juli<i class="tab-dot" aria-hidden="true"></i></button><button class="tab" type="button" data-tab="apps" tabindex="-1">Apps</button><button class="tab" type="button" data-tab="library" tabindex="-1">Library</button><button class="tab" type="button" data-tab="settings" tabindex="-1">Settings</button></div>
+  <div class="splash" id="splash" aria-hidden="true"><img src="icon-180.png" alt="" width="92" height="92"></div>
+  <div class="screen" id="screen">
   <header class="hdr">
-    <div class="hdr-l"><img class="hdr-logo" src="icon-180.png" alt="p0pc0rn" width="30" height="30"><h1 id="title" class="large">Create</h1></div>
+    <div class="hdr-l"><button class="home-btn" id="home-btn" type="button" aria-label="Home Screen"><svg><use href="#i-sh-house"/></svg><img class="hdr-logo" src="icon-180.png" alt="" width="30" height="30"></button><h1 id="title" class="large">Create</h1></div>
     <button id="pill" class="pill" type="button" data-tone="ok"><i></i><span>Ready</span></button>
   </header>
   <main id="main">
@@ -239,6 +278,17 @@
     </section>
 
     <section id="v-assistant" class="view chat-view" aria-label="Juli" hidden>
+      <div class="as-bar" id="as-bar">
+        <button class="as-back" id="as-chats" type="button" aria-label="Chats: all your conversations with Juli"><svg class="ic"><use href="#i-chevron"/></svg><span>Chats</span><i class="as-back-n num" id="as-chats-n" hidden></i></button>
+        <p class="as-title callout" id="as-title"></p>
+        <div class="as-bar-r"><button class="qlink" id="as-queue" type="button" hidden><svg class="ic"><use href="#i-queue"/></svg><span>Queue</span><svg class="ic chev"><use href="#i-chevron"/></svg></button><button class="icon-btn as-newbtn" id="as-new" type="button" aria-label="New chat" hidden><svg class="ic"><use href="#i-pencil"/></svg></button></div>
+      </div>
+      <div class="as-list" id="as-list" hidden>
+        <div class="as-list-top"><p class="title">Chats</p><button class="icon-btn as-newbtn" id="as-list-new" type="button" aria-label="New chat"><svg class="ic"><use href="#i-pencil"/></svg></button></div>
+        <div class="as-threads" id="as-threads" role="list" aria-label="Your conversations with Juli"></div>
+        <p class="footnote dim as-none" id="as-threads-none" hidden>No chats yet. The pencil starts one.</p>
+        <p class="footnote dim as-list-tip">Swipe a chat left, or press and hold it, to delete it. What Juli made stays in the Library.</p>
+      </div>
       <div id="as-need" class="need" hidden>
         <p class="headline" id="as-need-title">Get Juli</p>
         <p class="footnote dim" id="as-need-text"></p>
@@ -252,41 +302,81 @@
         <button class="btn sm" id="as-agree-go" type="button"><svg class="ic"><use href="#i-shield"/></svg><span>Start the lesson</span></button>
       </div>
       <p class="note warn" id="as-note" hidden><svg class="ic"><use href="#i-alert"/></svg><span id="as-note-text"></span></p>
-      <div id="as-hello" class="as-hello" hidden>
-        <p class="title">Ask for a song, a picture or a clip</p>
-        <p class="footnote dim">Juli writes the prompt, the song's style and its lyrics for you, then the job waits its turn in the queue. Everything runs on this phone.</p>
+      <div id="as-hello" class="as-hello" hidden>   <!-- 3.9 polish: what Juli does (ui/chat.js renderHello adds an example of each) -->
+        <img class="as-hello-av" id="as-hello-av" src="icons/ui/juli-120.png" alt="" width="60" height="60">
+        <p class="title">Hi, I'm Juli</p>
+        <p class="callout as-hello-what">I answer questions, look things up on Wikipedia and Fandom, and make songs, pictures and clips, all on this phone.</p>
         <div class="as-try" id="as-try"></div>
+        <p class="footnote as-hello-note">Only a lookup goes online: its words go to Wikipedia or Fandom. Songs, pictures and clips wait their turn in the queue.</p>
       </div>
-      <div class="as-top" id="as-top"><button class="qlink" id="as-queue" type="button" hidden><svg class="ic"><use href="#i-queue"/></svg><span>Queue</span><svg class="ic chev"><use href="#i-chevron"/></svg></button><button class="mini" id="as-new" type="button" hidden>New chat</button></div>
       <div id="as-log" class="as-log" role="log" aria-live="polite" aria-label="Conversation"></div>
     </section>
 
-    <section id="v-apps" class="view" aria-label="Apps" hidden>
-      <div class="apps-make">
-        <p class="headline">Make an app</p>
-        <p class="footnote dim">Your phone, with apps made for you. Say what you want: Juli picks a skeleton below, fills it in, and the app runs here, on this phone. Agentic apps keep working for you while p0pc0rn is open.</p>
-        <label class="vh" for="apps-in">Describe the app</label>
-        <textarea id="apps-in" rows="2" placeholder="A packing list for a camping weekend…" autocapitalize="sentences" enterkeyhint="go"></textarea>
-        <button class="btn cta" id="apps-make" type="button"><svg class="ic"><use href="#i-sparkle"/></svg><span>Make it</span></button>
-        <p class="apps-status footnote" id="apps-status" hidden></p>
+    <section id="v-apps" class="view sf-store" aria-label="Apps" hidden>   <!-- 3.9 polish (A1): an app store (ui/storefront.js); Games is its second pane -->
+      <svg class="sprite" width="0" height="0" aria-hidden="true">
+        <defs>
+          <symbol id="i-sf-cloud" viewBox="0 0 24 24"><path d="M7.5 18a4 4 0 0 1-.5-8 5.5 5.5 0 0 1 10.6 1 3.5 3.5 0 0 1-.6 7Z"/></symbol>
+          <symbol id="i-sf-pin" viewBox="0 0 24 24"><path d="M12 21s6.5-6.1 6.5-11a6.5 6.5 0 0 0-13 0c0 4.9 6.5 11 6.5 11Z"/><circle cx="12" cy="10" r="2.3"/></symbol>
+          <symbol id="i-sf-flame" viewBox="0 0 24 24"><path d="M12 3.8c.9 2.9 4.6 4.6 4.6 8.8a4.6 4.6 0 0 1-9.2 0c0-2 1-3.3 2-4.3.2 1.4.9 2.3 1.8 2.6-.5-2.3-.1-4.6.8-7.1Z"/></symbol>
+          <symbol id="i-sf-chart" viewBox="0 0 24 24"><path d="M4 19.5h16M5.5 15.5l4-4.5 3 2.6 5.5-6.6"/></symbol>
+          <symbol id="i-sf-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+          <symbol id="i-sf-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
+        </defs>
+      </svg>
+      <div class="sf-seg" id="sf-seg" role="tablist" aria-label="Apps and games">
+        <button type="button" role="tab" id="sf-tab-apps" data-pane="apps" aria-selected="true" aria-controls="sf-pane-apps">Apps</button>
+        <button type="button" role="tab" id="sf-tab-games" data-pane="games" aria-selected="false" aria-controls="sf-pane-games">Games</button>
       </div>
-      <p class="label">My apps</p>
-      <div class="list" id="apps-mine"></div>
-      <p class="footnote dim pad" id="apps-mine-none">Apps you make or add show here.</p>
-      <p class="label">Agentic apps</p>
-      <p class="footnote dim pad">Juli works in these on her own while p0pc0rn is open: they look things up, re-check, keep a notebook on this phone and bring you what needs your eye. Only you confirm what they suggest.</p>
-      <div class="list" id="apps-agentic"></div>
-      <p class="label">Non-agentic apps</p>
-      <p class="footnote dim pad">Tools you use. Some also check a source on their own and post a notice in Juli’s chat.</p>
-      <div class="list" id="apps-tools"></div>
-      <p class="label">Skeletons</p>
+      <div class="sf-pane" id="sf-pane-apps" data-pane="apps" role="tabpanel" aria-labelledby="sf-tab-apps">
+        <div class="apps-make sf-hero">
+          <p class="sf-hero-kicker">Make an app</p>
+          <p class="title sf-hero-title">Say it in one sentence</p>
+          <p class="footnote dim">Juli shows you what she’ll make first. Nothing is added until you tap Make, and it runs here, on this phone.</p>
+          <label class="vh" for="apps-in">Describe the app</label>
+          <textarea id="apps-in" rows="2" placeholder="A packing list for a camping weekend…" autocapitalize="sentences" enterkeyhint="go"></textarea>
+          <button class="btn cta" id="apps-make" type="button"><svg class="ic"><use href="#i-sparkle"/></svg><span>Make it</span></button>
+          <p class="apps-status footnote" id="apps-status" hidden></p>
+        </div>
+        <div class="sf-needs" id="sf-needs" hidden></div>
+        <div class="sf-head"><p class="label">My apps</p></div>
+        <div class="list sf-mine" id="apps-mine"></div>
+        <p class="footnote dim pad" id="apps-mine-none">Apps you make or get show here.</p>
+        <div class="sf-head" id="lab-agentic"><p class="label">Works for you, with Juli</p><button class="mini sf-act-link" id="sf-activity" type="button">Activity</button></div>
+        <p class="footnote dim pad">Juli works in these on her own while p0pc0rn is open: they look things up, re-check, keep notes on this phone and bring you what needs your eye. They only suggest: nothing happens until you confirm. Pause them any time.</p>
+        <div class="list sf-shelf" id="apps-agentic"></div>
+        <div class="sf-head"><p class="label">More apps</p></div>
+        <p class="footnote dim pad">Apps you use when you open them. Some also check a source on their own and post a note in Juli’s chat.</p>
+        <div class="list sf-shelf" id="apps-tools"></div>
+        <div class="sf-head"><p class="label">Make your own app design</p></div>
+        <div class="list">
+          <label class="li link" for="apps-import" id="apps-import-row"><span>Import an app design (.p0skel.json)</span><svg class="ic"><use href="#i-chevron"/></svg></label>
+          <a class="li link" id="apps-guide" href="makeapp/Skeleton-Guide.md" download="p0pc0rn Skeleton Guide.md"><span>Download the guide for AI helpers</span><svg class="ic"><use href="#i-download"/></svg></a>
+        </div>
+        <input type="file" id="apps-import" accept=".json,application/json" class="vh" tabindex="-1">
+        <p class="footnote dim pad">Give the guide to an AI helper such as Claude, with a sentence or two about the app you want: it writes one app design file for you to import here. Every app runs in a locked box on this phone and asks before it does anything.</p>
+        <p class="footnote dim pad">What apps can reach: only the sources an app you allowed asks for, read straight from this phone: the US National Weather Service (api.weather.gov), Open-Meteo place search, the national wildfire incident service (NIFC, on services3.arcgis.com), CoinGecko prices and Snowtrace, the public Avalanche explorer (api.routescan.io: only public addresses, the ones you add and a few they deal with, at most every 15 minutes and only when your phone is idle; Powered by Routescan.io APIs: <a href="https://routescan.io" target="_blank" rel="noopener noreferrer">routescan.io</a> · <a href="https://x.com/routescan_io" target="_blank" rel="noopener noreferrer">@routescan_io on X</a>). Apps never see your photos, Library, Cast or files. Prices and wallet activity are shown as facts, never as advice.</p>
+      </div>
+      <div class="sf-pane" id="sf-pane-games" data-pane="games" role="tabpanel" aria-labelledby="sf-tab-games" hidden>
+        <div class="sf-arcade">
+          <p class="sf-hero-kicker">Games</p>
+          <p class="title">Play against Juli</p>
+          <p class="footnote dim">She picks her moves on this phone while the game is open. Nothing goes online.</p>
+        </div>
+        <div class="list sf-games" id="apps-games"></div>
+        <p class="footnote dim pad" id="sf-games-none" hidden>No games on this phone yet.</p>
+      </div>
+    </section>
+
+    <section id="v-skills" class="view sf-skills" aria-label="Skills" hidden>   <!-- 3.9 shell: its own screen (3.9 polish: cards, ui/storefront.js) -->
+      <!-- H39: skills, know-how for Juli (makeapp/host.js renderSkills; assistant/skills.js) -->
+      <div class="sf-hero sf-skills-hero"><p class="sf-hero-kicker">Skills</p><p class="title sf-hero-title">Know-how for Juli</p>
+        <p class="footnote dim">A short text she reads when it fits what you ask, like how to make a good app or how to play a game. A skill has no screen, no code and no permissions.</p></div>
+      <div class="list sf-skill-list" id="apps-skills"></div>
       <div class="list">
-        <label class="li link" for="apps-import" id="apps-import-row"><span>Import a skeleton (.p0skel.json)</span><svg class="ic"><use href="#i-chevron"/></svg></label>
-        <a class="li link" id="apps-guide" href="makeapp/Skeleton-Guide.md" download="p0pc0rn Skeleton Guide.md"><span>Download the Skeleton Guide</span><svg class="ic"><use href="#i-download"/></svg></a>
+        <label class="li link" for="apps-skill-import" id="apps-skill-import-row"><span>Import a skill (.md)</span><svg class="ic"><use href="#i-chevron"/></svg></label>
       </div>
-      <input type="file" id="apps-import" accept=".json,application/json" class="vh" tabindex="-1">
-      <p class="footnote dim pad">Give the guide to an AI helper such as Claude, with a sentence or two about the app you want: it writes one skeleton file for you to import here. Every app runs in a locked sandbox and asks before it does anything.</p>
-      <p class="footnote dim pad">What apps can reach: only the sources an app you allowed asks for, read straight from this phone: the US National Weather Service (api.weather.gov), Open-Meteo place search, the national wildfire incident service (NIFC, on services3.arcgis.com) and CoinGecko prices. Apps never see your photos, Library, Cast or files. Prices are shown as facts, never as advice.</p>
+      <input type="file" id="apps-skill-import" accept=".md,.txt,text/markdown,text/plain" class="vh" tabindex="-1">
+      <p class="footnote dim pad">p0pc0rn shows a skill you import in full before it is turned on. The guide for AI helpers (Apps › Make your own app design) explains how to write one.</p>
     </section>
 
     <section id="v-library" class="view" aria-label="Library" hidden>
@@ -300,18 +390,37 @@
       <div class="masonry" id="grid"><div class="col"></div><div class="col"></div></div>
     </section>
 
+    <section id="v-music" class="view music" aria-label="Music" hidden>
+      <div class="mu-head"><h2 class="mu-title">Music</h2><button class="mu-x" id="mu-close" type="button" aria-label="Close Music" hidden><svg class="ic"><use href="#i-x"/></svg></button></div>
+      <div class="mu-seg" id="mu-seg" role="tablist" aria-label="Music">
+        <button type="button" role="tab" id="mu-tab-songs" data-mu-tab="songs" aria-selected="true">Songs</button>
+        <button type="button" role="tab" id="mu-tab-lists" data-mu-tab="lists" aria-selected="false">Playlists</button>
+      </div>
+      <div class="mu-pane" id="mu-songs" role="tabpanel" aria-labelledby="mu-tab-songs"></div>
+      <div class="mu-pane" id="mu-lists" role="tabpanel" aria-labelledby="mu-tab-lists" hidden></div>
+      <div class="mu-pane" id="mu-list" hidden></div>
+      <div class="mu-bar" id="mu-bar" hidden></div>
+      <div class="mu-full" id="mu-full" role="dialog" aria-modal="true" aria-label="Now playing" hidden></div>
+    </section>
+
+    <section id="v-cast" class="view" aria-label="Cast" hidden>   <!-- 3.9: Cast, its own screen (ui/settings.js registers it with the shell; cast/cast_ui.js draws it) -->
+      <img class="cast-hero" src="icons/ui/cast-120.png" alt="" width="60" height="60">
+      <div id="cast-root">
+        <div class="list cast-list" id="cast-list" hidden></div>
+        <p class="footnote dim pad" id="cast-none">People you can name in a request: “make Sam say …” speaks in their own recorded voice, and their photos put them in a picture, a clip or a music video. Each one is added with their permission and stays on this phone.</p>
+        <p class="footnote dim pad" id="cast-voice-note" hidden>Download Voice in <button class="cast-link" id="cast-voice-go" type="button">Settings › Models</button> to make anyone here speak.</p>
+        <button class="btn" id="cast-add" type="button"><svg class="ic"><use href="#i-photo-plus"/></svg><span>Add a person</span></button>
+      </div>
+      <p class="footnote dim cast-foot">Only people who said yes, and never a minor. Their voice and photos stay on this phone.</p>
+    </section>
+
     <section id="v-settings" class="view" aria-label="Settings" hidden>
       <p class="label">Models</p>
       <p class="footnote pad warn-note" id="s-android" hidden>Android (Chrome): experimental. Prepared on a desktop with Android-like limits; not yet tested on a phone. Run <b>Settings › About › Device check</b> first and send Josh the report.</p>
       <div class="list" id="models"></div>
       <p class="footnote dim pad" id="s-models-why">Deleting is not available while something is being made.</p>
-      <p class="label" id="l-cast">Cast</p>
-      <div id="cast-root">
-        <div class="list cast-list" id="cast-list" hidden></div>
-        <p class="footnote dim pad" id="cast-none">People you can name in a request: “make Sam say …” speaks in their own recorded voice, and their photos put them in a picture, a clip or a music video. Each one is added with their permission and stays on this phone.</p>
-        <p class="footnote dim pad" id="cast-voice-note" hidden>Download Voice in Models above to make anyone here speak.</p>
-        <button class="btn" id="cast-add" type="button"><svg class="ic"><use href="#i-photo-plus"/></svg><span>Add a person</span></button>
-      </div>
+      <p class="label" id="l-cast">Cast</p>   <!-- 3.9: Cast is a screen of its own (#v-cast, a home-screen icon); Settings keeps this link -->
+      <div class="list"><button class="li link" id="s-cast" type="button"><span><span class="sw-name">Cast</span><span class="footnote dim">People who said yes: their voice and photos</span></span><span class="li-end"><span class="dim" id="s-cast-n"></span><svg class="ic"><use href="#i-chevron"/></svg></span></button></div>
       <p class="label" id="l-budget">Video decode memory</p>
       <div class="seg three" id="budget" role="radiogroup" aria-labelledby="l-budget"><i class="ind"></i>
         <button type="button" role="radio" data-v="450"><b>450 MB</b><span>safest</span></button>
@@ -325,6 +434,8 @@
         <label class="li sw-row" for="s-brain4" id="s-brain4-row" hidden><span><span class="sw-name">Bigger brain for writing and making</span><span class="footnote dim" id="s-brain4-note"></span></span><input type="checkbox" class="sw" id="s-brain4"></label>
         <button class="li link" id="s-queue" type="button"><span>Queue</span><span class="li-end"><span class="dim" id="s-qstate">–</span><svg class="ic"><use href="#i-chevron"/></svg></span></button>
         <div class="li kb-row" id="s-kb"><span><span class="sw-name">Things Juli has looked up · <span id="s-kbn">0</span></span><span class="footnote dim">Kept on this phone for good, so asking again is instant, even offline. Private: never uploaded.</span></span><span class="li-end"><button class="btn sm" id="s-kbclear" type="button">Clear</button></span></div>
+        <button class="li link" id="s-about" type="button"><span><span class="sw-name">About me</span><span class="footnote dim">A few lines about you that Juli reads when she plans. Only on this phone; never given to an app.</span></span><span class="li-end"><span class="dim" id="s-about-state">Not set</span><svg class="ic"><use href="#i-chevron"/></svg></span></button>
+        <button class="li link" id="s-routines" type="button"><span><span class="sw-name">Routines</span><span class="footnote dim" id="s-heartbeat">Things to ask Juli again and again, while p0pc0rn is open.</span></span><span class="li-end"><span class="dim" id="s-routines-state">None</span><svg class="ic"><use href="#i-chevron"/></svg></span></button>
       </div>
       <p class="label" id="l-brainmode">Juli’s memory</p>
       <div class="seg" id="brainmode" role="radiogroup" aria-labelledby="l-brainmode"><i class="ind"></i>
@@ -358,8 +469,8 @@
       <div class="list"><p class="li callout">A picture takes 2–3 minutes, a 5-second clip about 6 and a song a minute or two. After about a minute the phone warms and slows down. Plugged in, out of the sun, case off, and a short break between jobs all help.</p></div>
       <p class="label" id="l-bench">Benchmark</p>
       <div class="list">
-        <p class="li callout"><span>How fast this phone runs p0pc0rn, in one tap. <b>Quick</b> takes about 3 minutes: a heat reading, Juli’s chat speed, a long prompt and the apps (each one opens; then Trip Watch’s check runs with Juli on test data, nothing goes online); about 4 with the Bigger brain, whose chat speed and read-in it adds. <b>Full</b> takes about 13–16 minutes and adds a long answer from each model, a picture, a short clip and a song for the models you have. Results stay on this phone.</span></p>
-        <div class="li bench-row"><button class="btn sm" id="s-bench-quick" type="button">Quick · ~3 min</button><button class="btn sm" id="s-bench-full" type="button">Full · ~13–16 min</button></div>
+        <p class="li callout"><span>How fast this phone runs p0pc0rn, in one tap. <b>Quick</b> takes about 3 minutes: a heat reading, Juli’s chat speed, a long prompt and the apps (each one opens; then Trip Watch’s check runs with Juli on test data, nothing goes online); about 4 with the Bigger brain, whose chat speed and read-in it adds. <b>Full</b> takes about 30 minutes: it adds a long answer from each model, a picture, a short clip and a song for the models you have, and a pass or fail check of every feature (the home screen, Juli’s chat, skills, Music, routines, games, making and changing an app, an app icon), with test data it removes after. <b>Music check</b> plays three test tones: lock the phone during the first to see the lock screen work. Results stay on this phone.</span></p>
+        <div class="li bench-row"><button class="btn sm" id="s-bench-quick" type="button">Quick · ~3 min</button><button class="btn sm" id="s-bench-full" type="button">Full · ~30 min</button><button class="btn sm" id="s-bench-music" type="button">Music check</button></div>
       </div>
       <div class="bench-out" id="s-bench-out" hidden></div>
       <p class="label">About</p>
@@ -411,18 +522,11 @@
     <div class="as-compose">
       <label for="as-file" class="icon-btn as-add" id="as-add" aria-label="Add a photo"><svg class="ic"><use href="#i-photo-plus"/></svg></label>
       <label class="vh" for="as-in">Message</label>
-      <textarea id="as-in" rows="1" placeholder="Make me a song about…" enterkeyhint="send" autocapitalize="sentences"></textarea>
+      <textarea id="as-in" rows="1" placeholder="Message Juli" enterkeyhint="send" autocapitalize="sentences"></textarea>
       <button class="icon-btn as-send" id="as-send" type="button" aria-label="Send"><svg class="ic"><use href="#i-send"/></svg></button>
     </div>
   </div>
-  <nav class="tabs" aria-label="Sections">
-    <div class="tab-hair" aria-hidden="true"><i id="tab-fill"></i></div>
-    <button class="tab" type="button" data-tab="create" aria-current="page"><svg><use href="#i-sparkle"/></svg><span>Create</span></button>
-    <button class="tab" type="button" data-tab="assistant"><svg><use href="#i-chat"/></svg><span>Juli</span><i class="tab-dot" aria-hidden="true"></i></button>
-    <button class="tab" type="button" data-tab="apps"><svg><use href="#i-apps"/></svg><span>Apps</span></button>
-    <button class="tab" type="button" data-tab="library"><svg><use href="#i-grid"/></svg><span>Library</span></button>
-    <button class="tab" type="button" data-tab="settings"><svg><use href="#i-gear"/></svg><span>Settings</span></button>
-  </nav>
+  </div><!-- #screen (3.9: no tab bar; the dock lives on the home screen) -->
 </div>
 
 <!-- Full-screen viewer (also the "press and hold to save" fallback) -->

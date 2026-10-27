@@ -34,6 +34,7 @@ numbers. Juli never edits code. So:
     "description": "1-2 sentences: what it does and which requests it fits. Juli's router picks skeletons by this.",
     "category": "non-agentic",        // or "agentic": see Two kinds of app
     "goal": "One sentence",           // agentic apps: what it works toward
+    "kind": "game",                   // optional: a game, where Juli can be a player (see Games: Juli as a player)
     "version": "1.0",
     "author": "optional",
     "runtime": "p5-kit@1",            // p5.js 1.11 + the p0pc0rn Kit, provided by the host (never include them)
@@ -49,6 +50,8 @@ numbers. Juli never edits code. So:
 ```
 (The `//` comments above are explanations only. The real file is plain JSON with no comments.) Only these fields; p0pc0rn rejects
 unknown ones. The whole file must stay under 400 KB and `sketch.js` under 160 KB.
+Optional: `"skills": {"<name>": "<the skill's whole .md text>"}`, up to 3 skills (know-how for Juli) that come with the skeleton
+(see **Skills** below).
 
 ### Two kinds of app: `"category"` (required)
 **An app answers the tap. An agentic app keeps going.**
@@ -89,8 +92,8 @@ The rules (the Kit makes most of them automatic):
 p0pc0rn's shelf shows the two kinds separately. Trip Watch, the second example at the end of this guide, is a complete agentic app to copy.
 
 ### Runtime and sandbox rules
-- The host loads p5.js 1.11, then the p0pc0rn Kit (`kit.js`, global `K`) and your `sketch.js` as one script, with
-  `window.SLOTS = {...}` set first. Then it starts p5 in global mode.
+- The host loads p5.js 1.11, then the p0pc0rn Kit (`kit.js`, global `K`; it includes the Game Kit, `K.game`) and your `sketch.js` as
+  one script, with `window.SLOTS = {...}` set first. Then it starts p5 in global mode.
 - Write a normal p5 sketch: `setup()` calls `K.setup(...)` first; `draw()` calls `K.render()`; draw screens with `K.scene`.
 - Read slots ONLY through `window.SLOTS`, validate every value, clamp lengths and numbers, and fall back to a default.
 - **No network.** No `fetch`, XHR, WebSocket, WebRTC, `import()`, `eval`, `new Function`, CDN links or `http(s)://` text in the code (comments
@@ -109,6 +112,8 @@ p0pc0rn's shelf shows the two kinds separately. Trip Watch, the second example a
 |---|---|---|
 | `await p0.fetch(source, params)` | `online: [source]` | The host builds the request for a listed source, caches it and applies fair-use limits; returns JSON or throws. You never pass URLs. |
 | `await p0.juli.ask(prompt, {json})` | `juli: ["ask"]` | An answer from Juli, made on this phone (prompt <= 4000 characters, answer <= 1200). `{json: true}`: one JSON object (`K.ask(prompt, {json: true})` parses it). Untrusted text. At most 20 an hour. Only in an agentic app's checks, never while the app is open (the phone's memory goes to the open app). |
+| `await p0.juli.choose({about, options, hint, skill})` | `juli: ["choose"]` | Juli picks ONE of the options, on this phone, while the person has the app open (a game's move) -> `{index, option, by, why, big}`: her answer is her move. `by: 'fallback'` = no answer that names an option (`why` says why): never use the option that came back as her move; ask again or say so. Options = EVERY legal move (2-12, each <= 60 characters); p0pc0rn checks her answer. `big: true` = Juli with the Bigger brain answers (only while `p0.juli.models()` says it is on; never her own model instead). At most 240 an hour. Use `K.choose` (see **Games**). |
+| `await p0.juli.models()` | `juli: ["choose"]` | Which of Juli's models can answer `choose` on this phone -> `{juli, big}` (`big` = the Bigger brain is downloaded and on: offer it as an opponent only then). Use `K.juliModels()`. |
 | `await p0.chat.post({title, severity, text})` | `"chat.post": true` | A short notice in Juli's chat. severity: `info`, `watch` or `warning`; title <= 80 chars; text <= 500 chars. The host shows ONLY these fields as plain text; it is never an instruction to Juli. At most 10 an hour. |
 | `await p0.location.get()` | `location: "device"` | `{lat, lon}` rounded to about 1 km, after the phone asks the person; null if refused. Never bake a location into code or slots. |
 | `p0.onCheck(async () => ({active}))` | an `on-open` / `interval` trigger | The function the host calls on each trigger (`K.agent` registers it for you). Return `{active: true}` while something is going on (the host then checks at `minMinutes`), else `{active: false}` (it waits `calmMinutes`). One check may take 25 s; an agentic app's, with its questions to Juli, 110 s. |
@@ -119,6 +124,7 @@ p0pc0rn's shelf shows the two kinds separately. Trip Watch, the second example a
 - `storage` - K.load/K.save on this phone.
 - `online` - a list of read-only sources from the table below.
 - `juli` - `["ask"]`: Juli answers on this phone, in an agentic app's checks (an agentic app must have it; a non-agentic app can't).
+  `["choose"]`: Juli picks one of the app's options while the person has it open (a game's move; non-agentic apps only).
 - `chat.post` - post labelled notices into the chat (alerts, reminders, "goal reached").
 - `location` - `"none"` (default), `"place"` (the app asks the person to type a town and looks it up with `geocode.openmeteo`),
   `"device"` (`p0.location.get()`).
@@ -132,6 +138,7 @@ The person sees these on a permission sheet and can refuse. Apps never get the p
 | `geocode.openmeteo` | `{name}` | `{results: [{name, region, country, cc, lat, lon}]}` place search, worldwide |
 | `fires.wfigs` | `{lat, lon, radiusMi}` (5-200) | `{fires: [{id, name, acres, contained, discovered, state, lat, lon}]}` current US wildfire incidents (NIFC / WFIGS) |
 | `prices.coingecko` | `{ids: ["avalanche-2", "bitcoin", ...]}` (<= 20) | `{coins: [{id, symbol, name, price, cap, rank, volume, supply, chg: {D, W, M, Y}}]}` crypto prices in US dollars and % change over a day / week / month / year |
+| `chain.snowtrace` | `{op: "watch", items: [{address, kind: "wallet" or "contract", since}]}` (1-5); `{op: "history", address}`; `{op: "contract", address}`; `{op: "labels", addresses}` (1-6) | Public Avalanche C-Chain activity from Snowtrace, the public explorer (3.9): `watch` -> `{balances, items: [{address, txs, tok, int, done}], stopped}` (rows `{h, b, t, f, to, v, fn, err}`, tokens + `{c, sym, dec}`; `since` = the block to start from); `history` -> its newest rows; `contract` -> `{verified, name, proxy, impl}`; `labels` -> the explorer's public tags of organisations and contracts only. p0pc0rn's hard restrictions: every request counts against its cap (5,000 a day for all apps together, 1,600 for one app, 1 a second): when it is used up `p0.fetch` throws `DAILY_CAP` or `APP_CAP` (or `BACKOFF` after the explorer said "too many"), and the answer's `quota` says how many today. An app that reads it is checked at most every 15 minutes (use `minMinutes` 15 or more) and only when the phone is idle: a job of the person's that arrives during a check stops its requests (`BUSY`) and its `K.ask` (keep your own words for a notice). Only the addresses go out. Show "Powered by Routescan.io APIs" (p0pc0rn adds the links, [routescan.io](https://routescan.io), [@routescan_io on X](https://x.com/routescan_io), under your app and on its sheets: an app holds no web address). Never advice, never a guess who owns an address. |
 Every answer also has `source` (show it, e.g. "Data: NWS", "Prices by CoinGecko") and `fetchedAt`. Show cached data when offline.
 Positions are rounded to about 1 km before they leave the phone. More sources come in later updates; any other name is rejected.
 **No trading advice:** an app and Juli may show prices, charts and changes, but never say what to buy, sell or hold, never predict
@@ -141,7 +148,9 @@ prices, and never promise returns.
 - `manual` - the app runs when the person opens it.
 - `on-open` - the host also runs the app's check soon after p0pc0rn opens (agentic apps, and live non-agentic ones).
 - `interval` - `{"type": "interval", "minMinutes": 90, "calmMinutes": 720}` (15-1440): the host runs the check on a
-  timer **only while p0pc0rn is open**: every `minMinutes` while the last check said `active`, every `calmMinutes` when calm.
+  timer **only while p0pc0rn is open**: every `minMinutes` while the last check said `active`, every `calmMinutes` when calm. A check
+  may also return `{next: minutes}`: the host checks again then, kept between `minMinutes` and `calmMinutes` (Wallet Watch: its own
+  15-60 minute setting).
 
 ### Slot conventions (a 2B model fills these: keep them simple)
 - Flat and named. Prefer arrays of small objects with named fields (`{"front": "", "back": ""}`) over positional arrays.
@@ -165,6 +174,78 @@ prices, and never promise returns.
    `K.agent.logs()` on screen, and a way to work when Juli can't answer.
 5. The whole bundle is valid JSON (escape quotes and newlines in `sketch.js`).
 
+### Skills: know-how for Juli (optional)
+A **skill** is know-how for Juli: a short Markdown file she reads only when it fits what the person asks. A skill has no screen, no code
+and no permissions, and it never changes p0pc0rn's rules. **Skills and apps combine:** a game skeleton (the app) plus a "how to play"
+skill (the know-how). p0pc0rn comes with `make-an-app` (how Juli fills a skeleton), `change-an-app` (how she changes an app),
+`play-four-in-a-row` (her Four in a Row know-how), `make-a-game` (how a game is made on the Game Kit) and
+`watch-a-wallet` (how she writes Wallet Watch's notes).
+
+One skill is one `<name>.md` file:
+```
+---
+name: play-my-game
+description: One line: what this helps Juli do and when to use it (at most 200 characters).
+for: [game]
+---
+The body: plain Markdown, the most important lines first.
+```
+- `name`: 3-40 characters: a-z, 0-9 and `-`. `for`: when Juli uses it, one or more of `make` (making an app), `change` (changing an
+  app), `chat` (her chat), `game` (playing a game app), `app` (an app that works for you names it in its questions to Juli:
+  `K.ask(prompt, {skill: 'its-name'})`; Wallet Watch's `watch-a-wallet`).
+- The body: 600 tokens (about 2,000 characters) or fewer works best; 900 tokens and 6 KB are the limits. No web addresses, no HTML, no
+  personal data.
+- Write for a small model: short plain lines, one rule each, the most important first. Juli's memory is small, so a long skill is cut
+  at a paragraph to fit; `## ` sections help.
+- A game's how-to-play skill is strategy, not rules. The app enforces the rules, works out the legal moves (and hints such as "this
+  column wins") and offers Juli only those; the skill says what makes a good choice (win now if you can, block the person's win, then
+  your own plan).
+
+**Bundling skills with a skeleton:** add `"skills": {"play-my-game": "---\nname: play-my-game\n..."}` to the bundle: at most 3, each key
+its skill's `name`, each value the whole `.md` text as one JSON string. When the person allows the skeleton, its skills come with it,
+turned on; removing the skeleton removes them. A name that a skill already on the phone has is refused.
+
+**A skill on its own:** Skills on the home screen › Import a skill (.md). p0pc0rn shows the whole text before it is turned on; the person can view,
+turn off, export or delete it there.
+
+### Games: Juli as a player
+A **game** is a non-agentic app with `"kind": "game"` (the shelf lists it under Games) in which Juli is the other player. Build it on
+**the Game Kit** (`K.game`, in the Kit API below): it brings the turns, the saved game, the score, Juli's turns, the motion, the sound,
+the results card and accessibility, so a game is mostly its rules and its look. Juli plays to win, and every move is her own:
+1. **The game keeps every rule** in a pure `// ===== RULES` block: the board, the legal moves, the winner, and the facts a player needs
+   (a move that wins now, a threat to block).
+2. **Her model makes every move.** On her turn `K.game.match` calls your `pick`, `K.choose(about, options, {skill, hint})` (needs
+   `permissions.juli ["choose"]`): `about` = the state as text (<= 1200 characters, e.g. the board in rows), `options` = EVERY legal move
+   (2-12, each <= 60 characters, labelled in words: column letters, cell names, never numbers), `hint` = what the game worked out
+   (<= 300 characters, naming each choice's number), `skill` = the name of the game's how-to-play skill. p0pc0rn checks her answer is
+   one of the options, and her answer is her move, even a weak one. Never filter or reorder her options to steer her, and never replace
+   her answer with your own move.
+3. **The game's read is a hint, nothing more.** Make it as good as the phone allows: read every option (a search such as
+   `K.game.search`, or your own in the RULES block, run in slices with `K.game.work` so the frames keep flowing) and say plainly where
+   each of HER choices leads, best first: "wins now: 4 (D); even: 3 (C); loses at once: 2 (B)" (a small model read "they win next" as
+   "block there": say what her own move does), and put the same words beside each option ("column D (wins now)"): next to its
+   number a small model takes it in far better (Four in a Row, Juli's model on 36 positions: blocks missed 4 of 12 with the read in the
+   hint only, 1 of 12 with the same words beside each choice too). Information only: she still picks from every option, in the
+   options' own order.
+4. **No answer, no move.** An answer that names no option is asked again (three times in all, by the Game Kit). When her model gives no
+   answer (it stopped, it is not downloaded, another question was on its way) the match is stuck: say so in plain words ("Juli's model
+   stopped") with an "Ask Juli again" button (`M.askAgain()`). The game never moves for her; only a move that is the ONLY legal one is
+   played as it is.
+5. **The phone's memory:** for `choose` only, her model (Juli's own; the Bigger brain only when the game asks for it) runs next to the
+   open game and stays loaded for a minute after each move; it leaves when the game closes. Every other job still closes an open app.
+   At most 240 moves an hour.
+6. **An opponent to earn (if you like):** Four in a Row starts everyone against Juli on her own model; 10 wins in a row unlock, for good
+   on that phone, the choice of Juli with the Bigger brain (offer it only while `await K.juliModels()` says `big`; `juli.big()` in the
+   match asks it, with the same rules: her answer is her move). Keep the run and the unlock in `M.st.keep` (the match's `tally`), show
+   the run on the results card (`progress`) and celebrate the unlock (`K.game.unlock` with `K.game.celebrate`).
+7. **Bring a skill:** a short how-to-play skill in the bundle's `skills` (strategy, not rules: "win now, block, then the middle").
+8. **Saved:** the match saves every move, so a game left open goes on next time, also after the page reloads. A check never runs a game
+   (use the `manual` trigger).
+
+p0pc0rn comes with Four in a Row (`connect-four`, with its skill `play-four-in-a-row`), the Game Kit's showcase: its read looks many
+moves ahead (a bitboard search) inside "Juli is thinking". **A complete game example** near the end of this guide is a small one to
+copy (noughts and crosses). The skill `make-a-game` sums up the recipe.
+
 ---
 
 ## The p0pc0rn Kit API (provided by the host as `K`)
@@ -184,7 +265,8 @@ function draw() { K.render(); tab = K.tabBar('tabs', TABS, tab); sheetOpen = K.s
 - `K.scene(name, fn)` registers a screen; the first one registered is shown first. `fn()` draws the WHOLE screen (background first) and handles its own input.
 - `K.go(name, fx, ms, {restart})` changes screen with a transition: `'fade'` (default) `'slide'` `'back'` `'up'` (modal) `'down'` `'zoom'` `'none'`; ms 0 = instant. Ignored while the outgoing screen is being drawn. `{restart:true}` replays the CURRENT screen (retry: entrances run again). A tap that began on the previous screen never fires on the new one. `K.sceneName`, `K.sceneAge()` (s since the screen being drawn opened), `K.inTransition()`.
 - `K.render({fx:false})` skips drawing particles/floaters/rings so a game can call `K.fx()` itself (inside `K.camera`, under its HUD). Effects are in SCREEN coordinates.
-- Time: `K.t` (s since start), `K.dt` (s this frame, capped), `K.ms`, `K.frame`, `K.gdt` (gameplay dt: 0 during `K.hitstop`, scaled by `K.timeScale` - set `K.timeScale = 0.3` for slow motion). Size: `K.W`, `K.H`. Safe area: `K.safe.top/bottom/left/right`. `K.clamp(v, lo, hi)`, `K.inRect(px, py, x, y, w, h)`.
+- Time: `K.t` (s since start), `K.dt` (s this frame, capped), `K.ms`, `K.frame`, `K.gdt` (gameplay dt: 0 during `K.hitstop`, scaled by `K.timeScale` - set `K.timeScale = 0.3` for slow motion). Size: `K.W`, `K.H`. Safe area: `K.safe.top/bottom/left/right` (in p0pc0rn the host passes the top and bottom ones for where the app's frame really sits:
+the top is 0 under p0pc0rn's bar, the bottom is the home indicator when the frame reaches it; keep controls above `K.H - K.safe.bottom`). `K.clamp(v, lo, hi)`, `K.inRect(px, py, x, y, w, h)`.
 
 ### Palette + type (never hard-code grey; use the theme)
 - `K.C.bg bg2 surface surface2 surface3 line text text2 text3 accent accentText good warn bad` - colour strings. `K.setAccent(c)` changes only the accent (phase colours).
@@ -245,6 +327,16 @@ function draw() { K.render(); tab = K.tabBar('tabs', TABS, tab); sheetOpen = K.s
 - `K.load(key, fallback)`, `K.save(key, value)` - JSON kept by the host for this app, on the phone (at most 1 MB per app).
 - Uncaught errors are painted on the canvas automatically; a tap dismisses.
 
+### Hooks: an app's added part (Kit 1.5)
+- `K.on('start' | 'draw' | 'tap', fn)` - the way in for an app's ADDED PART: what Juli writes when the person changes a made app by chat
+  and no slot can do it ("add a line with the total"). The part is at most 4 KB of code kept with that one app (never in the skeleton);
+  it runs after `sketch.js` in its own scope, so it can read the sketch's top-level names and `window.SLOTS`. `'start'` runs once, at the
+  first frame after it is added; `'draw'` every frame after the sketch draws, in screen coordinates, inside push/pop; `'tap'` gets
+  `{x, y}` for each tap the app did not use. A hook that throws is taken out and reported, and the app goes on. A check runs no hooks.
+- A skeleton needs nothing for this, but these help Juli: keep the app's state in clearly named top-level variables (`let st = {...}`),
+  leave a little room at the bottom of the main screen, and draw text with `K.text` / `K.num` (p0pc0rn's test runs read the text a frame
+  drew, so Juli hears what the screen shows).
+
 ### Agents (agentic apps; none of these needs p5, so they also work in an unseen check)
 - `const nb = K.notebook('trips', {max: 400})` - the notebook, kept with K.save. An entry is `{id, key, shelf, kind, title, text, data,
   evidence: [{source, at, note}], review, until, at, upd}`. `nb.add(fields)` -> a new entry (shelf `suspected`, or `{shelf: 'grounding'}`).
@@ -271,8 +363,39 @@ function draw() { K.render(); tab = K.tabBar('tabs', TABS, tab); sheetOpen = K.s
   the card's stripe; `extraH(e, w)` + `extra(e, x, y, w)` draw your own choices inside a card. `act = {entry, action: 'yes' | 'no' | 'ask'}`
   in the frame a button was tapped, else null.
 
+### The Game Kit (`K.game`: games)
+Part of the Kit, in every app (`K.game.version` '1.0'). A game = its RULES + `K.game.match` + its drawing; the Game Kit does the rest.
+Its pure parts (boards, layout, search, the match's rules) work without p5. Players: 1 = the person, 2 = Juli.
+```js
+const M = K.game.match({ key: 'mygame.v1', first: 'take turns',
+  fresh: () => newBoard(), legal: (b, who) => moves(b, who), apply: (b, m, who) => ({ board: next(b, m, who), last: m }),
+  result: (b, m, who) => (wins(b, who) ? { who, cells: line(b) } : full(b) ? { who: 0, cells: [] } : null),
+  animate: (m, who) => myDropAnimation(m, who),   // a promise: the match waits for it
+  juli: { ask: async (b, legal) => ({ about: boardText(b), options: legal.map((m) => ({ move: m, label: nameOf(m) })),   // EVERY legal move
+                                       hint: await myRead(b, legal), skill: 'play-my-game' }) } });   // K.choose asks her: her answer is her move
+M.on('stuck', (s) => showAskAgain(s.kind));   // no answer from her model: say so, offer "Ask Juli again" (M.askAgain())
+function setup() { K.setup({ mode: 'dark' }); M.start(); K.scene('play', drawPlay); }   // a saved game goes on; on Juli's turn she is asked
+```
+- **The match:** `M.play(move)` (the person's move; false when it is not theirs to make), `M.canPlay()`, `M.newGame()`, `M.thinking` (while Juli chooses: show it), `M.stuck` (`{kind, why}`: her model gave no move; `M.askAgain()` asks once more), `M.animating`, `M.phase`, `M.st` = `{board, turn, over: null | {who, cells}, moves, games, score: {you, juli, draw}, streak: {who, n}, by: 'juli' | 'forced', keep}` (saved after every move; `keep` = your own values that last across games, such as an unlock or a chosen opponent: `tally(st, who)` in the match's config updates them at the end of each game, in the same save as the score), `M.stats` (`{asked, juli, forced, reasked, stuck}`), `M.on('new' | 'resume' | 'move' | 'think' | 'decided' | 'stuck' | 'turn' | 'end', fn)`. Juli's model makes every move: her answer is her move; an answer naming no option is asked again (`juli.tries`, 3 in all); when she gives none the match is stuck, never moved for her (`kind`: 'stopped', 'unreadable', 'busy', 'missing', 'nobig', 'nojuli', 'notallowed', 'ratelimit'). `juli.big()` -> true: Juli with the Bigger brain answers (`K.choose(..., {big: true})`; `await K.juliModels()` -> `{juli, big}` says whether it is downloaded and on: offer it only then; when it is off the match is stuck with 'nobig', never answered by her own model instead). Only a move that is the ONLY legal one is played as it is (by 'forced'). `M.newGame({clear: () => myClearOut()})`: the game that was on stops at once (Juli's turn, the end of a move still animating), your clear-out plays (`M.clearing` meanwhile), then the new game starts; a New game button may be pressed at any moment. A timer started in `'end'` (the card after a second) checks the game is still the same: `const n = M.st.games;` ... `if (M.st.over && M.st.games === n) open = true`. `juli.ask(board, legal)` may be async (the game's read); `juli.minMs` (700): her turn lasts at least this, so the move reads as hers; `juli.beforeMove(move)`: a promise before her move lands (her ghost glides over). `await K.game.juliPick({about, options, hint, skill}, {tries, big})` -> `{index, by: 'juli', big}` or `{index: -1, by: 'none', kind, why}` is the same ask on its own (a question still on its way from a dropped turn is let finish first, so the next one reaches her). `await K.game.work((ms) => job.step(ms), {sliceMs: 10, wallMs})`: long work (a deep read) in slices, the frames drawn between them.
+- **Boards** (`b[r][c]`, the top row first): `K.game.grid(rows, cols, fill)`, `copy(b)`, `inside(b, r, c)`, `each(b, fn(v, r, c))`, `count(b, v)`, `full(b)`, `lineAt(b, r, c, n)` -> `{who, cells}` (n or more in a row through a cell), `findLine(b, n)`, `colName(c)` -> 'A', `cellName(r, c, rows)` -> 'A1' (row 1 at the bottom), `text(b, {symbols})` (the board for Juli).
+- **Layout + aiming:** `const L = K.game.layout({rows, cols, x, y, w, h, pad, maxCell})` -> square cells centred in the box: `L.cell`, `L.cx(c)`, `L.cy(r)`, `L.rect(r, c)`, `L.col(px)`, `L.at(px, py)`. Every frame: `const a = K.game.aim(id, L, {mode: 'column' | 'cell', enabled: M.canPlay(), legal(t), top, bottom})` -> `a.hover` (the column, or `{r, c}`, under a finger that is down: light it and show a ghost piece), `a.drop` (released there this frame: `M.play(...)`), `a.press`. Whole columns are the targets, from one cell above the board; a cancelled touch never drops; arrow keys + Enter work too; the targets are in the controls map ('column D', 'cell B2').
+- **Art, drawn once and cached** (cheap every frame): `K.game.backdrop({top, bottom, glows: [{x, y, r, color, a}], vignette})` (x, y, r: parts of the screen, 0..1); `K.game.board(L, {style, color, color2, hole})`: `'holes'` = a moulded face with holes cut through (draw the pieces FIRST: they show through, and a falling piece passes behind the face), `'squares'` = chess and checkers, `'lines'` = noughts and crosses and go (draw pieces after); `K.game.piece(cx, cy, r, color, {style: 'disc' | 'ball' | 'flat', shadow, alpha, sx, sy})` = a glossy, lit piece; `K.game.glow(x, y, r, color, a)` = a soft light added on top; your own: `K.game.sprite(key, w, h, (ctx, w, h) => {...})` + `K.game.blit(sprite, x, y, w, h, {alpha, add, rot, sx, sy})`. Never blur or shadow something that moves (60 fps on a phone).
+- **Motion** (the game's clock; the Game Kit steps it every frame): `K.game.timeline()` -> `.tween(obj, {prop: to}, ms, {ease, at})`, `.call(fn, {at})`, `.wait(ms)`, `.play()` -> a promise, `.skip()`; `at` = ms from its start, `'<'` (with the step before) or `'+=200'`. `K.game.fall({from, to, g, bounce, onHit(speed, n, strength), onDone})` -> `{y, squash, promise}`: a drop with gravity that bounces (play the clack and the jolt in `onHit`). `K.game.jolt(key, px)` + `K.game.joltOf(key)` -> `{x, y}`: a knock that springs back (`push(); translate(j.x, j.y); ...; pop();`). `K.game.reduced` = the phone asks for less motion (no bounce, no shake, quick moves, a little confetti; the Game Kit's own parts follow it). `K.game.hot(ms)` = keep 60 fps for your own animation (the Kit drops to 30 fps when nothing moves).
+- **Effects:** `K.game.confetti(x, y, {n, colors, power, angle, spread})` (paper that flutters down), `K.game.sparks(x, y, {n, color})`, `K.game.ring(x, y, {r0, r1, color})`; draw them with `K.game.fx()` once a frame, above the board.
+- **Sound** (synthesised: no files; silent until the person's first tap; a mute that is remembered): `K.game.sound.play(name, {vel, pitch})`: `clack` (a disc landing, vel 0..1), `place`, `tap`, `tick`, `turn`, `start`, `clear`, `win`, `lose`, `draw`, `error`. `K.game.sound.on`, `.toggle()`; `K.game.soundButton(id, cx, cy, size)` draws the speaker button.
+- **Search** (two-player games): `await K.game.search({state, who, moves(s, who), do(s, m, who) -> undo, undo(s, m, undo, who), won(s, m, undo, who), draw(s), score(s, who)}, {depth, timeMs})` -> `{move, score, ranked: [{move, score}] (best first), depth}`. Alpha-beta, one level deeper while time lasts, frames keep flowing; `state` is searched IN PLACE (pass `K.game.copy(board)`). `K.game.searchSync(...)` for small depths; a win scores `K.game.WIN`. The search reads the board for the hint; it never chooses for Juli.
+- **Faces and cards:** `K.game.avatar(cx, cy, r, {mood: 'idle' | 'thinking' | 'happy' | 'sad'})` (Juli: her bubble on violet; thinking = waving dots and a turning ring); `K.game.player(id, x, y, w, h, {name, score, color, active, juli, mood, align})` (a player's card: a new point pops); `K.game.results(id, {open, outcome: 'win' | 'lose' | 'draw', title, sub, color, score, prev, names, colors, streak, note, progress})` -> `'again' | 'board'` (the end card: modal, a spring from below, the score rolls up from `prev`, a short note line; `progress: {n, of, text}` = a run toward something to earn, as pips and a line: "3 in a row: 7 more to unlock a new opponent"). Something earned: `K.game.unlock(id, {open, title, sub, icon, action, again})` -> `'action' | 'again'` (the celebration card: a gold badge with turning rays, the action, e.g. 'Choose your opponent') with `K.game.celebrate()` (the big burst of confetti) when it opens; keep what was earned in `M.st.keep`.
+- **Accessibility:** `K.game.a11y.say(text)` (a screen reader reads it: "Juli dropped a disc in column C"), `K.game.a11y.controls([{id, label, disabled, press}])` every frame (buttons a screen reader or a keyboard can press, hidden from the eye), `K.game.a11y.title(text)`. Touch targets: whole columns or cells, 44 points or more.
+- Automated tests read `window.__game` (`{phase, turn, over, moves, games, by, stuck, score, stats, fps}`).
+
 ### Rules that still apply
-Only `K` is global from the kit: never declare a top-level name `K`, never read or write `K._` internals. Loads (loadImage/loadSound/loadJSON)
+Only `K` is global from the kit: never declare a top-level name `K`, never read or write `K._` internals. No p5 name at the top level
+of sketch.js: p5 starts after your script and writes its own functions and values onto `window`, so a top-level `function` or `var`
+named like one of them (`save`, `text`, `rect`, `fill`, `stroke`, `image`, `color`, `random`, `noise`, `map`, `print`, `frameRate`,
+`loadImage`, `createCanvas`, `remove`, `width`, ...) becomes p5's (a `function save()` turns into p5's download of the canvas: the app
+never keeps anything), and a top-level `let` / `const` / `class` hides p5's own from your code and the Kit's. Name yours otherwise
+(`saveState`, `gameMap`, `label`); names inside functions and objects are fine. p0pc0rn's check refuses a top-level `function` or
+`var` with a p5 name, and a `let` / `const` the Kit needs, and names the word. Loads (loadImage/loadSound/loadJSON)
 only in preload(). A hex colour never takes a separate alpha: `K.alpha('#ff0000', 0.5)`. Online data only through `p0.fetch`, with try/catch and an offline state.
 
 ---
@@ -517,11 +640,126 @@ To make a different agentic app, keep that structure and change what it watches,
 
 ---
 
+## A complete game example: Noughts and Crosses on the Game Kit
+
+A small, tested game to copy for any two-player game (chess, checkers, reversi, gomoku, dots and boxes): the RULES block (pure), a
+`K.game.match` whose `ask` offers Juli EVERY free cell with the game's read of each one (the Game Kit's search sees to the end of a 3 x 3
+game), her answer as her move, the "Ask Juli again" state when her model gives none, a `'lines'` board, marks that draw on as they land,
+the winning line, confetti, sound, the results card and screen-reader buttons. Four in a Row, which comes with p0pc0rn, is the same
+shape with more polish (a ghost disc under the finger, gravity and bounce, a jolt, Juli's ghost wandering while she thinks, a deep read
+run in slices, the clear-out). For a bigger game: keep the options to at most 12 legal moves (a game with more groups them: a piece,
+then its square), label each in words ("knight b1 to c3"), and let the read name each choice by its number, best first.
+```json
+{
+ "p0skel": 1,
+ "manifest": {
+  "id": "tic-tac-toe",
+  "name": "Noughts and Crosses",
+  "description": "Noughts and crosses (tic-tac-toe) against Juli on a 3 x 3 board: three in a row wins. Juli plays to win and every move is her own, picked on this phone. Fits: tic-tac-toe, noughts and crosses, a very quick game with Juli.",
+  "category": "non-agentic",
+  "kind": "game",
+  "version": "1.1",
+  "author": "p0pc0rn",
+  "runtime": "p5-kit@1",
+  "entry": "sketch.js",
+  "permissions": {
+   "storage": true,
+   "juli": [
+    "choose"
+   ]
+  },
+  "triggers": [
+   {
+    "type": "manual"
+   }
+  ],
+  "slots": {
+   "title": {
+    "type": "string",
+    "max": 22,
+    "required": true,
+    "desc": "the game's name"
+   },
+   "player_name": {
+    "type": "string",
+    "max": 14,
+    "required": true,
+    "desc": "the person's name on the score"
+   },
+   "juli_name": {
+    "type": "string",
+    "max": 14,
+    "required": true,
+    "desc": "Juli's name on the score"
+   },
+   "player_color": {
+    "type": "color",
+    "required": true,
+    "desc": "the person's crosses, #rrggbb"
+   },
+   "juli_color": {
+    "type": "color",
+    "required": true,
+    "desc": "Juli's noughts, #rrggbb, easy to tell from the person's"
+   },
+   "board_color": {
+    "type": "color",
+    "required": true,
+    "desc": "the board, #rrggbb, darker than both"
+   },
+   "first": {
+    "type": "enum",
+    "enum": [
+     "you",
+     "juli",
+     "take turns"
+    ],
+    "required": true,
+    "desc": "who goes first"
+   },
+   "win_text": {
+    "type": "string",
+    "max": 40,
+    "required": true,
+    "desc": "the title when the person wins"
+   },
+   "juli_win_text": {
+    "type": "string",
+    "max": 40,
+    "required": true,
+    "desc": "the title when Juli wins"
+   }
+  }
+ },
+ "slots_default": {
+  "title": "Noughts and Crosses",
+  "player_name": "You",
+  "juli_name": "Juli",
+  "player_color": "#ff4757",
+  "juli_color": "#ffc43a",
+  "board_color": "#3b2a7a",
+  "first": "take turns",
+  "win_text": "You win!",
+  "juli_win_text": "Juli wins"
+ },
+ "notes_for_juli": "Fill names and colours from the request; keep the two marks' colours easy to tell apart and the board darker. Juli always plays her best: there are no levels. Example for 'tic tac toe, blue and orange, I start': player_color #2f80ed, juli_color #f2994a, first you.",
+ "files": {
+  "sketch.js": "/* NOUGHTS AND CROSSES - you against Juli on a 3 x 3 board: the Skeleton Guide's small game on the Game Kit (K.game). The game keeps the\n   rules (the RULES block: pure), reads every free cell with the Game Kit's search (on a 3 x 3 board it sees to the end) and gives Juli\n   that read as a hint; her model picks one of ALL the free cells (K.choose) and her answer is her move. The Game Kit does the rest: the\n   turns, the score and saving (K.game.match), the board, a pop and a sound when a mark lands, the winning line, confetti, the results\n   card and buttons for a screen reader. When her model gives no answer the game says so (\"Ask Juli again\"); it never moves for her.\n   Slots come from window.SLOTS; every slot has a default, so the game also runs with no slots and without window.p0. */\n\n// ===== RULES (pure: no Kit, no p5) =====\nconst N = 3, LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];\nconst NAME = ['top left', 'top middle', 'top right', 'middle left', 'centre', 'middle right', 'bottom left', 'bottom middle', 'bottom right'];\nconst at = (b, m) => b[Math.floor(m / N)][m % N];\n/** the board: 3 rows of 3, top row first; 0 = empty, 1 = the person (X), 2 = Juli (O); a move is a cell number 0-8 */\nfunction emptyBoard() { return [[0, 0, 0], [0, 0, 0], [0, 0, 0]]; }\nfunction freeCells(b) { const out = []; for (let m = 0; m < 9; m++) if (!at(b, m)) out.push(m); return out; }\nfunction place(b, m, who) { const nb = b.map((r) => r.slice()); nb[Math.floor(m / N)][m % N] = who; return nb; }\n/** three in a row -> {who, cells: [[r, c] x3]} or null */\nfunction lineOf(b) { for (const L of LINES) { const v = at(b, L[0]); if (v && at(b, L[1]) === v && at(b, L[2]) === v) return { who: v, cells: L.map((m) => [Math.floor(m / N), m % N]) }; } return null; }\nfunction winsNow(b, who) { return freeCells(b).filter((m) => !!lineOf(place(b, m, who))); }\nfunction boardText(b) { return 'Noughts and crosses, 3 x 3. X = the person, O = you (Juli), . = empty. Three in a row wins.\\nThe board, top row first:\\n' + b.map((r) => r.map((v) => '.XO'[v]).join(' ')).join('\\n'); }\n/** the game as the search sees it (K.game.search: in place), centre and corners first */\nfunction searchSpec(b, me) {\n  return { state: b, who: me, moves: (s) => [4, 0, 2, 6, 8, 1, 3, 5, 7].filter((m) => !at(s, m)),\n    do: (s, m, w) => { s[Math.floor(m / N)][m % N] = w; }, undo: (s, m) => { s[Math.floor(m / N)][m % N] = 0; },\n    won: (s) => !!lineOf(s), draw: (s) => s.every((r) => r.every((v) => v)), score: () => 0 };\n}\n// ===== END RULES =====\n\n// ===== SLOTS =====\nconst SL = window.SLOTS || {};\nconst hex = (v, d) => (/^#[0-9a-fA-F]{6}$/.test(v || '') ? v : d);\nconst TITLE = String(SL.title || 'Noughts and Crosses').slice(0, 22);\nconst YOU = String(SL.player_name || 'You').slice(0, 14) || 'You', JULI = String(SL.juli_name || 'Juli').slice(0, 14) || 'Juli';\nconst C_YOU = hex(SL.player_color, '#ff4757'), C_JULI = hex(SL.juli_color, '#ffc43a'), C_BOARD = hex(SL.board_color, '#3b2a7a');\nconst FIRST = ['you', 'juli', 'take turns'].includes(SL.first) ? SL.first : 'take turns';\nconst WIN_TEXT = String(SL.win_text || 'You win!').slice(0, 40), JULI_WIN_TEXT = String(SL.juli_win_text || 'Juli wins').slice(0, 40);\nconst G = K.game, colorOf = (who) => (who === 1 ? C_YOU : C_JULI);\n\n// ===== JULI'S MOVES: the game reads every free cell (to the end of the game), her model chooses =====\n/** the read of every free cell -> {words: cell -> what HER move there leads to, text: the same, best first, the same reads said once:\n *  \"draws: 5 (centre); loses at once: 1 (top left), ...\"} */\nfunction readOf(b, opts) {\n  const r = G.searchSync(searchSpec(G.copy(b), 2), { depth: 9 }), half = G.WIN / 2, words = new Map();\n  const what = (x) => {\n    if (x.score > half) return winsNow(b, 2).includes(x.move) ? 'wins now' : 'wins';\n    if (x.score < -half) return winsNow(place(b, x.move, 2), 1).length ? 'loses at once' : 'loses';\n    return 'draws';\n  };\n  const groups = [];\n  for (const x of r.ranked) { const w = what(x), g = groups[groups.length - 1]; words.set(x.move, w); if (g && g.w === w) g.ms.push(x.move); else groups.push({ w, ms: [x.move] }); }\n  return { words, text: 'what each choice leads to, best first: ' + groups.map((g) => g.w + ': ' + g.ms.map((m) => (opts.indexOf(m) + 1) + ' (' + NAME[m] + ')').join(', ')).join('; ') };\n}\n\n// ===== THE MATCH (the Game Kit keeps the turns, the score and the saved game) =====\nlet popAnim = null, endAt = 0, cardOpen = false, startScore = null;\nconst STUCK = { stopped: JULI + '’s model stopped', unreadable: JULI + ' didn’t name a cell', missing: JULI + ' isn’t downloaded yet', nojuli: JULI + ' plays inside p0pc0rn' };\nconst M = G.match({\n  key: 'ttt.v1', first: FIRST, fresh: emptyBoard, legal: (b) => freeCells(b),\n  valid: (b) => b.length === 3 && b.every((r) => Array.isArray(r) && r.length === 3),\n  apply: (b, m, who) => ({ board: place(b, m, who), last: m }),\n  result: (b) => { const l = lineOf(b); return l ? { who: l.who, cells: l.cells } : freeCells(b).length ? null : { who: 0, cells: [] }; },\n  animate: (m, who) => { popAnim = { m, who, k: 0 }; G.sound.play('place', { vel: 0.8 }); return G.timeline().tween(popAnim, { k: 1 }, G.reduced ? 80 : 320, { ease: 'outBack' }).play(); },\n  juli: {   // every free cell is hers to pick; the read is information, never a filter\n    ask: (b) => { const opts = freeCells(b), rd = readOf(b, opts);   // every free cell, the read beside each one too\n      return { about: boardText(b), skill: 'play-tic-tac-toe', options: opts.map((m) => ({ move: m, label: NAME[m] + ' (' + rd.words.get(m) + ')' })), hint: rd.text }; },\n    pick: (a) => K.choose(a.about, a.options, { skill: a.skill, hint: a.hint }),\n  },\n});\nM.on('new', () => { cardOpen = false; endAt = 0; startScore = Object.assign({}, M.st.score); });\nM.on('resume', () => { startScore = Object.assign({}, M.st.score); if (M.st.over) { cardOpen = true; endAt = K.t - 10; } });\nM.on('move', (e) => G.a11y.say((e.who === 1 ? 'You' : JULI) + ' took ' + NAME[e.move] + '.'));\nM.on('stuck', (s) => G.a11y.say((STUCK[s.kind] || STUCK.stopped) + '. Ask ' + JULI + ' again.'));\nM.on('end', (o) => {\n  endAt = K.t; G.sound.play(o.who === 1 ? 'win' : o.who === 2 ? 'lose' : 'draw');\n  if (o.who === 1) G.confetti(K.W / 2, K.H * 0.95, { n: 90, colors: [C_YOU, C_JULI, '#fff4d6'], spread: 1.1, power: 1300 });\n  const gno = M.st.games;   // Play again can come first: then the card stays shut\n  G.timeline().call(() => { if (M.st.over && M.st.games === gno) cardOpen = true; }, { at: 1100 }).play();\n  G.a11y.say(o.who === 1 ? WIN_TEXT : o.who === 2 ? JULI_WIN_TEXT : 'A draw.');\n});\n\nfunction setup() { K.setup({ mode: 'dark', accent: C_BOARD }); M.start(); G.a11y.title(TITLE + ': you against ' + JULI); K.scene('play', drawPlay); }\n\nfunction geo() {\n  const W = K.W, H = K.H, top = Math.max(K.safe.top, 10), size = Math.min(W - 40, H - top - 230, 440);\n  return { top, L: G.layout({ rows: 3, cols: 3, x: (W - size) / 2, y: top + 128, w: size, h: size, pad: Math.round(size * 0.04), align: 'top' }) };\n}\n\nfunction drawPlay() {\n  const g = geo(), L = g.L, st = M.st, W = K.W;\n  G.backdrop({ top: '#1d1442', bottom: '#08060f', glows: [{ x: 0.5, y: 0.45, r: 0.7, color: C_BOARD, a: 0.35 }] });\n  G.soundButton('sound', W - 34, g.top + 22, 36);\n  const pw = (W - 38) / 2;\n  G.player('you', 14, g.top + 46, pw, 54, { name: YOU, score: st.score.you, color: C_YOU, active: !st.over && st.turn === 1 });\n  G.player('juli', W - 14 - pw, g.top + 46, pw, 54, { name: JULI, score: st.score.juli, color: C_JULI, active: !st.over && st.turn === 2, juli: true, mood: M.thinking ? 'thinking' : 'idle', align: 'right' });\n  const t = st.over ? '' : M.stuck ? STUCK[M.stuck.kind] || STUCK.stopped : M.thinking ? JULI + ' is thinking…' : st.turn === 1 ? 'Your turn' : '';\n  K.text(t, W / 2, g.top + 120, 'headline', M.stuck ? '#ffb36b' : K.C.text, { align: 'center' });\n  G.board(L, { style: 'lines', color: C_BOARD });\n  for (let m = 0; m < 9; m++) { const v = at(st.board, m); if (v) drawMark(L, m, v, popAnim && popAnim.m === m ? popAnim.k : 1); }\n  if (st.over && st.over.cells.length) {   // the winning line glows\n    const a = st.over.cells[0], b = st.over.cells[2], k = Math.min(1, (K.t - endAt) / 0.4), col = colorOf(st.over.who);\n    for (const [r, c] of st.over.cells) G.glow(L.cx(c), L.cy(r), L.cell * 0.6, col, 0.4 + 0.2 * K.pulse(5));\n    K.line(L.cx(a[1]), L.cy(a[0]), L.cx(a[1]) + (L.cx(b[1]) - L.cx(a[1])) * k, L.cy(a[0]) + (L.cy(b[0]) - L.cy(a[0])) * k, K.alpha('#ffffff', 0.85), L.cell * 0.07);\n    if (k < 1) G.hot(200);\n  }\n  const aim = G.aim('cells', L, { mode: 'cell', enabled: M.canPlay() && !cardOpen, legal: (x) => !st.board[x.r][x.c] });\n  if (aim.hover) G.glow(L.cx(aim.hover.c), L.cy(aim.hover.r), L.cell * 0.5, C_YOU, 0.25);\n  if (aim.drop) M.play(aim.drop.r * 3 + aim.drop.c);\n  G.fx();\n  if (M.stuck && !st.over && K.button('askagain', W / 2 - 90, L.y + L.h + 24, 180, 44, 'Ask ' + JULI + ' again', { style: 'primary', icon: 'refresh' })) M.askAgain();\n  const out = st.over ? (st.over.who === 1 ? 'win' : st.over.who === 2 ? 'lose' : 'draw') : 'draw';\n  const act = G.results('end', { open: !!(st.over && cardOpen), outcome: out, title: out === 'win' ? WIN_TEXT : out === 'lose' ? JULI_WIN_TEXT : 'Draw', sub: out === 'draw' ? 'Nobody made three in a row' : 'Three in a row',\n    color: out === 'win' ? C_YOU : out === 'lose' ? C_JULI : K.C.accent, score: st.score, prev: startScore, names: { you: YOU, juli: JULI }, colors: { you: C_YOU, juli: C_JULI }, streak: st.streak, note: 'Every move ' + JULI + ' made was her own.' });\n  if (act === 'again') M.newGame(); else if (act === 'board') cardOpen = false;\n  if (st.over && !cardOpen && K.button('again', W / 2 - 80, L.y + L.h + 24, 160, 44, 'Play again', { style: 'primary', icon: 'refresh' })) M.newGame();\n  G.a11y.controls(Array.from({ length: 9 }, (_, m) => ({ id: 'c' + m, label: NAME[m] + (at(st.board, m) ? ' (taken)' : ''), disabled: !M.canPlay() || !!at(st.board, m), press: () => M.play(m) }))\n    .concat(M.stuck && !st.over ? [{ id: 'askagain', label: 'Ask ' + JULI + ' again', press: () => M.askAgain() }] : [])\n    .concat(st.over ? [{ id: 'again', label: 'Play again', press: () => M.newGame() }] : []));\n}\n\n/** a cross or a nought, drawn on as it lands (k 0..1, a little past 1 for the pop) */\nfunction drawMark(L, m, who, k) {\n  const cx = L.cx(m % 3), cy = L.cy(Math.floor(m / 3)), s = L.cell * 0.27 * Math.min(1.15, k), col = colorOf(who);\n  G.glow(cx, cy, L.cell * 0.42, col, 0.18);\n  K.with((c) => {\n    c.lineCap = 'round'; c.lineWidth = L.cell * 0.11; c.strokeStyle = col;\n    const p = Math.min(1, k);\n    if (who === 1) { c.beginPath(); c.moveTo(cx - s, cy - s); c.lineTo(cx - s + 2 * s * Math.min(1, p * 2), cy - s + 2 * s * Math.min(1, p * 2)); c.stroke();\n      if (p > 0.5) { c.beginPath(); c.moveTo(cx + s, cy - s); c.lineTo(cx + s - 2 * s * (p - 0.5) * 2, cy - s + 2 * s * (p - 0.5) * 2); c.stroke(); } }\n    else { c.beginPath(); c.arc(cx, cy, s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p); c.stroke(); }\n  });\n}\n\nfunction draw() { K.render(); }\n"
+ },
+ "skills": {
+  "play-tic-tac-toe": "---\nname: play-tic-tac-toe\ndescription: How Juli picks a strong noughts and crosses move from the free cells the game offers: win now, block the person, then the centre and the corners.\nfor: [game]\n---\n## Each move, in this order\n1. If a cell wins for you now, take it.\n2. If the person wins next in a cell, take that cell to block.\n3. Otherwise take the centre, then a corner.\n\n## Reading the game\n- The game offers every free cell; its read sees to the end of the game and lists the best choices first.\n- Answer with the number of the choice.\n"
+ }
+}
+```
+
+---
+
 ## MY APP (write here, then send this file to the AI)
 
 I want an app that ...
 
-Kind: non-agentic (a tool I use; Juli helps when I ask) / agentic (Juli works in it on her own while p0pc0rn is open) - pick one.
+Kind: non-agentic (a tool I use; Juli helps when I ask) / agentic (Juli works in it on her own while p0pc0rn is open) / a game (I play
+against Juli; built on the Game Kit) - pick one.
 
 (Optional: who uses it, what it should show, which online data it needs. For an agentic app: its goal, what it should keep in its notebook,
 what it should look up or re-check on its own and how often, and what it should bring to me.)

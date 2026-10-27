@@ -4,7 +4,7 @@
 // conventions as the image + video pipelines.  Vision (image questions) is handled by ./vision.js, loaded only when images are passed.
 // v044 (10-21): the decode runs Gemma4.decodeLoop(): persistent per-token buffers + each token recorded while the GPU runs the one before.
 'use strict';
-import { Gemma4 } from './gemma4.js';
+import { Gemma4, dropAB } from './gemma4.js';   // 3.9 (E4B room): + dropAB
 import { GemmaTokenizer } from './tokenizer.js';
 import { renderChat, expandImages, parseReply } from './chat_template.js';
 import { SplitModel, connectWorker, SPLIT_PROTO } from './split.js';   // 3.8: iOS 27's second process
@@ -98,6 +98,7 @@ export class LLMPipeline {
       for (const im of o.images) { const r = await this.vision.encode(im, { check }); soft.push(r); imgCounts.push(r.n); }
       this.vision.release();
       if (hadResident) await m.preload(null, { streamMlp: this._streamMlp || [] });
+      if (Array.isArray(this.store.pool)) { for (const b of this.store.pool) dropAB(b); this.store.pool.length = 0; }   // 3.9 (E4B room): no upload staging kept after the re-upload
       text = expandImages(text, imgCounts);
       // one f32 buffer with all soft tokens, concatenated; spans filled after we know token positions
       const D = cfg.hidden, total = soft.reduce((a, s) => a + s.n, 0);

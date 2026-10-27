@@ -59,7 +59,7 @@ export function initTalk(app) {
     let pick = null, attOK = false;
     const photoOK = person.photos.length > 0 && app.ready('image') && app.ready('video');
     const fromPhoto = el('label', 'cast-radio'), rP = el('input'); rP.type = 'radio'; rP.name = 'talk-src'; rP.checked = photoOK; rP.disabled = !photoOK;
-    fromPhoto.append(rP, el('span', null, person.photos.length ? `Make a clip from ${person.self ? 'your' : `${person.name}'s`} photo` : `Add a photo of ${person.name} in Settings › Cast to make a clip`));
+    fromPhoto.append(rP, el('span', null, person.photos.length ? `Make a clip from ${person.self ? 'your' : `${person.name}'s`} photo` : `Add a photo of ${person.name} in Cast to make a clip`));
     const fromLib = el('label', 'cast-radio'), rL = el('input'); rL.type = 'radio'; rL.name = 'talk-src'; rL.checked = !photoOK;
     fromLib.append(rL, el('span', null, 'Pick a clip from the Library'));
     const need = el('p', 'footnote dim', person.photos.length && !photoOK ? 'Making a clip needs the picture and video models (Settings › Models).' : 'From the photo: a still, then a steady talking-pose clip (about 10 minutes on the phone), then the lip-sync.');
@@ -90,7 +90,7 @@ export function initTalk(app) {
     const sh = sheet('Lip-sync this clip');
     if (!modelNeed(sh, ['lipsync', 'voice'])) return;
     const people = (await app.cast.list()).filter((p) => p.voice);
-    if (!people.length) { sh.append(el('p', 'callout', 'Nobody in your Cast has a voice yet: add someone in Settings › Cast and record their voice first.')); return; }
+    if (!people.length) { sh.append(el('p', 'callout', 'Nobody in your Cast has a voice yet: add someone in Cast and record their voice first.')); return; }
     const who = el('div', 'talk-who'); let chosen = people[0];
     people.forEach((p, i) => { const l = el('label', 'cast-radio'), r = el('input'); r.type = 'radio'; r.name = 'talk-who'; r.checked = !i; r.onchange = () => { chosen = p; sync(); }; l.append(r, el('span', null, p.name + (p.self ? ' · you' : ''))); who.append(l); });
     const line = el('textarea', 'cast-field'); line.rows = 2; line.maxLength = 300; line.placeholder = 'The line to say';

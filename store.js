@@ -79,6 +79,15 @@ export async function remove(id) {
   if (mem) { mem.meta.delete(id); mem.blobs.delete(id); return; }
   return run(['meta', 'blobs'], 'readwrite', (t) => { t.objectStore('meta').delete(id); t.objectStore('blobs').delete(id); });
 }
+/** 3.9: merge fields into one item's stored record (a clip's poster: thumb + poster), only while the item is still there; -> true if it was */
+export async function patchMeta(id, fields) {
+  await open();
+  if (mem) { const m = mem.meta.get(id); if (m) Object.assign(m, fields); return !!m; }
+  return run(['meta'], 'readwrite', (t, box) => {
+    const s = t.objectStore('meta'), r = s.get(id);
+    r.onsuccess = () => { box.v = !!r.result; if (r.result) s.put(Object.assign(r.result, fields)); };
+  });
+}
 /** the last edit's input photo (one slot) */
 export async function putInput(blob) {
   await open();

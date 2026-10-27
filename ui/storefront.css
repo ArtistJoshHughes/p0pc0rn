@@ -1,0 +1,218 @@
+/* storefront.css - p0pc0rn 3.9 polish (ui/storefront.js, ui/works.js): the Apps screen as an app store (Games is its second pane), the
+   Skills screen as cards, and the pages of the apps that work for you (the permission sheet, the intro, an app's settings, the activity
+   report, before / after). Same language as the home screen: the blurred wallpaper behind the screen, rounded icon tiles, system type.
+   Only the app's own tokens (app.css) plus a few glass colours; no backdrop filters on scrolling cards (the wallpaper is already blurred
+   once, on its own layer); nothing animates while a render runs (html[data-busy]). */
+:root { --sf-scrim: rgba(10,8,18,.62); --sf-card: rgba(255,255,255,.075); --sf-card-2: rgba(255,255,255,.12); --sf-line: rgba(255,255,255,.09);
+  --sf-tile: linear-gradient(160deg, #5B2C69, #2A1434); --sf-hero: linear-gradient(140deg, rgba(139,124,255,.42), rgba(255,95,143,.20) 55%, rgba(255,166,77,.22));
+  --sf-get: rgba(255,255,255,.16); --sf-get-fg: #fff; --sf-chip: rgba(255,255,255,.10); }
+@media (prefers-color-scheme: light) {
+  :root { --sf-scrim: rgba(246,246,248,.80); --sf-card: rgba(255,255,255,.74); --sf-card-2: rgba(255,255,255,.92); --sf-line: rgba(0,0,0,.07);
+    --sf-hero: linear-gradient(140deg, rgba(91,75,245,.20), rgba(233,138,43,.16) 60%, rgba(255,255,255,.70)); --sf-get: rgba(91,75,245,.12); --sf-get-fg: var(--accent); --sf-chip: rgba(0,0,0,.06); }
+}
+
+/* ---------- the screens on the wallpaper (Apps / Games, Skills, Browser): the home screen's blurred picture behind a soft scrim ---------- */
+html[data-tab="apps"] .screen, html[data-tab="skills"] .screen, html[data-tab="browser"] .screen { background: var(--sf-scrim); }
+html[data-tab="apps"] #v-home, html[data-tab="skills"] #v-home, html[data-tab="browser"] #v-home { visibility: hidden; }
+html[data-busy][data-tab="apps"] .screen, html[data-busy][data-tab="skills"] .screen, html[data-busy][data-tab="browser"] .screen { background: var(--bg); }   /* a render runs: no layers to blend */
+html[data-tab="apps"] .cta-bar, html[data-tab="skills"] .cta-bar { background: transparent; }
+
+/* ---------- Apps | Games ---------- */
+.sf-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; margin: 0 0 calc(-1 * var(--s-2)); border-radius: var(--r-pill); background: var(--sf-chip); }
+.sf-seg button { min-height: 38px; border-radius: var(--r-pill); font-size: 15px; font-weight: 600; color: var(--text-2); }
+.sf-seg button[aria-selected="true"] { background: var(--sf-card-2); color: var(--text-1); box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.sf-pane { display: flex; flex-direction: column; gap: var(--s-4); }
+.sf-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); margin-top: var(--s-2); }
+.sf-store .sf-head .label, .sf-skills .sf-head .label { margin: 0; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.015em; text-transform: none; color: var(--text-1); }
+.sf-act-link { color: var(--accent); font-size: 15px; }
+.sf-store .sf-pane > p.footnote { margin-top: calc(-1 * var(--s-3)); }
+
+/* the hero: make an app in one sentence */
+.sf-hero { position: relative; display: flex; flex-direction: column; gap: var(--s-2); padding: 18px 16px 16px; border-radius: 22px; background: var(--sf-hero);
+  box-shadow: inset 0 0 0 1px var(--sf-line); overflow: hidden; }
+.sf-hero-kicker { font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-2); }
+.sf-hero-title { margin: 0; }
+.sf-store .apps-make textarea { background: var(--sf-card); box-shadow: inset 0 0 0 1px var(--sf-line); }
+.sf-store .apps-make .btn.cta { border-radius: var(--r-pill); min-height: 48px; }
+
+/* ---------- cards: the icon, the name and its chips beside it, the pill on the right, the sentence below, quiet buttons last ---------- */
+.sf-store .list, .sf-skills .sf-skill-list { background: transparent; box-shadow: none; margin-top: 0; display: flex; flex-direction: column; gap: 10px; border-radius: 0; }
+.sf-store .list > .li.link, .sf-skills .list > .li.link { background: var(--sf-card); border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--sf-line); }
+.sf-store .list > .li + .li, .sf-skills .list > .li + .li { box-shadow: inset 0 0 0 1px var(--sf-line); }
+#v-apps .sf-card, #v-skills .sf-card { position: relative; display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; row-gap: 2px;
+  padding: 14px; border-radius: 20px; background: var(--sf-card); box-shadow: inset 0 0 0 1px var(--sf-line); text-align: left;
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+#v-apps .sf-card .app-txt, #v-apps .sf-card .li-end, #v-skills .sf-card .app-txt, #v-skills .sf-card .li-end { display: contents; }
+#v-apps .sf-card > .sf-ico, #v-skills .sf-card > .sf-ico { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
+#v-apps .sf-card .sw-name, #v-skills .sf-card .sw-name { grid-column: 2; grid-row: 1; align-self: end; min-width: 0; font-size: 17px; line-height: 22px; font-weight: 600; color: var(--text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#v-apps .sf-card .sf-chips, #v-skills .sf-card .sf-chips { grid-column: 2; grid-row: 2; align-self: start; }
+#v-apps .sf-card .sf-get, #v-skills .sf-card .sf-get { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
+#v-apps .sf-shelf-card .app-txt > .footnote:not(.sf-stop) { grid-column: 1 / -1; grid-row: 3; margin-top: 8px; color: var(--text-2);
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+#v-apps .sf-shelf-card .sf-stop { grid-column: 1 / -1; grid-row: 4; margin-top: 4px; color: var(--accent); }
+#v-apps .sf-shelf-card .li-end > .mini:nth-child(2) { grid-column: 1 / 3; grid-row: 5; justify-self: start; }
+#v-apps .sf-shelf-card .li-end > .mini:nth-child(3) { grid-column: 3; grid-row: 5; justify-self: end; color: var(--danger); }
+.sf-plain { color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.sf-look { color: var(--danger); font-weight: 600; }
+.sf-hide { display: none !important; }
+/* the Get / Open / Play / View pill (App Store-like) and the quiet buttons */
+#v-apps .sf-get, #v-skills .sf-get { min-height: 32px; min-width: 76px; padding: 0 16px; border-radius: var(--r-pill); background: var(--sf-get); color: var(--sf-get-fg); font-size: 15px; font-weight: 700;
+  box-shadow: none; position: relative; }
+#v-apps .sf-get::after, #v-skills .sf-get::after { content: ""; position: absolute; inset: -6px -4px; }   /* a 44 pt target */
+#v-apps .sf-card .mini, #v-skills .sf-card .mini { min-height: 40px; padding: 0 2px; font-size: 14px; color: var(--accent); font-weight: 600; }
+
+/* icon tiles: the home screen's family (made apps: their own icon or letter; designs: a warm glyph on a plum tile) */
+.sf-ico { position: relative; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 13px; overflow: visible; background: var(--sf-tile); color: #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.10); font: 700 25px/1 var(--font); flex: none; }
+.sf-ico.art img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.sf-ico.glyph svg { width: 58%; height: 58%; stroke-width: 1.8; }
+.sf-ico.skill svg { width: 52%; height: 52%; color: #FFD27A; stroke-width: 1.8; }
+.sf-ico.skill[data-kind="change"] svg { color: #FFB86B; }
+.sf-ico.skill[data-kind="game"] svg { color: #9EE6B8; }
+.sf-ico.skill[data-kind="chat"] svg { color: #7FD8FF; }
+.sf-ico.big { width: 68px; height: 68px; border-radius: 16px; font-size: 30px; }
+.sf-badge { position: absolute; top: -6px; left: -7px; min-width: 21px; height: 21px; padding: 0 6px; border-radius: 11px; background: var(--danger); color: #fff;
+  font: 700 12px/21px var(--font); text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.sf-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 0; }
+.sf-chips:empty { display: none; }
+.sf-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 11px; background: var(--sf-chip); color: var(--text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.sf-chip.works { background: rgba(48,209,88,.16); color: #4BD68A; }
+.sf-chip.juli { background: rgba(139,124,255,.18); color: #B4A9FF; }
+.sf-chip.game, .sf-chip.vs { background: rgba(255,200,61,.16); color: #FFC83D; }
+.sf-chip.off { background: rgba(255,69,58,.14); color: var(--danger); }
+@media (prefers-color-scheme: light) {
+  .sf-chip.works { color: #1F7A3F; background: rgba(36,138,61,.12); } .sf-chip.juli { color: #4B3BD8; background: rgba(91,75,245,.12); }
+  .sf-chip.game, .sf-chip.vs { color: #8A5A00; background: rgba(233,138,43,.16); }
+}
+
+/* My apps: the card slides left for Delete; Open sits at the top right; Change, Add to Home and Delete along the bottom */
+#v-apps .sf-mine-card { display: block; padding: 0; overflow: hidden; background: transparent; box-shadow: none; }
+#v-apps .sf-mine-card.sf-swiping, #v-apps .sf-mine-card.sf-open { background: var(--danger); }
+.sf-slide { position: relative; z-index: 1; display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; column-gap: 12px; row-gap: 2px; padding: 14px 14px 4px;
+  background: var(--sf-card); box-shadow: inset 0 0 0 1px var(--sf-line); border-radius: 20px; text-align: left; transition: transform var(--d-4) var(--ease-out); touch-action: pan-y; }
+.sf-mine-card.sf-swiping .sf-slide, .sf-mine-card.sf-open .sf-slide { background: var(--surface-1); }
+#v-apps .sf-mine-card .sf-slide, #v-apps .sf-mine-card .app-txt { text-align: left; }   /* app.css right-aligns a row's last span */
+#v-apps .sf-mine-card .sf-slide > .sf-ico { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
+#v-apps .sf-mine-card .sw-name { grid-column: 2; grid-row: 1; padding-right: 86px; }
+#v-apps .sf-mine-card .sf-chips { grid-column: 2; grid-row: 2; padding-right: 86px; }
+#v-apps .sf-mine-card .app-txt > .footnote.dim:not(.sf-plain) { grid-column: 2; grid-row: 3; align-self: start; color: var(--text-3); }
+#v-apps .sf-mine-card .sf-look { grid-column: 1 / -1; grid-row: 4; margin-top: 8px; }
+#v-apps .sf-mine-card .sf-plain { grid-column: 1 / -1; grid-row: 5; margin-top: 8px; -webkit-line-clamp: 3; }
+#v-apps .sf-mine-card .sf-stop { grid-column: 1 / -1; grid-row: 6; margin-top: 4px; color: var(--accent); }
+#v-apps .sf-mine-card .li-end.sf-acts { grid-column: 1 / -1; grid-row: 7; display: flex; align-items: center; gap: 2px; margin: 8px -4px 0; padding-top: 2px; border-top: 1px solid var(--sf-line); }
+#v-apps .sf-mine-card .sf-acts .sf-get { position: absolute; top: 14px; right: 14px; }
+#v-apps .sf-mine-card .sf-acts .mini { padding: 0 10px; color: var(--text-2); font-weight: 600; }
+#v-apps .sf-mine-card .sf-acts .sf-del { margin-left: auto; color: var(--danger); }
+#v-apps .sf-mine-card .sf-acts .sh-pin-btn { width: 44px; }
+.sf-swipe-del { position: absolute; top: 0; right: 0; bottom: 0; width: 92px; display: grid; place-items: center; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; visibility: hidden; }
+.sf-swiping .sf-swipe-del, .sf-open .sf-swipe-del { visibility: visible; }
+
+/* what needs you */
+.sf-needs { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 20px; background: var(--sf-card); box-shadow: inset 0 0 0 1px var(--sf-line); }
+.sf-needs-head { font-size: 13px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--danger); }
+.sf-need { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 6px 2px; text-align: left; min-height: 56px; }
+.sf-need .sf-ico { width: 44px; height: 44px; border-radius: 11px; font-size: 20px; }
+.sf-need-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sf-need-go { padding: 6px 14px; border-radius: var(--r-pill); background: var(--sf-get); color: var(--sf-get-fg); font-size: 15px; font-weight: 700; }
+
+/* the make preview (Juli shows what she'll make; nothing is added until Make) */
+.apps-status.sf-preview { display: flex; flex-direction: column; gap: 10px; align-items: stretch; padding: 12px; margin-top: 2px; border-radius: 16px; background: var(--sf-card); box-shadow: inset 0 0 0 1px var(--sf-line); color: var(--text-1); }
+.sf-pv { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; align-items: start; }
+.sf-pv-txt { display: flex; flex-direction: column; gap: 3px; }
+.sf-pv-kicker { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.sf-pv-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sf-pv-row .btn { width: 100%; }
+.sf-pv-row .btn.cta { border-radius: var(--r-pill); }
+/* the card after Make / Get: Add to Home Screen (the offer) gets the room, Open sits beside it */
+.sf-pv-row.sf-made-row { grid-template-columns: minmax(0, 1fr) auto; }
+.sf-made-row .btn { white-space: nowrap; }
+.sf-made-row .btn.ghost { width: auto; padding-inline: 18px; }
+
+/* ---------- Games: a cover per game, Play, You vs Juli ---------- */
+.sf-arcade { display: flex; flex-direction: column; gap: 4px; padding: 4px 2px 0; }
+.sf-arcade .title { margin: 0; font-size: 28px; line-height: 34px; font-weight: 800; letter-spacing: -.02em; }
+#v-apps .sf-games { gap: 18px; }
+#v-apps .sf-game { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 0 0 16px; border-radius: 24px; overflow: hidden; background: var(--sf-card);
+  box-shadow: inset 0 0 0 1px var(--sf-line), 0 10px 30px rgba(0,0,0,.28); text-align: left; }
+.sf-game-top { position: relative; grid-column: 1 / -1; display: block; }
+.sf-cover { display: block; aspect-ratio: 16 / 9; width: 100%; background: #2B1846; overflow: hidden; }
+.sf-cover svg, .sf-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sf-vs { position: absolute; left: 12px; bottom: 12px; padding: 5px 11px; border-radius: var(--r-pill); background: rgba(0,0,0,.55); color: #FFD34D; font-size: 13px; font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+#v-apps .sf-game .app-txt { padding: 0 0 0 16px; gap: 3px; }
+#v-apps .sf-game .sw-name { font-size: 22px; line-height: 28px; font-weight: 700; }
+.sf-gline { color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sf-yours { margin-top: 2px; color: var(--text-3); }
+#v-apps .sf-game .li-end { padding-right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+#v-apps .sf-game .sf-play { min-height: 40px; min-width: 92px; padding: 0 22px; border-radius: var(--r-pill); font-size: 17px; font-weight: 700; background: var(--cta-bg); color: var(--cta-fg); box-shadow: none; }
+#v-apps .sf-game .li-end .mini { color: var(--accent); font-size: 14px; }
+
+/* ---------- Skills: the icon, the name, what it is for, then "what it can do" chips ---------- */
+.sf-skills-hero { margin-bottom: var(--s-2); }
+#v-skills .sf-skill-card .sf-purpose { grid-column: 2; grid-row: 2; align-self: start; color: var(--text-2); }
+#v-skills .sf-skill-card .sf-chips { grid-column: 2 / -1; grid-row: 3; margin-top: 6px; }
+#v-skills .sf-skill-card .li-end > .mini { grid-column: 3; grid-row: 3; justify-self: end; color: var(--text-2); }
+#v-skills .sf-skill-card.sf-off .sf-ico { filter: grayscale(.8); opacity: .6; }
+
+/* the home screen's widget for an app that works for you: what it does, that it only suggests, where to pause it (ui/shell.js) */
+.sh-widget .sh-w-about { margin-top: 4px; font-size: 13px; line-height: 17px; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---------- sheets: the permission sheet, the intro, an app's page, activity, before / after ---------- */
+.sf-perm, .sf-intro { align-items: stretch; text-align: center; }
+.sf-perm > .sf-ico, .sf-intro > .sf-ico, .sf-page .sf-page-head .sf-ico { margin: 0 auto; }
+.sf-perm > .title, .sf-intro > .title { font-size: 20px; line-height: 26px; }
+.sf-perm-plain { color: var(--text-2); }
+.sf-perm-list { text-align: left; gap: 10px !important; padding: 12px 14px !important; border-radius: 16px; background: var(--surface-2); }
+.sf-perm-list li { position: relative; padding-left: 38px; min-height: 30px; }
+.sf-perm-ic { position: absolute; left: 0; top: 0; width: 28px; height: 28px; padding: 5px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); stroke-width: 1.8; }
+.sf-perm-list li[data-icon="shield"] .sf-perm-ic { background: rgba(48,209,88,.14); color: var(--ok); }
+.sf-perm-list li[data-icon="clock"] .sf-perm-ic, .sf-perm-list li[data-icon="check"] .sf-perm-ic { background: rgba(255,214,10,.14); color: var(--warn); }
+.sf-perm-from { font-size: 13px; }
+.sf-perm .btn, .sf-intro .btn { width: 100%; border-radius: var(--r-pill); }
+.sf-intro > .title { font-size: 26px; line-height: 32px; font-weight: 800; }
+.sf-intro-lead { margin-top: -6px !important; }
+.sf-intro-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; align-items: start; text-align: left; padding: 6px 2px; }
+.sf-intro-ic { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; background: var(--accent-soft); color: var(--accent); }
+.sf-intro-ic svg { width: 24px; height: 24px; stroke-width: 1.8; }
+.sf-intro-row .headline { margin-bottom: 2px !important; }
+.sf-page .sf-page-head { display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 14px; align-items: center; text-align: left; }
+.sf-page .sf-page-ht { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sf-page-plain { color: var(--text-1); }
+.sf-sec { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.sf-sec .label { margin: 0; }
+.sf-group { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.sf-group .label { margin: 4px 0 0; }
+.sf-group .list { margin-top: 0; }
+.sf-line { justify-content: flex-start; align-items: flex-start; gap: 12px; }
+.sf-line-ic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); flex: none; }
+.sf-line-ic svg { width: 18px; height: 18px; }
+.sf-page .li > .sf-line-txt, .sf-line-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: left; flex: 1; }
+.sf-access { gap: 12px; }
+.sf-access .btn { flex: none; }
+.sf-sw .footnote { text-align: left; }
+.sf-stay { text-align: left; }
+.sf-more { justify-content: space-between; width: 100%; }
+.sf-page-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sf-page-acts .btn { width: 100%; min-height: 46px; }
+.sf-page-acts .btn.cta, .sf-page-acts .btn.danger { grid-column: 1 / -1; }
+.sf-look-go { border-radius: var(--r-pill); }
+.sf-act-row { justify-content: flex-start; align-items: center; gap: 12px; }
+.sf-act-row .sf-ico { width: 40px; height: 40px; border-radius: 10px; font-size: 18px; }
+.sf-act-row .callout { font-size: 14px; line-height: 19px; margin: 0; }
+.sf-act-row .sf-act-pause { flex: none; min-height: 36px; padding: 0 14px; border-radius: var(--r-pill); }
+.sf-empty { text-align: left; color: var(--text-2); }
+.sf-ba-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sf-ba-fig { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.sf-ba-fig img, .sf-ba-none { width: 100%; aspect-ratio: 390 / 844; object-fit: cover; border-radius: 16px; background: var(--surface-2); box-shadow: 0 0 0 1px var(--hairline); display: grid; place-items: center; }
+
+/* nothing moves while a render runs, or for reduced motion */
+html[data-busy] .sf-slide, html[data-busy] .sf-card { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .sf-slide { transition: none; } }
+
+/* 3.9 Wallet Watch: a source's credit with its direct links (Snowtrace: Powered by Routescan.io APIs; routescan.io, @routescan_io on X)
+   on the permission sheet and the app's settings page, and the bar under the running app (makeapp/host.js creditBar) */
+.ww-links { display: block; margin-top: 4px; color: var(--text-2); }
+.ww-links a, .app-credit a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; padding: 8px 1px; }
+.app-credit { flex: none; padding: 6px var(--gutter-r) calc(var(--safe-b) + 6px) var(--gutter-l); box-shadow: inset 0 1px 0 var(--hairline); background: var(--bg); color: var(--text-3); text-align: center; }
+.app-credit p { margin: 0; font-size: 12px; line-height: 18px; }

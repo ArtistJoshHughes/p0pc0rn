@@ -3,6 +3,8 @@
 // The sandbox enforces the important ones anyway (no network of its own, no storage, no reaching the page): these checks make a bad bundle fail
 // early and clearly instead of half-working.
 import { SOURCE_IDS } from './sources.js';
+import { clashProblems } from './p5names.js';   // 3.9 platform: a top-level name p5 takes in global mode (p5 starts after the app's script)
+import { bundleSkillProblems } from '../assistant/skills.js';   // H39: a skeleton may bring up to 3 skills (know-how for Juli)
 
 export const ICONS = ['plus', 'minus', 'close', 'check', 'chevronRight', 'chevronLeft', 'chevronUp', 'chevronDown', 'back', 'arrowRight', 'arrowUp',
   'arrowDown', 'menu', 'more', 'search', 'heart', 'play', 'pause', 'stop', 'undo', 'redo', 'backspace', 'refresh', 'share', 'trash', 'edit', 'home',
@@ -27,7 +29,7 @@ export function checkBundle(b) {
   const e = [];
   if (!b || typeof b !== 'object' || Array.isArray(b)) return ['not a skeleton file (a JSON object)'];
   if (b.p0skel !== 1) e.push('p0skel must be 1');
-  for (const k of Object.keys(b)) if (!['p0skel', 'manifest', 'slots_default', 'notes_for_juli', 'files'].includes(k)) e.push(`unknown field "${k}"`);
+  for (const k of Object.keys(b)) if (!['p0skel', 'manifest', 'slots_default', 'notes_for_juli', 'files', 'skills'].includes(k)) e.push(`unknown field "${k}"`);
   const m = b.manifest;
   if (!m || typeof m !== 'object') return e.concat('missing manifest');
   for (const k of ['id', 'name', 'description', 'category', 'version', 'runtime', 'entry', 'permissions', 'triggers', 'slots']) if (m[k] == null) e.push('manifest missing ' + k);
@@ -42,7 +44,9 @@ export function checkBundle(b) {
   for (const k of Object.keys(P)) if (!['storage', 'online', 'juli', 'chat.post', 'location'].includes(k)) e.push(`unknown permission "${k}"`);
   if (P.online != null && !Array.isArray(P.online)) e.push('permissions.online must be a list of sources');
   for (const s of P.online || []) if (!SOURCE_IDS.includes(s)) e.push(`unknown online source "${s}" (this version has: ${SOURCE_IDS.join(', ')})`);
-  if (P.juli != null && !(Array.isArray(P.juli) && P.juli.every((x) => x === 'ask'))) e.push('permissions.juli must be ["ask"]');
+  // 3.9: "choose" = Juli picks one of the app's options while the person has it open (a game's move); "ask" = an agentic app's checks
+  if (P.juli != null && !(Array.isArray(P.juli) && P.juli.every((x) => x === 'ask' || x === 'choose') && new Set(P.juli).size === P.juli.length))
+    e.push('permissions.juli: a list with "ask" (the checks of an agentic app) and/or "choose" (Juli picks while the app is open, as in a game), each once');
   if (P.location != null && !['none', 'place', 'device'].includes(P.location)) e.push('permissions.location must be none, place or device');
   const T = Array.isArray(m.triggers) ? m.triggers : [];
   if (!T.length) e.push('triggers: at least one');
@@ -56,7 +60,10 @@ export function checkBundle(b) {
   const types = new Set(T.map((t) => t && t.type));
   if (!['agentic', 'non-agentic'].includes(m.category)) e.push('category must be agentic or non-agentic');
   if (m.goal != null && (typeof m.goal !== 'string' || !m.goal.trim() || m.goal.length > LIMITS.goal)) e.push(`goal: one sentence, at most ${LIMITS.goal} characters`);
-  if (m.category !== 'agentic' && (P.juli || []).length) e.push('only an agentic app has Juli in it (she works in its checks): drop permissions.juli or make it agentic');
+  if (m.plain != null && (typeof m.plain !== 'string' || !m.plain.trim() || m.plain.length > 320)) e.push('plain: what the app does, when and what it looks at, in plain words, at most 320 characters');   // 3.9 polish (A1): the cards' sentence
+  if (m.category !== 'agentic' && (P.juli || []).includes('ask')) e.push('only an agentic app has Juli in it (she works in its checks): drop "ask" from permissions.juli or make it agentic');
+  if (m.category === 'agentic' && (P.juli || []).includes('choose')) e.push('Juli chooses ("choose") only in an app the person has open; an agentic app has her in its checks: drop "choose" or make it non-agentic');
+  if (m.kind != null && m.kind !== 'game') e.push('kind: "game" or leave it out');   // 3.9: a game is listed under Games on the shelf
   if (m.category === 'agentic') {   // agentic = Juli works in it on her own (the Skeleton Guide: "Two kinds of app")
     if (!types.has('on-open') && !types.has('interval')) e.push('an agentic app needs an on-open or interval trigger (its idle tasks run on them)');
     if (!(P.juli || []).includes('ask')) e.push('an agentic app has Juli in it: permissions.juli ["ask"] (an app that only checks a source is non-agentic)');
@@ -79,9 +86,11 @@ export function checkBundle(b) {
   if (code.length > LIMITS.code) e.push(`sketch.js is over ${LIMITS.code / 1e3} KB`);
   const bare = stripComments(code);
   for (const [rx, why] of BANNED) if (rx.test(bare)) e.push('sketch.js uses ' + why);
+  if (code) for (const x of clashProblems(code)) e.push(x);   // 3.9 platform: a function / var p5 replaces when it starts (a save() that never saves), or a name the Kit needs
   if (code && !/window\.SLOTS/.test(code)) e.push('sketch.js never reads window.SLOTS');
   if (code && (types.has('on-open') || types.has('interval')) && !/p0\.onCheck\s*\(|K\.agent\s*\(/.test(bare)) e.push('an app that checks on its own registers its check: K.agent({...}) or p0.onCheck(fn)');
   if (m.category === 'agentic' && code && !/K\.notebook\s*\(/.test(bare)) e.push('an agentic app keeps what it learns in a K.notebook(...)');
+  if (b.skills != null) for (const x of bundleSkillProblems(b.skills)) e.push('skills: ' + x);   // H39: {name: md}, <= 3, each a good skill
   if (JSON.stringify(b).length > LIMITS.bundle) e.push(`the file is over ${LIMITS.bundle / 1e3} KB`);
   return e;
 }
@@ -136,3 +145,6 @@ export function validateSlots(spec, obj) {
 
 /** the top-level slot names a problem list mentions (for the repair round) */
 export function slotsIn(problems) { return [...new Set(problems.map((x) => String(x).split(/[.[ :]/)[0]).filter(Boolean))]; }
+/** codeProblems(code) -> the BANNED rules a piece of app code breaks, in words ('uses a web address'): an app's added part (the edit
+ *  loop, makeapp/edit.js) is checked with the skeleton's own rules, without running it */
+export function codeProblems(code) { const bare = stripComments(String(code || '')); return BANNED.filter(([rx]) => rx.test(bare)).map(([, why]) => 'uses ' + why); }

@@ -1,6 +1,6 @@
 # Two processes, one model: how the Bigger brain fits on an iPhone
 
-p0pc0rn 3.8 runs NVIDIA Nemotron 3.5 Bolt E4B, a 4.7 GB model, inside Safari on an iPhone. Safari gives a web page about 1.8 GB of
+Since 3.8, p0pc0rn runs NVIDIA Nemotron 3.5 Bolt E4B, a 4.7 GB model, inside Safari on an iPhone. Safari gives a web page about 1.8 GB of
 memory before iOS ends it, and the Bigger brain needs about 3 GB on the graphics chip. It fits because, on iOS 27, p0pc0rn runs the
 model in **two processes**: the page, and a helper with a memory budget of its own. Each holds part of the model's weights, and every
 token passes from one to the other. This page explains how that works, what it costs, and where it can break.
@@ -31,16 +31,16 @@ A language model is a stack of layers that each token passes through in order. T
 
 | | The helper (second process) | The page |
 |---|---|---|
-| Runs | layers 0 to 22, with their KV caches | the token's embedding, its per-layer inputs, layers 23 to 41, the output head, and the drafter (faster replies) |
-| Memory (measured on an iPhone 16 Pro Max, iOS 27.0.1) | 1,434 MB | 1,596 MB |
+| Runs | layers 0 to 23, with their KV caches | the token's embedding, its per-layer inputs, layers 24 to 41, the output head, and the drafter (faster replies) |
+| Memory on the graphics chip (p0pc0rn 3.9; 3.8's split at 23: 1,434 MB and 1,596 MB, measured on an iPhone 16 Pro Max, iOS 27.0.1) | 1,499 MB | 1,530 MB |
 
 For every token, or every check of the drafter's guesses:
 
 1. The page looks up the token's embedding and its per-layer inputs, and sends them to the helper: about 50 KB for one token.
-2. The helper runs layers 0 to 22 on its own graphics device and sends the result back: the token's hidden row (2,560 numbers),
-   plus layer 22's keys and values. The page's later layers reuse those keys and values, because this model shares them between
-   layers, and the drafter reads them too.
-3. The page runs layers 23 to 41 and the head, and picks the next token.
+2. The helper runs layers 0 to 23 on its own graphics device and sends the result back: the token's hidden row (2,560 numbers),
+   plus the keys and values of layers 22 and 23. The page's later layers reuse those keys and values, because this model shares
+   them between layers, and the drafter reads them too.
+3. The page runs layers 24 to 41 and the head, and picks the next token.
 
 The two halves take turns, never running at the same time. Both processes share one graphics chip, and when one kept it busy, the
 other ran about 13 times slower. The messages cost 1 to 3% of the time per token. The words are the same as in one process: on a
@@ -53,7 +53,7 @@ weights itself.
 
 - **The Bigger brain on a phone at all:** 3.0 GB across the two processes. On an iPhone 16 Pro Max with iOS 27.0.1, it answers at
   about 16 tokens a second with its drafter, and reads a long prompt at about 110 tokens a second.
-- **Room for Juli:** her quick model splits too (layers 0 to 12 in the helper: page 1,266 MB, helper 438 MB). That leaves room for
+- **Room for Juli:** her quick model splits too (layers 0 to 12 in the helper: page 1,266 MB, helper 429 MB). That leaves room for
   faster replies next to a long prompt, which one process didn't have on iOS 27.
 
 Only one of the two models is loaded at a time. Switching takes a few seconds.
@@ -70,8 +70,8 @@ Only one of the two models is loaded at a time. Switching takes a few seconds.
 
 ## See it on your phone
 
-Settings › Benchmark › Quick shows how each model loaded, for example: "split, layers 0-22 in a second process (page 1596 MB +
-second process 1434 MB, COEP require-corp)".
+Settings › Benchmark › Quick shows how each model loaded, for example: "split, layers 0-23 in a second process (page 1530 MB +
+second process 1499 MB, COEP require-corp)".
 
 ## The code
 

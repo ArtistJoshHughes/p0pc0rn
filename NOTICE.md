@@ -1,6 +1,6 @@
 # p0pc0rn: notices
 
-p0pc0rn, by Joshua Hughes. Its own code is under LICENSE.md (the p0pc0rn License 1.1). The models and the data it uses are not
+p0pc0rn, by Joshua Hughes. Its own code is under LICENSE.md (the p0pc0rn License 1.2). The models and the data it uses are not
 part of p0pc0rn: each keeps its own licence, listed in MODELS.md, with the full texts in `licenses/` (Settings › About › Licences and
 notices). Nothing here is legal advice.
 
@@ -58,6 +58,28 @@ notices). Nothing here is legal advice.
 - Tokenizers in the engine: Apache-2.0 (engine/LICENSE-tokenizers.txt).
 - p5.js 1.11.13 (the Apps tab's drawing library, makeapp/p5.min.js, unmodified): the Processing Foundation and p5.js contributors,
   LGPL-2.1 (licenses/NOTICE-p5js.md has the source link).
+
+## Online data in apps
+
+- Wallet Watch (3.9) reads public Avalanche C-Chain data from Snowtrace, the public Avalanche explorer, through the free API of
+  Routescan (api.routescan.io). Powered by Routescan.io APIs:
+  [routescan.io](https://routescan.io), [@routescan_io on X](https://x.com/routescan_io). The data is public blockchain data, shown for
+  information only; it is not investment advice. p0pc0rn keeps to half of the API's free limits (at most 1 request a second and
+  5,000 a day for all apps, 1,600 for one), and its apps look at most every 15 minutes, only when the phone is idle.
+- Wallet Watch's icon (icons/apps/wallet-watch-180.png and -120.png; 3.9) is AI-generated like the home-screen icons: made for
+  p0pc0rn with FLUX.2 [klein] 9B by Black Forest Labs, from a composition sketch drawn for p0pc0rn (FLUX Non-Commercial License
+  2.1, section 2(d): licenses/LICENSE-FLUX-Non-Commercial-v2.1.md).
+- The Games screen's Four in a Row cover (icons/games/connect-four-cover.png; 3.9) is AI-generated too: made for p0pc0rn with
+  FLUX.2 [klein] 9B by Black Forest Labs (FLUX Non-Commercial License 2.1, section 2(d): licenses/LICENSE-FLUX-Non-Commercial-v2.1.md).
+
+## Typefaces and the app's own art
+
+- Typefaces: p0pc0rn includes no font files. Its text is shown in the fonts already on your device (the system font, for example
+  San Francisco on Apple devices, Roboto on Android and Segoe UI on Windows), which come with your operating system under its own
+  licence.
+- The home-screen icons and the default wallpaper (icons/ui/, wallpapers/; 3.9) are AI-generated: made for p0pc0rn with FLUX.2
+  [klein] 9B by Black Forest Labs, from composition sketches drawn for p0pc0rn. That model's licence claims no rights in its outputs
+  (FLUX Non-Commercial License 2.1, section 2(d): licenses/LICENSE-FLUX-Non-Commercial-v2.1.md).
 
 ## Full licence texts
 

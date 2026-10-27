@@ -47,6 +47,19 @@
    "file": "trip-watch.p0skel.json",
    "name": "Trip Watch",
    "category": "agentic"
+  },
+  {
+   "id": "wallet-watch",
+   "file": "wallet-watch.p0skel.json",
+   "name": "Wallet Watch (beta)",
+   "category": "agentic"
+  },
+  {
+   "id": "connect-four",
+   "file": "connect-four.p0skel.json",
+   "name": "Four in a Row",
+   "category": "non-agentic",
+   "kind": "game"
   }
  ]
 }

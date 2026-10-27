@@ -35,6 +35,10 @@ import { loadDrafter, drafterFromStore } from './drafter.js';
 const f32 = (b) => new Float32Array(b);
 const ffree = (g, ...bs) => { g.runner.flush(); for (const b of bs) if (b) g.free(b); };   // never destroy a buffer an unsubmitted dispatch uses
 const PAD = (n) => Math.ceil(n / 256) * 256;
+/** 3.9 (E4B room): give an ArrayBuffer's memory back at once, once its bytes went to the GPU (queue.writeBuffer copies them when it is
+ *  called): transfer(0) detaches it, where waiting for the garbage collector let the read-in's per-chunk rows and replies pile up beside a
+ *  loaded model (iOS counts them against the page). Nothing where the browser has no ArrayBuffer.prototype.transfer. */
+export const dropAB = (b) => { try { if (b && b.byteLength && typeof b.transfer === 'function') b.transfer(0); } catch (e) { /* not ours to drop */ } };
 
 export class Gemma4 {
   constructor(gpu, store) {
@@ -109,7 +113,7 @@ export class Gemma4 {
   }
   freeKV() { this.g.runner.flush(); if (this.kv) for (const c of this.kv) if (c) { this.g.free(c.kc); this.g.free(c.vc); } this.kv = null; }
   _cache(l) { return this.kv[this.kvSrc[l]]; }
-  /** 3.8: the KV sources this part's layers read but another part runs (NVIDIA Bolt E4B split at 23: layer 22): their keys and values
+  /** 3.8: the KV sources this part's layers read but another part runs (NVIDIA Bolt E4B split at 24 since 3.9: layers 22 and 23): their keys and values
    *  come back with each hop into these MIRROR caches (engine/llm/split.js); none in one process or in a worker part */
   mirrorKV() { const s = new Set(); for (let l = this.l0; l < this.l1; l++) if (this.kvSrc[l] < this.l0) s.add(this.kvSrc[l]); return [...s].sort((a, b) => a - b); }
   _row(c, pos) { return c.ring ? pos % c.ring : pos; }
@@ -153,7 +157,8 @@ export class Gemma4 {
     if (k) { this.g.runner.flush(); for (const b of k.free) this.g.free(b); this._pb = null; }
     const g = this.g, NT = this.NL * this.m.ple_dim, blk = o.attnBlock || 1024;
     const s = this._prefillBufs(rows, blk + 1);   // a prompt past attnBlock: the longest block's scratch, with the multi-block buffers
-    Object.assign(s, { rows, gemmAttn, shape, proj2: g.buffer(rows * NT * 4, 'ple.proj'), ple: g.buffer(rows * NT * 4, 'ple'), idb: g.buffer(PAD(rows * 4), 'ids'), gf: g.buffer(rows * 256 * 4, 'gf') });
+    const front = this.ends !== false;   // 3.9 (E4B room): a worker part gets its rows and per-layer inputs from the page: no PLE projection, no ids
+    Object.assign(s, { rows, gemmAttn, shape, proj2: front ? g.buffer(rows * NT * 4, 'ple.proj') : null, ple: g.buffer(rows * NT * 4, 'ple'), idb: front ? g.buffer(PAD(rows * 4), 'ids') : null, gf: g.buffer(rows * 256 * 4, 'gf') });
     s.free.push(s.proj2, s.ple, s.idb, s.gf);
     return (this._pb = s);
   }
@@ -208,6 +213,7 @@ export class Gemma4 {
         const rows = await next; next = p0 + C < M ? rowsOf(p0 + C) : null;   // the next chunk's rows are read while this chunk runs
         await this._embedTokens(idc, s.x, s.st, inputsEmbeds, spans, s.idb);
         await this._ple(idc, s.x, MC, Object.assign({ rows }, pre));
+        dropAB(rows.buffer);   // 3.9 (E4B room): its bytes are on the GPU now
         if (onLayer) await onLayer(-1, p0);
         for (let l = this.l0; l < this.l1; l++) {
           await this._layerPrefill(l, MC, p0, s);
@@ -568,7 +574,7 @@ export class Gemma4 {
       x: B(D * 4, 'd.x'), st: B(64, 'd.st'), proj: B(NT * 4, 'd.proj'), ple: B(NT * 4, 'd.ple'),
       qkvp: B((this.NH * maxHd + 2 * this.NKV * maxHd) * 4, 'd.qkv'), q: B(this.NH * maxHd * 4, 'd.q'), ao: B(this.NH * maxHd * 4, 'd.ao'),
       apart: B(Math.ceil(this.ctxCap / 64) * this.NH * (2 + maxHd) * 4, 'd.apart'), tpart: B(Math.ceil(maxInter / 2048) * D * 4, 'd.tpart'),
-      mbuf: B(maxInter * 4, 'd.m'), gate: B(256 * 4, 'd.gate'), kcl: B(this.win * maxHd * 2, 'd.kcl'), vcl: B(this.win * maxHd * 2, 'd.vcl'),
+      mbuf: B(maxInter * 4, 'd.m'), gate: B(256 * 4, 'd.gate'),   // 3.9 (E4B room): - two unused window buffers (0.5 MB each)
       idb: B(16, 'd.id'), pler: B(NT * 4, 'd.pleRow'),   // v044: the token id + its PLE row, written per token (never freed per token)
     };
   }
