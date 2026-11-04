@@ -5,7 +5,7 @@
 // (like a phone's privacy report, with Pause all), and the live state of a running check (the home screen's activity pill reads it).
 // Apps only ever suggest: nothing acts on its own, and every one of these screens says so. The log and the pauses stay on this phone.
 import { createActivity, report, appDay, stepText, pausedAll, setPausedAll, introSeen, markIntro, dayStart } from './works_core.js';
-import { worksAlone, withJuli, isGame, WORKS, plainOf, seesOf, stopOf, permRows } from './storefront_core.js';
+import { worksAlone, withJuli, isGame, WORKS, plainOf, seesOf, stopOf, permRows, creditParts } from './storefront_core.js';   // v4: + creditParts (Token Watch)
 
 const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const NS = 'http://www.w3.org/2000/svg';
@@ -69,8 +69,8 @@ export function createWorks({ apps = () => null, toast = () => {}, sheet = null,
   const group = (title, ...kids) => { const d = mk('div', 'sf-group'); if (title) d.append(mk('p', 'label', title)); const l = mk('div', 'list'); l.append(...kids); d.append(l); return d; };
   const line = (text, sub, icon) => { const r = mk('div', 'li sf-line'); if (icon) { const i = mk('span', 'sf-line-ic'); i.append(useIcon(icon)); r.append(i); } const t = mk('span', 'sf-line-txt'); t.append(mk('span', 'callout', text)); if (sub) t.append(mk('span', 'footnote dim', sub)); r.append(t); return r; };
   // 3.9 Wallet Watch: a row's source credit with its direct links (they open in the phone's own browser sheet; never fetched)
-  const credited = (row, c) => { if (!c) return row; const t = row.querySelector('.sf-line-txt') || row, s = mk('span', 'footnote ww-links', c.line + ': ');
-    c.links.forEach((l, i) => { if (i) s.append(' · '); const a = mk('a', null, l.text); if (/^https:\/\//.test(String(l.href))) a.href = l.href; a.target = '_blank'; a.rel = 'noopener noreferrer'; if (l.label) a.setAttribute('aria-label', l.label); s.append(a); });
+  const credited = (row, c) => { if (!c) return row; const t = row.querySelector('.sf-line-txt') || row, s = mk('span', 'footnote ww-links');
+    for (const l of creditParts(c)) { if (!l.href) { s.append(l.text); continue; } const a = mk('a', null, l.text); if (/^https:\/\//.test(String(l.href))) a.href = l.href; a.target = '_blank'; a.rel = 'noopener noreferrer'; if (l.label) a.setAttribute('aria-label', l.label); s.append(a); }   // v4: + an inline credit (Token Watch)
     t.append(s); return row; };
   async function settings(appId) {
     const X = apps(), a = appById(appId); if (!X || !a || !sheet) return;

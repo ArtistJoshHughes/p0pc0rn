@@ -5,10 +5,14 @@
 // something points to opens its own group, and the Benchmark group opens for a run. Which group a section goes to: an id inside it,
 // else its label's words, else the group of the section before it (a row or section another part of p0pc0rn adds next to an old one
 // stays with it).
+// v4 (Josh, Nov 1: "In settings we have priority settings added in V4"): a seventh group, Apps: each app that works on its own is High,
+// Normal or Low (makeapp/scheduler.js orders their checks by it).
+import { PRIO_LEVELS } from '../makeapp/scheduler.js';
 
 export const GROUPS = [
   { id: 'models', title: 'Models & downloads', sub: 'Download or delete each model' },
   { id: 'juli', title: 'Juli', sub: 'Lookups, About me, routines, memory' },
+  { id: 'apps', title: 'Apps', sub: 'Which apps go first' },   // v4: Priority
   { id: 'making', title: 'Making', sub: 'Cast, clip memory, heat' },
   { id: 'bench', title: 'Benchmark', sub: 'How fast this phone runs p0pc0rn' },
   { id: 'storage', title: 'Storage & data', sub: 'Space and files on this phone' },
@@ -19,11 +23,22 @@ export const GROUPS = [
 export const PARTS = {
   models: { ids: ['models', 's-android', 's-models-why'], labels: ['models'] },
   juli: { ids: ['s-assistant', 'l-assistant', 'brainmode', 'l-brainmode', 's-qclear'], labels: ['juli', 'juli’s memory', "juli's memory"] },
+  apps: { ids: ['l-apps', 's-apps-prio', 's-apps-why'], labels: ['priority'] },   // v4
   making: { ids: ['s-cast', 'l-cast', 'budget', 'l-budget', 's-heat'], labels: ['cast', 'video decode memory', 'heat'] },
   bench: { ids: ['l-bench', 's-bench-quick', 's-bench-full', 's-bench-out'], labels: ['benchmark'] },
   storage: { ids: ['s-persist', 's-used', 'files', 's-clean'], labels: ['storage', 'on this phone'] },
   about: { ids: ['rights', 'r-agreed', 's-ver', 's-lic', 's-roadmap', 's-x'], labels: ['rights & copyright', 'about', 'road map', 'connect'] },
 };
+
+/** v4: Settings › Apps › Priority, its one plain sentence */
+export const PRIO_SENTENCE = 'When several apps are due at once, High ones go first and Low ones wait, never for long; anything you ask Juli or make always goes first. Pause all is in Apps.';
+export const PRIO_NAMES = Object.freeze({ high: 'High', normal: 'Normal', low: 'Low' });
+/** the apps that work on their own ({id, name, priority, big}) -> the rows Settings draws: each app's name, its level (Normal unless the
+ *  person chose), and, read-only, when its own switch lets it use the Bigger brain */
+export function priorityRows(list) {
+  return (Array.isArray(list) ? list : []).filter((a) => a && a.id && a.name).slice(0, 60).map((a) => ({ id: String(a.id), name: String(a.name).slice(0, 40),
+    priority: PRIO_LEVELS.includes(a.priority) ? a.priority : 'normal', sub: a.big ? 'Uses the Bigger brain (its own switch)' : '' }));
+}
 
 const norm = (t) => String(t == null ? '' : t).replace(/\s+/g, ' ').trim().toLowerCase();
 

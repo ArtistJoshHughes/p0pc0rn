@@ -7,11 +7,21 @@
 The models run on the phone's GPU (WebGPU). Your prompts, photos and results stay on the phone. The only things that go online are:
 - the model downloads, from Hugging Face (huggingface.co/JoshHughes);
 - the words of a lookup, when Juli (the assistant) looks something up on Wikipedia or Fandom (a switch in Settings);
+- for a weather question in Juli's chat, only the place's coordinates rounded to about 1 km, to the US National Weather Service
+  (api.weather.gov); the place's name and any ZIP code stay on the phone (US places and ZIP codes are found in a US Census Bureau list
+  kept on the phone; the same lookups switch);
+- for the Nowcast (Experimental), NOAA's radar files for the whole US (rain rate, rain or snow, radar quality) from NOAA's public bucket (noaa-mrms-pds.s3.amazonaws.com: the
+  same files for everyone, nothing about you or the place is sent), the map's background pictures from NASA (gibs.earthdata.nasa.gov:
+  the map squares on screen, and the GOES satellite's cloud pictures when the Clouds layer is on), and for a place's forecast and
+  warnings its rounded coordinates to the US National Weather Service;
 - the requests of an app you made or added in Apps, only for the sources you allowed it on its permission sheet: US National
-  Weather Service alerts and forecasts (api.weather.gov), Open-Meteo place search (geocoding-api.open-meteo.com), US wildfire
+  Weather Service alerts and forecasts (api.weather.gov), US wildfire
   incidents (NIFC, services3.arcgis.com), CoinGecko prices (api.coingecko.com) and Snowtrace, the public Avalanche explorer
-  (api.routescan.io: the public addresses you add in Wallet Watch, and a few they deal with, for their public names). They carry only what the app asks for, such as a town's position
-  rounded to about 1 km or an address; no account, no name. Apps never see your photos, Library, Cast or files.
+  (api.routescan.io: the public addresses you add in Wallet Watch, and a few they deal with, for their public names), and for Token
+  Watch DEX Screener (api.dexscreener.com), GeckoTerminal (api.geckoterminal.com), GoPlus (api.gopluslabs.io) and RugCheck
+  (api.rugcheck.xyz): the chains you pick and public token addresses, only when you open it or while it watches closely. They carry only what the app asks for, such as a town's position
+  rounded to about 1 km or an address; no account, no name. A town or ZIP code typed in an app is found on the phone (a US Census
+  Bureau list) and never sent. Apps never see your photos, Library, Cast or files.
 - what you search or open in the Browser: p0pc0rn hands it to your phone's own browser, and searches go to DuckDuckGo.
 
 By Joshua Hughes. **Open it at [https://artistjoshhughes.github.io/p0pc0rn/](https://artistjoshhughes.github.io/p0pc0rn/)**: nothing to install, free and non-commercial.
@@ -31,7 +41,9 @@ By Joshua Hughes. **Open it at [https://artistjoshhughes.github.io/p0pc0rn/](htt
 - **Videos:** SANA-Video 2.0 5B. Clips of 1 to 5 seconds:
   - from words;
   - from a picture;
-  - between two pictures (the picture reader).
+  - between two pictures (the picture reader);
+  - restyled: a clip of yours re-rendered in one of 20 looks (4.0: the looks LoRA and the clip reader, LTX-2.3's video encoder).
+  - An optional video LoRA (4.0) for clips from a picture and between two pictures.
 - **Juli, the assistant:** Gemma 4 E2B.
   - It chats, writes prompts and lyrics, and runs the jobs for you.
   - It can look things up on Wikipedia and Fandom, and cites what it used.
@@ -41,6 +53,9 @@ By Joshua Hughes. **Open it at [https://artistjoshhughes.github.io/p0pc0rn/](htt
     are the same, only sooner.
   - Bigger brain (optional, 4.7 GB): NVIDIA Nemotron 3.5 Bolt E4B. It plans and writes when you ask Juli to write something or
     to make a picture, clip, song or app; chat stays on her quick model. Text only. On an iPhone it needs iOS 27; not on Android yet.
+  - Voice input (optional, 640 MB, 4.0): NVIDIA Nemotron 3.5 ASR Streaming turns your speech into text on the phone, and Juli
+    answers out loud in her own voice (p0voice, made for p0pc0rn, 25 MB). On an iPhone it needs iOS 27.
+  - Weather (4.0): forecasts and alerts from the US National Weather Service, for a US town or ZIP code found on the phone.
 - **Apps:** small apps made from skeletons that run on the phone in a locked sandbox. Juli makes one from a sentence ("a packing list
   for a camping weekend"), or use a skeleton as it is, or import one an AI helper wrote from the downloadable Skeleton Guide.
   - Non-agentic apps are tools you use: tasks and habits, flashcards, a daily counter, a log of numbers, a price dashboard
@@ -50,15 +65,70 @@ By Joshua Hughes. **Open it at [https://artistjoshhughes.github.io/p0pc0rn/](htt
     phone and bring you what needs your eye; only you confirm what they suggest. Trip Watch watches the US forecast and alerts for
     trips you add and tells you what changed. Wallet Watch (beta) watches public Avalanche addresses you add (wallets or contracts) and
     tells you what changed, and Juli describes a wallet's habits; data from Snowtrace, Powered by Routescan.io APIs
-    ([routescan.io](https://routescan.io), [@routescan_io on X](https://x.com/routescan_io)); never advice.
-  - Games: Four in a Row, you against Juli; her model picks every move on this phone from the moves the game allows.
+    ([routescan.io](https://routescan.io), [@routescan_io on X](https://x.com/routescan_io)); never advice. Token Watch (beta, new in 4.0) shows
+    the new tokens that rose most since they launched in the last hour on the chains you pick (Avalanche to start), only ones on a
+    real DEX pool, never one still on a bonding curve, with what GoPlus or RugCheck report, and Juli sums it up; "watch closely" keeps an eye on them for 2 hours. Data: [DEX Screener](https://dexscreener.com) · New pools: [GeckoTerminal](https://www.geckoterminal.com) by CoinGecko · Solana checks: [RugCheck](https://rugcheck.xyz) · Powered by [GoPlus Security](https://gopluslabs.io); an Avalanche token's contract on Snowtrace (Powered by Routescan.io APIs) only at your tap, once per token. Not financial advice:
+    new tokens are very high risk and many are scams; it cannot trade.
+  - Games: Four in a Row, you against Juli; her model picks every move on this phone from the moves the game allows. Troll-E (early
+    access, 4.0): a 3D physics game on its own page, with Juli as the hall's mischievous AI.
 - **Songs:** ACE-Step 1.5 turbo, with an optional lyrics planner.
 - **Music videos** from your songs, storyboarded by Juli.
 - **Cast:** people you add with their permission can speak in their own recorded voice (Qwen3-TTS) and appear in pictures and clips.
 - **Lip-sync (experimental):** MuseTalk 1.5. Only for consented faces and voices.
 - **Home screen:** a dock, names and badges on every icon, a wallpaper you choose, the apps you pin, and a Browser.
 - **Music:** a player for your songs, with playlists and controls on the lock screen.
+- **Nowcast (Experimental, 4.0):** DeepMind DGMR. The next 90 minutes of rain in the US, from NOAA radar, worked out on the phone.
+- **Make HDR (4.0):** an HDR copy (HLG) of a picture, clip or music video beside the original.
 - **Not in this build:** LTX-2.3 text-to-video, and sound for clips (still a separate test).
+
+## What's new in 4.0
+
+- **Nowcast (Experimental, US).** The next 90 minutes of rain, worked out on your phone from NOAA's radar: a map with the radar, a
+  timeline from the last hour to +90 minutes, places, and the National Weather Service's warnings drawn on it. The model is DeepMind's
+  DGMR, trained on UK radar, so it is labelled Experimental and never replaces NWS warnings; the "?" on its card says how accurate it is
+  and gives every credit. A Clouds layer (NOAA GOES satellites) is there when you want it. Ask Juli "will it rain in the next hour?" and
+  she answers from it. Only the radar files everyone gets, map squares and the place's rounded position go online. How: Nowcast on the
+  home screen (the lower 48 states); its model (71 MB or 136 MB) downloads once from its screen, and each nowcast reads about
+  7 MB of NOAA radar.
+- **Weather in Juli's chat.** Ask about the weather for a US town or a ZIP code: the forecast and any alerts come from the US National
+  Weather Service, with a card that opens the place's week and the rain map. The place is found on the phone (a US Census Bureau list);
+  only its coordinates, rounded to about 1 km, are sent. How: ask Juli; Settings › Juli › Home ZIP for weather for "here".
+- **Restyle a clip.** Pick a clip from the Library or your phone and one of 20 looks (oil paint, clay, anime, stained glass, synthwave,
+  ukiyo-e and more): FLUX.2 [klein] makes its first frame in that look for you to check (Use this or Try again), then the whole clip
+  is re-rendered in the look, with your clip's own sound. "Follow the motion" sets how closely it keeps your clip's moves (each look
+  has its own default). A longer video is restyled as its first 5 seconds, or, Experimental, the whole video in parts up to 20 seconds.
+  The result lands in the Library beside the original. How: Create › Video › Restyle a clip; it downloads the looks LoRA (64 MB) and
+  the clip reader (LTX-2.3's video encoder, 638 MB, under the same licence sheet as the video model).
+- **A video LoRA.** An optional 64 MB add-on for clips from a picture and between two pictures, trained for p0pc0rn on SANA-Video
+  2.0. How: Settings › Models › Video LoRA.
+- **Talk to Juli.** Tap the mic beside Send: your words appear as you speak, and when you stop the message goes after a short pause,
+  with Undo and Edit. Speech recognition runs on the phone (NVIDIA Nemotron 3.5 ASR Streaming, 32 language choices, 640 MB); your voice never
+  leaves the phone and is never kept. When you speak, Juli answers out loud: her first sentence while she writes the rest, with a
+  waveform while either of you talks, and Stop. Simple sums and unit conversions are worked out exactly before she answers. How:
+  Settings › Juli (the switch, "Send when I stop talking", the language, "Juli speaks her replies"); on an iPhone it needs iOS 27.
+- **Juli's own voice.** In voice mode Juli speaks with a voice made for p0pc0rn (p0voice, 25 MB, trained by the p0pc0rn project; no
+  real person's voice). It downloads by itself the first time she speaks; until then, and without WebGPU, she speaks with Flite.
+  Settings › Models › Juli's voice has its row.
+- **Troll-E (early access).** A 3D game with real physics: you are a01, a trash trolley in a run-down reclaim hall. Level 1 teaches
+  you to drive, crab, spin and grab, and ends at the top of the stairs; then the hall opens onto a world to scavenge, craft 24 strange
+  machines, build a shelter and survive the night's energy leeches. Juli is the hall's mischievous AI on the radio and plays against
+  you on her own model, on your phone; with the Bigger brain downloaded, it can plan her shift while the game loads. How: Games › On your
+  own › Troll-E › Play. It runs on its own page; Back opens p0pc0rn again.
+- **Make HDR.** A picture, a clip or a music video gets an HDR copy (HLG) beside the original: Vivid (brighter highlights, richer
+  colour) or Bright (the whole picture lifted), with a before and after to compare. How: open it in the Library › Make HDR.
+- **A speed tune for your device.** p0pc0rn can time Juli's kernels on your own phone or computer and keep the fastest ones that pass
+  its correctness check. How: the pop-up when it offers, or Settings › Benchmark › Speed › Tune for this device. On a laptop with two
+  graphics chips p0pc0rn asks for the faster one, and Settings › About › Graphics names the chip in use.
+- **Token Watch (beta).** An app that works for you: the new tokens that rose most since they launched in the last hour on the chains
+  you pick, with what GoPlus or RugCheck report and Juli's summary; "watch closely" keeps an eye on them for 2 hours. Never advice;
+  it cannot trade. How: Apps › Works for you › Token Watch (beta) › Get.
+- **One schedule for your apps.** The apps that check on their own take turns by the priority you give them, share Juli's model
+  when they need it, and stay inside each source's limits. How: Settings › Apps › Priority.
+- **Home screen.** Messages joins the dock (coming soon), and Settings moves to the home screen. Connection: coming soon.
+- **Juli knows your Cast.** People who added themselves in Cast can be made by name in a picture or clip.
+- **Safer.** A job Juli started from the chat has a Stop on its message. An app that ended the page waits for you at the next start
+  instead of opening again. Importing an app design or a skill says plainly that it changes what Juli does.
+- **The Library's clip row** is Save, Restyle, Reuse, More, Make HDR and Delete (Lip-sync is under More).
 
 ## What's new in 3.9
 
@@ -103,8 +173,9 @@ By Joshua Hughes. **Open it at [https://artistjoshhughes.github.io/p0pc0rn/](htt
   list and in Juli's chat: AVAX and tokens in and out, a contract that is busier than usual or whose code changed. Once a day Juli
   describes a wallet's habits from its public history: when it is active, what it deals with, typical sizes. Her words are kept
   only when every number is Snowtrace's; never advice, never a guess about who is behind an address. Only public addresses go online: the ones you add, and once a day a few they deal with most, for their public names.
-  p0pc0rn's hard cap stays at half of Snowtrace's free limit: at most 1 request a second and 5,000 a day for all your apps, 1,600 for
-  any one (the app's settings show today's count). Data: Snowtrace, Powered by Routescan.io APIs
+  p0pc0rn's hard cap stays at half of Snowtrace's free limit per device: it reads Snowtrace only when opened from the Home Screen, and
+  each copy sends at most one request every 2 seconds and 2,500 a day for all your apps, 1,600 for any one, so even two copies on one
+  phone stay within half (the app's settings show today's count). Data: Snowtrace, Powered by Routescan.io APIs
   ([routescan.io](https://routescan.io), [@routescan_io on X](https://x.com/routescan_io)).
   How: Apps › Works for you › Wallet Watch (beta) › Get; Add to Home Screen if you like.
 - **Ten skeletons** come with p0pc0rn: Four in a Row and Wallet Watch join the eight from 3.8.
@@ -206,7 +277,7 @@ Model licences: [MODELS.md](MODELS.md). Notices: [NOTICE.md](NOTICE.md). Full te
 - 🔊 Sound for clips: sound effects made with your videos.
 - ✈️ Complete airplane mode (coming soon): once p0pc0rn is on your Home Screen it runs fully offline, and updates only when you choose.
 - 👀 Live Preview of renders: watch your picture or video take shape while it renders.
-- 👄 LoRAs for SANA video, starting with a lip-dub LoRA like LTX's.
+- 👄 More LoRAs for SANA video (4.0 has the first two), next a lip-dub LoRA like LTX's.
 - 🎬 Animated cartoons, sitcoms and cinema, rendered locally and free on your own device.
 - 🎷 Labs: experimental features, starting with Playing Jazz — give it one idea and the AI improvises a short film, each clip picking up from the last frame of the one before, scored with an instrumental track.
 - 📲 Push notifications for agentic apps: alerts even when p0pc0rn is closed.

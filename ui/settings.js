@@ -13,7 +13,7 @@
 // hidden one), cast (the Cast store: list()), castUi() (cast/cast_ui.js: render()), diag(step, data) }. revealSetting(el) opens the group
 // that holds el (app.js openSettings and the stalled queue's Diagnostics call it after go('settings'), before they scroll to a row).
 // No style attributes (ui/settings.css); nothing animates while a render runs; nothing is stored.
-import { GROUPS, assign, toggled, openOnShow, benchOpens } from './settings_core.js';
+import { GROUPS, assign, toggled, openOnShow, benchOpens, priorityRows, PRIO_NAMES } from './settings_core.js';
 
 const $ = (id) => document.getElementById(id);
 const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -25,6 +25,8 @@ const busy = () => document.documentElement.hasAttribute('data-busy');   // a re
 const GLYPH = {
   models: { use: '#i-download' },
   juli: { use: '#i-chat' },
+  apps: { d: ['M5.5 4h4A1.5 1.5 0 0 1 11 5.5v4A1.5 1.5 0 0 1 9.5 11h-4A1.5 1.5 0 0 1 4 9.5v-4A1.5 1.5 0 0 1 5.5 4Z', 'M14.5 4h4A1.5 1.5 0 0 1 20 5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 13 9.5v-4A1.5 1.5 0 0 1 14.5 4Z',
+    'M5.5 13h4a1.5 1.5 0 0 1 1.5 1.5v4A1.5 1.5 0 0 1 9.5 20h-4A1.5 1.5 0 0 1 4 18.5v-4A1.5 1.5 0 0 1 5.5 13Z', 'M16.5 13v7M13 16.5h7'] },   // v4: apps, and one going first
   making: { use: '#i-sparkle' },
   bench: { d: ['M4.6 16.5a7.5 7.5 0 1 1 14.8 0', 'm12 16.2 3.6-4.6', 'M7.6 9.4l.9.8M12 6.9v1.2M16.4 9.4l-.9.8'] },   // a gauge
   storage: { d: ['M5.5 5h13A1.5 1.5 0 0 1 20 6.5v3a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 9.5v-3A1.5 1.5 0 0 1 5.5 5Z',
@@ -86,6 +88,7 @@ function set(id, { scroll = false } = {}) {
     const on = gid === id;
     g.btn.setAttribute('aria-expanded', String(on)); g.body.hidden = !on; g.sec.classList.toggle('open', on);
     if (!on) continue;
+    if (gid === 'apps') { try { paintPriority(); } catch (e) { diag('settings: priority failed', e); } }   // v4: drawn fresh each time it opens
     g.body.classList.remove('sg-in');
     if (!busy() && !reduced()) { void g.body.offsetWidth; g.body.classList.add('sg-in'); }
     for (const s of g.body.querySelectorAll('.seg')) { try { if (ST.api.placeInd) ST.api.placeInd(s, true); } catch (e) { /* */ } }
@@ -120,6 +123,33 @@ function watchBench() {
   };
   new MutationObserver(check).observe(out, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
   ST.benchRun = /^\s*Running\b/.test(out.hidden ? '' : out.textContent);   // a run this page picked up (after a planned fresh page) counts
+}
+
+// ------------------------------------------------------------------------------------------------ v4: Settings › Apps › Priority
+// Each app that works on its own: High, Normal (the default) or Low, a segmented control per app (makeapp/host.js priorities /
+// setPriority keep it; makeapp/scheduler.js orders the checks by it). Whether an app's own switch lets it use the Bigger brain shows
+// here read-only (the switch is in the app). Pause all stays in Apps.
+function paintPriority() {
+  const box = $('s-apps-prio'); if (!box) return;
+  const X = ST.api.apps ? ST.api.apps() : null, rows = priorityRows(X && X.priorities ? X.priorities() : []);
+  box.replaceChildren();
+  if (!rows.length) { const li = mk('div', 'li'); li.append(mk('span', 'footnote dim', 'No app works on its own yet: get one in Apps › Works for you.')); box.append(li); return; }
+  for (const r of rows) {
+    const li = mk('div', 'li prio-row'), head = mk('span', 'prio-head');
+    head.append(mk('span', 'sw-name', r.name)); if (r.sub) head.append(mk('span', 'footnote dim', r.sub));
+    const seg = mk('div', 'seg three small prio-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', r.name + ': priority');
+    seg.append(mk('i', 'ind'));
+    for (const lv of ['high', 'normal', 'low']) {
+      const b = mk('button'); b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.v = lv; b.setAttribute('aria-checked', String(lv === r.priority)); b.append(mk('b', null, PRIO_NAMES[lv])); seg.append(b);
+    }
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('[role="radio"]'); if (!b || !X || !X.setPriority) return;
+      X.setPriority(r.id, b.dataset.v);
+      for (const x of seg.querySelectorAll('[role="radio"]')) x.setAttribute('aria-checked', String(x === b));
+      try { if (ST.api.placeInd) ST.api.placeInd(seg); } catch (err) { /* */ }
+    });
+    li.append(head, seg); box.append(li);
+  }
 }
 
 // ------------------------------------------------------------------------------------------------ Cast: its own screen
@@ -168,5 +198,7 @@ export function initSettings(api = {}) {
     }
   } catch (e) { diag('settings: groups failed', e); }
   try { castScreen(); } catch (e) { diag('settings: the Cast screen failed', e); }
+  import('./bench_trolley.js').then((m) => m.mountTrolleyBench({ diag: (s) => diag(s, '') })).catch((e) => diag('settings: the Troll-E bench button failed', e));   // v4: Benchmark › Troll-E + Juli
+  import('./bench_voice.js').then((m) => m.mountVoiceBench({ diag: (s) => diag(s, '') })).catch((e) => diag('settings: the Voice in bench button failed', e));   // v4: Benchmark › Voice in (once the build has its pack)
 }
 // 3.9 settingschat 9415cfa086ca

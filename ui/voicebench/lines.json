@@ -1,0 +1,167 @@
+{
+ "about": "Voice in bench lines: Qwen3-TTS-12Hz-0.6B-Base (Apache-2.0) speech, voice-cloned from a Flite cmu_us_slt clip (the CMU ARCTIC slt voice, recorded by a US English female speaker for CMU ARCTIC, released free for any use). 16 kHz mono PCM16. See README.md.",
+ "lines": [
+  {
+   "id": "v01",
+   "file": "v01.wav",
+   "lang": "en-US",
+   "text": "Hey Juli, what's the weather like in Paris this weekend?",
+   "kind": "chat",
+   "seconds": 3.68,
+   "src": "slt_c01"
+  },
+  {
+   "id": "v02",
+   "file": "v02.wav",
+   "lang": "en-US",
+   "text": "Make a picture of a red fox sleeping in the snow.",
+   "kind": "chat",
+   "seconds": 3.2,
+   "src": "slt_c02"
+  },
+  {
+   "id": "v03",
+   "file": "v03.wav",
+   "lang": "en-US",
+   "text": "Can you write a short song about my dog Pepper?",
+   "kind": "chat",
+   "seconds": 3.04,
+   "src": "slt_c03"
+  },
+  {
+   "id": "v04",
+   "file": "v04.wav",
+   "lang": "en-US",
+   "text": "Remind me how to turn on faster replies.",
+   "kind": "chat",
+   "seconds": 2.72,
+   "src": "slt_c04"
+  },
+  {
+   "id": "v05",
+   "file": "v05.wav",
+   "lang": "en-US",
+   "text": "What is the capital of Australia?",
+   "kind": "chat",
+   "seconds": 2.32,
+   "src": "slt_c05"
+  },
+  {
+   "id": "v06",
+   "file": "v06.wav",
+   "lang": "en-US",
+   "text": "Turn this photo into a short video clip, please.",
+   "kind": "chat",
+   "seconds": 3.52,
+   "src": "slt_c06"
+  },
+  {
+   "id": "v07",
+   "file": "v07.wav",
+   "lang": "en-US",
+   "text": "Tell me a joke about robots.",
+   "kind": "chat",
+   "seconds": 2.24,
+   "src": "slt_c07"
+  },
+  {
+   "id": "v08",
+   "file": "v08.wav",
+   "lang": "en-US",
+   "text": "How many minutes are in three and a half hours?",
+   "kind": "chat",
+   "seconds": 2.72,
+   "src": "slt_c08"
+  },
+  {
+   "id": "v09",
+   "file": "v09.wav",
+   "lang": "es-ES",
+   "text": "¿Puedes hacer una foto de un gato en la playa?",
+   "kind": "chat",
+   "seconds": 2.32,
+   "src": "slt_c09"
+  },
+  {
+   "id": "v10",
+   "file": "v10.wav",
+   "lang": "de-DE",
+   "text": "Wie spät ist es gerade in Tokio?",
+   "kind": "chat",
+   "seconds": 3.04,
+   "src": "slt_c10"
+  },
+  {
+   "id": "v11",
+   "file": "v11.wav",
+   "lang": "fr-FR",
+   "text": "Écris-moi un petit poème sur la mer.",
+   "kind": "chat",
+   "seconds": 2.72,
+   "src": "slt_c11"
+  },
+  {
+   "id": "v12",
+   "file": "v12.wav",
+   "lang": "it-IT",
+   "text": "Qual è la ricetta della pizza margherita?",
+   "kind": "chat",
+   "seconds": 2.56,
+   "src": "slt_c12"
+  },
+  {
+   "id": "v13",
+   "file": "v13.wav",
+   "lang": "en-US",
+   "text": "Close beside him gleamed the white fangs of the wolf-dog.",
+   "kind": "read",
+   "seconds": 3.52,
+   "src": "slt_arctic_a0047"
+  },
+  {
+   "id": "v14",
+   "file": "v14.wav",
+   "lang": "en-US",
+   "text": "I never allow what can't be changed to annoy me.",
+   "kind": "read",
+   "seconds": 3.12,
+   "src": "slt_arctic_a0233"
+  },
+  {
+   "id": "v15",
+   "file": "v15.wav",
+   "lang": "en-US",
+   "text": "Between the rush of the cascades, streaks of rust showed everywhere.",
+   "kind": "read",
+   "seconds": 4.32,
+   "src": "slt_arctic_a0464"
+  },
+  {
+   "id": "v16",
+   "file": "v16.wav",
+   "lang": "en-US",
+   "text": "His eyes never took themselves for an instant from his companion's face.",
+   "kind": "read",
+   "seconds": 3.92,
+   "src": "slt_arctic_b0011"
+  },
+  {
+   "id": "v17",
+   "file": "v17.wav",
+   "lang": "en-US",
+   "text": "Hey Juli, how is it going?",
+   "kind": "real",
+   "seconds": 2.32,
+   "src": "slt_c13"
+  },
+  {
+   "id": "v18",
+   "file": "v18.wav",
+   "lang": "en-US",
+   "text": "What can dogs eat?",
+   "kind": "real",
+   "seconds": 1.52,
+   "src": "slt_c14"
+  }
+ ]
+}

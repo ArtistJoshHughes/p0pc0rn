@@ -14,14 +14,20 @@
 //   op 'contract' {address}: {verified, name, compiler, proxy, impl, license} from its verified source (a proxy's implementation)
 //   op 'labels'   {addresses} (1-6): the explorer's public name tags, only for organisations and contracts (a DEX, a token, a pool):
 //                 a tag that could name a person is never passed on
+//   op 'token'    {address, parts} (v4, Token Watch): an Avalanche TOKEN contract's holder count (tokenholdercount), whether its source
+//                 code is verified (getsourcecode) and how many of its newest 100 transactions failed (txlist) -> {address, holders,
+//                 verified, name, recent, failed, done, stopped}: at most three requests (parts = the ones still wanted: 'holders',
+//                 'verified', 'txs'; done = the ones answered). Josh (Nov 1): a ONE-TIME check, only at the person's tap in the open app
+//                 (the host refuses it in a check), kept by the app and never asked again for the same token. Routescan's cap is the same
+//                 one as Wallet Watch's, shared while both use it in the same minute (budget.js share)
 // A request the cap refuses (or one a check makes once the phone got busy: BUSY) is never sent; 'watch' then answers with what came back
 // and why it stopped (stopped: {code, until}).
 import { SNOWTRACE_CAP } from './budget.js';
 
 export const API = 'https://api.routescan.io/v2/network/mainnet/evm/43114/etherscan/api';
-export const PAGE = { first: 25, next: 100, history: 100, historyInt: 50, labels: 6, items: 5 };
+export const PAGE = { first: 25, next: 100, history: 100, historyInt: 50, labels: 6, items: 5, tokenTxs: 100 };
 const END = '999999999';   // the last block asked for (Avalanche is near block 99 million; Etherscan's own examples stop at 99,999,999)
-const CAPS = new Set(['DAILY_CAP', 'APP_CAP', 'BACKOFF', 'RATE_LIMIT', 'BUSY']);   // nothing was sent: what came back so far counts
+const CAPS = new Set(['DAILY_CAP', 'APP_CAP', 'BACKOFF', 'RATE_LIMIT', 'BUSY', 'SHARE']);   // nothing was sent: what came back so far counts
 const ADDR = /^0x[0-9a-fA-F]{40}$/;
 const bad = (m) => Object.assign(new Error(m), { code: 'BAD_PARAMS' });
 const addr = (a) => { const s = String(a == null ? '' : a).trim(); if (!ADDR.test(s)) throw bad('not an Avalanche C-Chain address: ' + s.slice(0, 50)); return s.toLowerCase(); };
@@ -103,13 +109,37 @@ async function labels(p, get) {
   return { labels: out };
 }
 
-const OPS = { watch, history, contract, labels };
-const TTL = { watch: 20e3, history: 6 * 3600e3, contract: 12 * 3600e3, labels: 7 * 864e5 };
+/** v4 (Token Watch): one token contract's holders, verified source and failed share of its newest transactions, only the parts asked
+ *  for (what came back so far counts when the cap stops it: done, stopped) */
+const TOKEN_PARTS = ['holders', 'verified', 'txs'];
+async function token(p, get) {
+  const a = addr(p.address), want = Array.isArray(p.parts) && p.parts.length ? TOKEN_PARTS.filter((x) => p.parts.includes(x)) : TOKEN_PARTS;
+  if (!want.length) throw bad('parts: holders, verified or txs');
+  const out = { address: a, holders: null, verified: null, name: '', recent: null, failed: null, done: [], stopped: null };
+  try {
+    if (want.includes('holders')) {
+      const h = await q(get, { module: 'token', action: 'tokenholdercount', contractaddress: a });
+      out.holders = h && String(h.status) === '1' && /^\d{1,12}$/.test(String(h.result)) ? +h.result : null; out.done.push('holders');
+    }
+    if (want.includes('verified')) { const c = contractOf(await q(get, { module: 'contract', action: 'getsourcecode', address: a })); out.verified = c.verified; out.name = c.name; out.done.push('verified'); }
+    if (want.includes('txs')) {
+      const txs = listOf(await q(get, acct('txlist', a, 0, PAGE.tokenTxs))).map(tx);
+      out.recent = txs.length; out.failed = txs.filter((t) => t.err).length; out.done.push('txs');
+    }
+  } catch (e) {
+    if (!CAPS.has(e && e.code)) throw e;
+    out.stopped = { code: e.code, until: +e.until || 0, message: plain(e.message, 160) };
+  }
+  return out;
+}
+const OPS = { watch, history, contract, labels, token };
+const TTL = { watch: 20e3, history: 6 * 3600e3, contract: 12 * 3600e3, labels: 7 * 864e5, token: 864e5 };   // token: one-time (the app keeps it too)
 export const SNOWTRACE = {
   label: 'Snowtrace, the public Avalanche explorer', host: 'api.routescan.io', attribution: 'Snowtrace (Routescan)', powered: 'Powered by Routescan.io APIs',
   ttl: (p) => TTL[p && p.op] || 20e3, perMin: 12, budget: SNOWTRACE_CAP,
+  installedOnly: true,   // v4 (security review): only in p0pc0rn opened from the Home Screen (the cap is per copy: sources.js installedApp)
   idleOnly: true,   // the host checks an app that reads it only when the phone is idle (no job in the queue, Juli not answering)
   /** the API's own "too many" answer (it may come with HTTP 200): the fetcher treats it as a 429 */
   rateLimited: (d) => !!d && String(d.status) === '0' && /rate limit/i.test(String(d.result || d.message || '')),
-  async get(p, get) { const f = OPS[p && p.op]; if (!f) throw bad('op: watch, history, contract or labels'); return f(p, get); },
+  async get(p, get) { const f = OPS[p && p.op]; if (!f) throw bad('op: watch, history, contract, labels or token'); return f(p, get); },
 };

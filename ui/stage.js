@@ -9,11 +9,14 @@ const LISTS = {
   edit: [['load', 'Getting ready'], ['text', 'Reading your words'], ['encode', 'Studying your photo'], ['denoise', 'Painting'], ['decode', 'Developing']],
   clip: [['load', 'Getting ready'], ['text', 'Reading your words'], ['denoise', 'Filming'], ['decode', 'Developing'], ['encode', 'Saving the clip']],
   picclip: [['load', 'Getting ready'], ['image', 'Reading your picture'], ['text', 'Reading your words'], ['denoise', 'Filming'], ['decode', 'Developing'], ['encode', 'Saving the clip']],
+  // v4: Restyle a clip (engine videoToVideo): the styled first frame, the clip itself, the words, 3 stages, the frames, the file
+  style: [['load', 'Getting ready'], ['image', 'Reading the styled frame'], ['clip', 'Reading your clip'], ['text', 'Reading your words'], ['denoise', 'Filming'], ['decode', 'Developing'], ['encode', 'Saving the clip']],
   song: [['load', 'Getting ready'], ['plan', 'Planning the song'], ['text', 'Reading the style'], ['lyrics', 'Reading the words'], ['cond', 'Tuning the band'], ['denoise', 'Recording'], ['decode', 'Mixing'], ['encode', 'Saving the song']],
 };
 const listOf = (j) => {
   const k = j.kind, P = (j.params || {});
   if (j.media === 'audio' && (k === 'song' || !k)) return LISTS.song;
+  if (j.media === 'video' && (k === 'restyle' || P.kind === 'v2v')) return LISTS.style;
   if (j.media === 'video') return k === 'animate' || k === 'between' || k === 'resume' || P.kind === 'i2v' || P.kind === 'flf' ? LISTS.picclip : LISTS.clip;
   if (j.media === 'image') return k === 'edit' || P.kind === 'i2i' ? LISTS.edit : LISTS.picture;
   return null;   // Cast (say, lip-sync), the music-video cut: their own phases, counted as they come

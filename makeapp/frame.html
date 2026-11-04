@@ -7,7 +7,7 @@
      access to the page. The host sends p5, the p0pc0rn Kit, the app's code and its added part; the app reaches the host only through window.p0
      (postMessage), which checks the app's permissions. The code starts as blob: scripts made by the boot script below, which does
      nothing at all unless this page really is that sandbox (a frame with an opaque origin, under a page of this site). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-klA6Cc6ggvl+feeDHzCkUbqr7Z8pFx4RMqOXsj9pDA4=' blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-m76gZuiZ+/J2ZPWISO973gqS6bhrfqi4hB5xrsoAkPI=' blob:; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
 <title>app</title>
 <style>html,body{margin:0;padding:0;overflow:hidden;background:transparent;touch-action:none;-webkit-user-select:none;user-select:none}</style>
@@ -79,7 +79,7 @@
     for (var i = n - 1; i >= 0; i--) try { R(rm, R(it, l, [i]), []); } catch (e) { /* */ }
     try { stop(); } catch (e) { /* stop() throws for the app's own calls */ }
   }).observe(document, { childList: true, subtree: true });
-  var host = window.parent, MODE = 'run', NAME = '', booted = false, seq = 0, pend = {}, checkFn = null, store = {}, used = 0;
+  var host = window.parent, MODE = 'run', NAME = '', VISIT = '', booted = false, seq = 0, pend = {}, checkFn = null, store = {}, used = 0;
   // 3.9 platform: inside this frame env() gives the SCREEN's safe-area insets wherever the frame sits; the host says how far the
   // frame really reaches into the top and bottom unsafe areas (0 under p0pc0rn's bar; the home indicator below), the Kit's K.safe takes
   // them (p0.safe) and measures again on the event 'p0:safe'
@@ -99,15 +99,28 @@
   var p0 = {
     version: 1, get mode() { return MODE; },
     get safe() { return { top: SAFE_T, bottom: SAFE_B, host: true }; },   // 3.9 platform: the host's insets for this frame (read-only)
+    get visit() { return VISIT; },   // v4 (Token Watch): this visit of p0pc0rn (the same across its planned reloads, new when it opens again)
     fetch: function (source, params) { return call('fetch', [String(source), params || {}]); },
     juli: { ask: function (prompt, o) { return call('juli.ask', [String(prompt).slice(0, 4000), { json: !!(o && o.json), skill: String((o && o.skill) || '').slice(0, 40) }]); },
       // 3.9: Juli picks one of the app's options while it is open (a game's move); the host checks the app may, and that she named an option
       choose: function (o) { o = o || {}; return call('juli.choose', [{ about: String(o.about == null ? '' : o.about).slice(0, 1200), options: (Array.isArray(o.options) ? o.options : []).slice(0, 13).map(function (x) { return String(x).slice(0, 60); }),
         hint: String(o.hint == null ? '' : o.hint).slice(0, 300), skill: String(o.skill == null ? '' : o.skill).slice(0, 40), big: o.big === true }]); },
       // 3.9 polish: which of Juli's models can answer choose here ({juli, big}: the Bigger brain downloaded and on)
-      models: function () { return call('juli.models', []); } },
+      models: function () { return call('juli.models', []); },
+      // v4 (Token Watch): the Bigger brain for the app's own work, behind the app's own switch (off until the person turns it on):
+      // big() = {on, downloaded, usable, why, sizeGB, wordsPerSec}; setBig(on) and download() at the person's tap in the open app (the
+      // download is p0pc0rn's own, with its licence screen: the person accepts it); refer({name, symbol}) in a check -> {status, line,
+      // cite: {id, title, site, license}}; cite(id) shows the citation's link under the open app
+      big: function () { return call('juli.big', []); },
+      setBig: function (on) { return call('juli.setBig', [!!on]); },
+      download: function () { return call('juli.download', []); },
+      refer: function (o) { o = o || {}; return call('juli.refer', [{ name: String(o.name == null ? '' : o.name).slice(0, 120), symbol: String(o.symbol == null ? '' : o.symbol).slice(0, 40) }]); },
+      cite: function (id) { return call('juli.cite', [String(id == null ? '' : id).slice(0, 20)]); } },
     chat: { post: function (n) { n = n || {}; return call('chat.post', [{ title: String(n.title || '').slice(0, 80), severity: String(n.severity || 'info'), text: String(n.text || '').slice(0, 500) }]); } },
     location: { get: function () { return call('location.get', []); } },
+    // v4 (Token Watch): a source's own page for one item (a token on DEX Screener), at the person's tap: the host makes the address and
+    // shows a real link under the app (the app holds no web address and opens nothing itself)
+    open: function (source, o) { o = o || {}; return call('open', [String(source), { chain: String(o.chain == null ? '' : o.chain).slice(0, 20), pair: String(o.pair == null ? '' : o.pair).slice(0, 70), label: String(o.label == null ? '' : o.label).slice(0, 30) }]); },
     app: Object.freeze({ badge: function (n) { return call('app.badge', [Math.max(0, Math.min(99, n | 0))]); }, get name() { return NAME; } }),
     onCheck: function (fn) { if (typeof fn === 'function') checkFn = fn; }
   };
@@ -129,7 +142,7 @@
     if (m.t === 'reply' && pend[m.id]) { var p = pend[m.id]; delete pend[m.id]; if (m.ok) p.res(m.value); else p.rej(Object.assign(new Error(m.error || 'failed'), { code: m.code || null })); return; }
     if (m.t === 'boot' && !booted) {
       booted = true;
-      store = m.store || {}; MODE = m.mode === 'check' ? 'check' : 'run'; NAME = String(m.name || '');
+      store = m.store || {}; MODE = m.mode === 'check' ? 'check' : 'run'; NAME = String(m.name || ''); VISIT = String(m.visit || '').replace(/[^a-z0-9]/g, '').slice(0, 24);
       window.SLOTS = m.slots || {};
       SAFE_B = safeIn(m.safe && m.safe.bottom); SAFE_T = safeIn(m.safe && m.safe.top);   // 3.9 platform: before the Kit's setup measures
       // memory (the phone's page cap): canvases at most 2x, and a CHECK runs without p5 at all (no canvas: only the app's onCheck runs)

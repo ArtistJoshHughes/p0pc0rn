@@ -45,6 +45,15 @@
    ],
    "file": "watch-a-wallet.md",
    "tokens": 330
+  },
+  {
+   "name": "watch-tokens",
+   "description": "How Juli writes about new tokens for Token Watch: plain facts from DEX Screener's numbers (launch, rise, liquidity, trading) and what GoPlus or RugCheck report; never advice, never best or safe.",
+   "for": [
+    "app"
+   ],
+   "file": "watch-tokens.md",
+   "tokens": 481
   }
  ]
 }

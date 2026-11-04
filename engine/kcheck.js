@@ -187,6 +187,11 @@ async function* attnFTests(gpu) {
     } catch (e) { yield { name, error: String(e.message || e) }; }
   }
 }
+// v4 (Phase 0): the assistant's kernels as THIS device runs them: every shipped (or tuned) shape, the 8-bit paths, the decode attention
+async function* shippedAssistTests(gpu) {
+  const { shippedTests } = await import('./tune/kshipped.js');
+  yield* shippedTests(gpu, { packQ4, packQ8, compare, randn });
+}
 // more kernel families register here (each engine family's own GEMV / attention / conv / face path)
 export const EXTRA = [{ label: 'pictures and clips: matrix multiply, attention', run: coreTests }, { label: 'pictures and clips: the phone-tuned attention', run: attnFTests },
-  { label: 'the assistant and songs', run: songAssistTests }, { label: 'lip-sync', run: lipsyncTests }];
+  { label: 'the assistant and songs', run: songAssistTests }, { label: 'the assistant, every shape as this device runs it', run: shippedAssistTests }, { label: 'lip-sync', run: lipsyncTests }];

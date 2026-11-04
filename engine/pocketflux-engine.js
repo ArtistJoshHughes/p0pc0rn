@@ -1,6 +1,8 @@
 // pocketflux-engine.js - p0pc0rn on-device engine: core 0.3.4 (FLUX.2 [klein] 4B pictures, SANA-Video 2.0 5B video; unchanged) +
 // the picture-to-video / first+last-frame module i2v 0.2.0 (LTX-2.3 still encoder, frame-conditioned DiT), WebGPU, pure JS + WGSL;
 // built by p0pc0rn_v018/build_engine.py from the engine/ ES modules.  Licences: NOTICE.md.  API: ENGINE_API.md.  Needs opfs_worker.js next to this file.
+// v4: + lora/sana_lora.js, a run-time LoRA for the video model (ENGINE_API.md section 6.1; off unless a job asks for it).
+// v4: + v2v/video_encoder.js (the LTX-2.3 video encoder) and v2v/v2v_sampler.js: style video to video (videoToVideo, section 8.1).
 const __M = {};
 // ---- vendor/tokenizers.min.mjs (vendored @huggingface/tokenizers 0.2.0, Apache-2.0, see LICENSE-tokenizers.txt)
 __M["vendor/tokenizers.min.mjs"] = (() => {
@@ -2838,12 +2840,178 @@ class GemmaTE {
 
 return { GemmaTE };
 })();
+// ---- lora/sana_lora.js
+__M["lora/sana_lora.js"] = (() => {
+// v4 (p0pc0rn): a LoRA on SANA-Video 2.0's DiT at run time. The pack (tools/sana_lora_pack.py, from the lab's safetensors) holds fp16 A and
+// B for attn.qkv, attn.output_gate, attn.proj, cross_attn.q_linear and cross_attn.proj of every block and for t_block.1, with alpha / rank
+// folded into B. A targeted linear becomes y = W x + s B'(A x): the streamed q4 weights are never touched (no dequantise, merge or
+// requantise). Two small GEMMs per linear: A on the base GEMM's own input with its own prologue (K = 2560 -> r, f16 out), then B (K = r)
+// added in the base GEMM's own epilogue form: onto its f16 output, or gate * (.) onto its f32 residual. attn.qkv and attn.output_gate read
+// the same modulated input, so their As run as ONE [2r, 2560] GEMM. A job's scale s multiplies B' on the GPU after each upload.
+// Memory: one ~2 MB shard per block streams beside the block's weight shard (the store reuses one buffer); while a job runs only the
+// A outputs (N x 2r f16) and a zero vector stay. A job without a LoRA runs no LoRA dispatch and makes no LoRA buffer: bit-identical.
+'use strict';
+const { gemm } = __M["ops/gemm.js"];
+const { P } = __M["core/gpu.js"];
+const { WeightStore } = __M["core/store.js"];
+const LORA_ARCH = 'sana-video2-lora', D = 2560, MODN = 6 * D, LDG = 2624;
+const TARGETS = ['attn.qkv', 'attn.output_gate', 'attn.proj', 'cross_attn.q_linear', 'cross_attn.proj'];
+const TILE_A = { BM: 64, BN: 64 };   // the As have 32 or 64 outputs
+const err = (code, message) => Object.assign(new Error(message), { code });
+/** where each LoRA pack lives on the phone (its own OPFS folder, beside the video model's, never inside it) */
+const LORA = { arch: LORA_ARCH, root: 'engine/sana-lora', dir: (id) => `engine/sana-lora/${id}/pack`, wipe: (id) => [`engine/sana-lora/${id}`] };
+
+const SCALE16 = `
+struct P { n: u32, off: u32, s: f32, pad: u32 };
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var<storage, read_write> X: array<u32>;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
+  for (var i = gid.x; i < p.n; i = i + nw.x * 256u) { X[p.off + i] = pack2x16float(unpack2x16float(X[p.off + i]) * p.s); }
+}`;
+/** the f16 values in bytes [off, off + bytes) of buf (multiples of 4) *= s */
+function scale16(g, buf, off, bytes, s) {
+  const n = bytes / 4;
+  g.runner.dispatch(g.pipeline('lora_scale16', () => SCALE16), [{ buffer: buf, offset: 0, size: buf._pf }], P().u32(n).u32(off / 4).f32(s).u32(0).ab,
+    [Math.min(Math.ceil(n / 256), 16384), 1], n * 8 / g.rate.mem);
+}
+
+/** one job's LoRA: store = a LoRA pack's WeightStore (opened, complete), scale = the job's multiplier */
+class SanaLora {
+  constructor(g, store, scale = 1, id = '') {
+    this.g = g; this.store = store; this.s = scale; this.id = id || (store.m.model && store.m.model.id) || ''; store.gpu = g;
+    this.m = store.m.model; this.r = this.m.rank_padded; this.ms = 0; this.uploads = 0;
+  }
+  /** the pack must be for this DiT and laid out the way the GEMMs below read it */
+  check(dit) {
+    const m = this.m, T = this.store.m.tensors || {}, no = (w) => err('UNSUPPORTED', 'This LoRA pack does not fit the video model (' + w + ').');
+    if (!m || m.arch !== LORA_ARCH || !m.for || m.for.arch !== 'sana-video2') throw no('not a SANA-Video 2.0 LoRA');
+    if (m.for.depth !== dit.depth || m.for.hidden !== dit.hidden || dit.hidden !== D) throw no('another size of the model');
+    if (!(this.r > 0 && this.r % 32 === 0 && this.r <= 256)) throw no('rank');
+    for (let b = 0; b < dit.depth; b++) {
+      const p = `blocks.${b}.`, q = T[p + 'attn.qkv.lora_A'], gt = T[p + 'attn.output_gate.lora_A'];
+      if (!q || !gt || gt.shard !== q.shard || gt.offset !== q.offset + q.bytes) throw no('qkv / output gate A must be adjacent');
+      for (const t of TARGETS) for (const x of ['A', 'B']) { const e = T[p + t + '.lora_' + x]; if (!e || e.enc !== 'f16' || e.shard !== q.shard || e.shape[x === 'A' ? 0 : 1] !== this.r) throw no(p + t); }
+    }
+    if (!T['t_block.1.lora_A'] || !T['t_block.1.lora_B']) throw no('t_block.1');
+  }
+  async _up(name) {
+    const t0 = performance.now(), h = await this.store.upload(name);
+    if (this.s !== 1) for (const [tn, x] of Object.entries(this.store.m.tensors)) if (x.shard === name && /\.lora_B$/.test(tn)) scale16(this.g, h.buf, x.offset, x.bytes, this.s);
+    this.ms += performance.now() - t0; this.uploads++;
+    return h;
+  }
+  /** the shard of block b (call release() after the block's dispatches were submitted) */
+  block(b) { return this._up('lora.block.' + String(b).padStart(2, '0')); }
+  global() { return this._up('lora.global'); }
+  release(h) { if (h) this.store.release(h); }
+  /** what a result says about it */
+  info() { return { id: this.id, scale: this.s, packVersion: this.store.m.pack_version, rank: this.m.rank, applied: true, uploadMs: Math.round(this.ms), uploads: this.uploads }; }
+}
+
+// ------------------------------------------------------------------ the two GEMMs (S = the DiT's per-job state: S.LA, S.ldLA, S.r, S.zeros, S.lh)
+/** A (w: rows n, K = 2560) on x (the base GEMM's input and prologue: extra = {stats, pv}) -> LA rows [r0, r0 + M), columns [0, n) */
+function loraA(g, S, w, x, M, r0, extra) {
+  gemm(g, Object.assign({ acc: 'f32', w, x, M, N: w.rows, K: D, epi: 'f16', y: { buf: S.LA, off: r0 * S.ldLA * 2, size: M * S.ldLA * 2, ld: S.ldLA }, tile: TILE_A }, extra || {}));
+}
+/** B (w: rows n, K = r) on LA columns [c0, c0 + r) of rows [r0, r0 + M), added to the base output: out {f16: true, y} = y16 += acc (the
+ *  'bias' epilogue over a zero vector, + the residual in place); else {y, gate?} = y32 += [gate *] acc ('resadd') */
+function loraB(g, S, w, c0, M, r0, out) {
+  const x = { buf: S.LA, off: r0 * S.ldLA * 2, size: M * S.ldLA * 2, ld: S.ldLA, k0: c0 };
+  if (out.f16) gemm(g, { acc: 'f32', w, x, M, N: w.rows, K: S.r, epi: 'bias', res: true, ev: { buf: S.zeros }, y: out.y });
+  else gemm(g, { acc: 'f32', w, x, M, N: w.rows, K: S.r, epi: 'resadd', ev: out.gate || undefined, y: out.y });
+}
+/** block b's attn.qkv + attn.output_gate on rows [r0, r0 + M): their As as one GEMM on the modulated input (x, stats, pv as the base
+ *  GEMMs of those rows), then B_qkv onto S.qkv (f16) and B_gate onto the gate columns of S.G (f16) */
+function loraQG(g, S, b, x, stats, pv, r0, M) {
+  const h = S.lh, p = `blocks.${b}.attn.`, qa = h.t(p + 'qkv.lora_A');
+  loraA(g, S, Object.assign({}, qa, { bytes: 2 * qa.bytes, rows: 2 * qa.rows }), x, M, r0, { stats, pv });
+  loraB(g, S, h.t(p + 'qkv.lora_B'), 0, M, r0, { f16: true, y: { buf: S.qkv, off: r0 * 3 * D * 2, size: M * 3 * D * 2, ld: 3 * D } });
+  loraB(g, S, h.t(p + 'output_gate.lora_B'), S.r, M, r0, { f16: true, y: { buf: S.G, off: r0 * LDG * 2, size: M * LDG * 2, ld: LDG } });
+}
+/** block b's target t (attn.proj, cross_attn.q_linear, cross_attn.proj) on rows [r0, r0 + M): x = its input at row r0, out as loraB */
+function loraLin(g, S, b, t, x, r0, M, out) {
+  const h = S.lh, p = `blocks.${b}.${t}.`;
+  loraA(g, S, h.t(p + 'lora_A'), x, M, r0);
+  loraB(g, S, h.t(p + 'lora_B'), 0, M, r0, out);
+}
+/** t_block.1 (the AdaLN projection, once per job): t0 [rows][15360] f16 += B(A silu(t)) for every timestep row */
+async function loraT(g, S, tsil, rows) {
+  const h = await S.lora.global();
+  try {
+    loraA(g, S, h.t('t_block.1.lora_A'), { buf: tsil, ld: D }, rows, 0);
+    loraB(g, S, h.t('t_block.1.lora_B'), 0, rows, 0, { f16: true, y: { buf: S.t0, ld: MODN } });
+    g.runner.flush();
+  } finally { S.lora.release(h); }
+}
+
+/** the LoRA packs a video engine knows ({id: pack address}), each in its own OPFS folder; storage = the video model's storage worker */
+class LoraSet {
+  constructor(packs, opts = {}) { this.packs = Object.assign({}, packs); this.source = opts.source; this.storage = opts.storage; this.stores = new Map(); this.dl = new Map(); }
+  ids() { return Object.keys(this.packs).filter((k) => !!this.packs[k]); }
+  _store(id) {
+    if (!this.packs[id]) throw err('UNSUPPORTED', `No LoRA called ${id} here.`);
+    let s = this.stores.get(id);
+    if (!s) { s = new WeightStore(null, Object.assign({ base: this.packs[id], dir: LORA.dir(id), source: this.source }, this.storage ? { storage: this.storage } : {})); this.stores.set(id, s); }
+    return s;
+  }
+  async open(id) {
+    const s = this._store(id);
+    if (!s.m) await s.open();
+    if (!s.m.model || s.m.model.arch !== LORA_ARCH) throw err('UNSUPPORTED', 'This pack is not a SANA-Video LoRA.');
+    return s;
+  }
+  /** {id, complete, haveBytes, totalBytes, packVersion, name, rank, license, credit} */
+  async status(id) {
+    const s = await this.open(id), st = s.status(), L = s.m.license || {};
+    return { id, complete: st.complete, haveBytes: st.have, totalBytes: st.total, packVersion: s.m.pack_version, name: s.m.model.name || id, rank: s.m.model.rank, license: L.id || null, credit: L.credit || null };
+  }
+  /** resumable, every chunk verified (the store's own download); onProgress {haveBytes, totalBytes, bytesPerSec, etaSeconds}; signal pauses */
+  async download(id, { onProgress, signal, parallel } = {}) {
+    if (this.dl.has(id)) throw err('BUSY', 'Already downloading.');
+    const run = (async () => {
+      const s = await this.open(id); let last = 0;
+      try {
+        await s.download({ signal, parallel, onProgress: (p) => {
+          const now = performance.now(); if (now - last < 250 && p.have < p.total) return; last = now;
+          if (onProgress) onProgress({ haveBytes: p.have, totalBytes: p.total, bytesPerSec: p.bytesPerSec, etaSeconds: p.bytesPerSec > 0 ? Math.round((p.total - p.have) / p.bytesPerSec) : null, part: 'lora:' + (p.shard || '') });
+        } });
+      } catch (e) { if (e && e.name === 'AbortError') throw Object.assign(new Error('cancelled'), { name: 'AbortError', code: 'ABORTED' }); throw e; }
+      return this.status(id);
+    })();
+    this.dl.set(id, run);
+    try { return await run; } finally { this.dl.delete(id); }
+  }
+  async remove(id) {
+    if (this.dl.has(id)) throw err('BUSY', 'The LoRA is downloading.');
+    const s = await this.open(id);
+    if (!s.http) { await s.st.start(); for (const d of LORA.wipe(id)) await s.st.call('remove', { name: d }); }
+    s.state = { pack_version: s.m.pack_version, done: {} };
+  }
+  /** a job's lora ({id, scale = 1} or an id) -> {id, scale, store} ready to run, or null (none, or scale 0) */
+  async resolve(spec) {
+    if (!spec) return null;
+    const id = typeof spec === 'string' ? spec : spec.id, scale = typeof spec === 'string' || spec.scale == null ? 1 : Number(spec.scale);
+    if (!id) throw err('BAD_LORA', 'A LoRA needs an id.');
+    if (!Number.isFinite(scale) || scale < 0 || scale > 2) throw err('BAD_LORA', 'A LoRA scale is between 0 and 2.');
+    if (scale === 0) return null;
+    if (this.dl.has(id)) throw err('BUSY', 'The video LoRA is downloading.');
+    const s = await this.open(id);
+    if (!s.http && !s.status().complete) throw err('NOT_DOWNLOADED', 'Download the video LoRA first (Settings › Models).');
+    if (!s.http) await s.st.start();
+    return { id, scale, store: s };
+  }
+}
+
+return { LORA, LORA_ARCH, TARGETS, SanaLora, LoraSet, scale16, loraQG, loraLin, loraT };
+})();
 // ---- models/sana_dit.js
 __M["models/sana_dit.js"] = (() => {
 // SANA-Video 2.0 5B DiT + the FastVideo DMD 4-step sampler (SPEC video sections 3-4), streamed one 86 MB block shard at a time.
 // Inference path of SanaVideo2._forward_attn_res_inference: depth aggregation ("attention residual") over f16 sources
 // [x_embed | group 1..4 | partial], fp32 partial sums, gated linear attention (24 blocks) / 10x256 softmax anchors (8 blocks),
 // masked cross-attention to the 300 caption tokens, biased SwiGLU MLP; final layer modulated by (table + t), not t0.
+// v4: an optional run-time LoRA (lora/sana_lora.js): prepare(..., {lora}) turns it on for the job; off = the 0.3.4 dispatches exactly.
 'use strict';
 const { gemm } = __M["ops/gemm.js"];
 const { attention } = __M["ops/attention.js"];
@@ -2851,6 +3019,7 @@ const { rowstats, ew, layout } = __M["ops/misc.js"];
 const { laprep, kvstate, attn256, attnres } = __M["ops/video.js"];
 const { rmshead, vop, ropeWan } = __M["ops/video2.js"];
 const { toF16 } = __M["core/gpu.js"];
+const { loraQG, loraLin, loraT } = __M["lora/sana_lora.js"];
 const D = 2560, MLP = 10240, MODN = 6 * D, LDG = 2624, f = Math.fround, neg = (n) => (-n) >>> 0;
 
 /** SANA TimestepEmbedder.timestep_embedding(t, 256): [cos | sin](t * exp(-ln(1e4) k / 128)), float32 like torch */
@@ -2864,11 +3033,17 @@ const sanaStepFlops = (N) => 2 * N * 4.40e9 + 8 * 4 * N * N * 256 * 10 + 32 * 2 
 class SanaDiT {
   constructor(gpu, store, opts = {}) { this.g = gpu; this.store = store; this.cfg = store.m.model.dit; this.chunk = opts.chunk || 1024; this.acc = opts.acc || null; }
 
-  /** cond {cond: f16 [300][2304], nvalid}; latent grid T x H x W -> state (per-prompt y, per-step modulation, per-size RoPE + scratch) */
-  async prepare(cond, T, H, W) {
-    const g = this.g, st = this.store, c = this.cfg, steps = c.timesteps.length, N = T * H * W, S = { T, H, W, N, steps, nvalid: cond.nvalid, bufs: [] };
+  /** cond {cond: f16 [300][2304], nvalid}; latent grid T x H x W -> state (per-prompt y, per-step modulation, per-size RoPE + scratch).
+   *  v4: opts.lora = a SanaLora (lora/sana_lora.js) for this job, or nothing (no LoRA: nothing below changes); opts.timesteps = the job's own
+   *  timestep rows (style video to video's schedule), else the model's */
+  async prepare(cond, T, H, W, opts = {}) {
+    const g = this.g, st = this.store, c = this.cfg, tsteps = opts.timesteps || c.timesteps, steps = tsteps.length, N = T * H * W, S = { T, H, W, N, steps, nvalid: cond.nvalid, bufs: [] };
     const B = (n, l) => { const b = g.buffer(n, l); S.bufs.push(b); return b; };
     try {
+      if (opts.lora) {   // v4: the LoRA's A outputs (N x 2r f16; the timestep rows use it too) and a zero vector for the f16 epilogue
+        S.lora = opts.lora; S.r = opts.lora.r; S.ldLA = 2 * S.r;
+        S.LA = B(Math.max(N, steps) * S.ldLA * 2, 'lora.a'); S.zeros = B(MODN * 4, 'lora.zeros');
+      }
       const gl = await st.upload('dit.global'), t = (n) => gl.t(n), tmp = [];
       const tb = (n) => { const b = g.buffer(n); tmp.push(b); return b; };
       try {
@@ -2880,7 +3055,7 @@ class SanaDiT {
         S.y = B(300 * D * 2, 'dit.y');
         rmshead(g, { M: 300, D, x: { buf: y2, ld: D }, w: { buf: gl.buf, off: t('attention_y_norm.weight').off / 4 }, eps: 1e-5, tok: { ld: D }, out: { buf: S.y } });
         // time: t = mlp(emb(ts)) (f16 [steps][2560]); t0 = t_block(silu(t)) (f16 [steps][15360]); final [shift | scale] = table + t (f32)
-        const E = new Float32Array(steps * 256); c.timesteps.forEach((ts, k) => E.set(sanaTimeEmb(ts), k * 256));
+        const E = new Float32Array(steps * 256); tsteps.forEach((ts, k) => E.set(sanaTimeEmb(ts), k * 256));
         const e16 = g.upload(toF16(E)); tmp.push(e16);
         const h1 = tb(steps * D * 2), tsil = tb(steps * D * 2);
         gemm(g, { acc: 'f32', w: t('t_embedder.mlp.0.weight'), x: { buf: e16, ld: 256 }, M: steps, N: D, K: 256, epi: 'bias', ev: { buf: gl.buf, off: t('t_embedder.mlp.0.bias').off / 4 }, y: { buf: h1, ld: D } });
@@ -2891,6 +3066,7 @@ class SanaDiT {
         ew(g, { op: 'silu', n: steps * D, B: { buf: tsil } });
         S.t0 = B(steps * MODN * 2, 'dit.t0');
         gemm(g, { acc: 'f32', w: t('t_block.1.weight'), x: { buf: tsil, ld: D }, M: steps, N: MODN, K: D, epi: 'bias', ev: { buf: gl.buf, off: t('t_block.1.bias').off / 4 }, y: { buf: S.t0, ld: MODN } });
+        if (S.lora) await loraT(g, S, tsil, steps);   // v4: the LoRA on t_block.1 (every timestep row, the pinned frames' t = 0 too)
         S.fin = B(steps * 2 * D * 4, 'dit.finmod');
         for (let k = 0; k < steps; k++) vop(g, { op: 'addvec', n: 2 * D, af: { buf: gl.buf }, a: t('final_layer.scale_shift_table').off / 4, ah: { buf: S.t }, b: k * D, c: D, yf: { buf: S.fin, off: k * 2 * D * 4 } });
         S.keep = await st.uploadPart('dit.global', ['x_embedder.proj.weight', 'x_embedder.proj.bias', 'final_layer.linear.weight', 'final_layer.linear.bias',
@@ -2932,6 +3108,7 @@ class SanaDiT {
     const lnx = { buf: S.hidden, ld: D, mode: 'lnmod' }, lnp = { buf: S.mod, off: D, stride: neg(D) };
     gemm(g, { acc: ac('qkv'), w: t('attn.qkv.weight'), x: lnx, stats: { buf: S.stats }, pv: lnp, M: N, N: 3 * D, K: D, epi: 'f16', y: { buf: S.qkv, ld: 3 * D } });
     gemm(g, { acc: ac('gate'), w: t('attn.output_gate.weight'), x: lnx, stats: { buf: S.stats }, pv: lnp, M: N, N: D, K: D, epi: 'bias', ev: bias('attn.output_gate.bias'), y: { buf: S.G, ld: LDG } });
+    if (S.lh) loraQG(g, S, b, lnx, { buf: S.stats }, lnp, 0, N);   // v4: the LoRA on qkv + output gate (S.lh = this block's LoRA shard)
     const qkw = { buf: sh.buf, off: t('attn.q_norm.weight').off };
     if (t('attn.k_norm.weight').off !== qkw.off + D * 4) throw new Error('pack: q_norm / k_norm must be adjacent');
     if (lin) {
@@ -2947,10 +3124,12 @@ class SanaDiT {
       vop(g, { op: 'mulsig', n: N * D / 2, yu: { buf: O.buf, off: 0, size: R1 }, ah: { buf: S.G }, a: D, b: LDG });
     }
     gemm(g, { acc: ac('proj'), w: t('attn.proj.weight'), x: { buf: O.buf, off: 0, size: R1, ld: D }, M: N, N: D, K: D, epi: 'resadd', store: true, ev: { buf: S.mod, off: 2 * D }, bv: bias('attn.proj.bias'), y: { buf: DL.buf, off: 0, ld: D } });
+    if (S.lh) loraLin(g, S, b, 'attn.proj', { buf: O.buf, off: 0, size: R1, ld: D }, 0, N, { gate: { buf: S.mod, off: 2 * D }, y: { buf: DL.buf, off: 0, size: N * D * 4, ld: D } });   // v4
     vop(g, { op: 'add32', n: N * D, af: { buf: DL.buf, off: 0, size: N * D * 4 }, yf: { buf: S.partial }, a: first ? 1 : 0 });
     // ---- cross-attention on hidden + delta (caption keys masked to the valid prefix)
     vop(g, { op: 'add16', n: N * D / 2, af: { buf: S.hidden }, bf: { buf: DL.buf, off: 0, size: N * D * 4 }, yu: { buf: X16.buf, off: X16.off, size: R1 } });
     gemm(g, { acc: ac('crossq'), w: t('cross_attn.q_linear.weight'), x: { buf: X16.buf, off: X16.off, size: R1, ld: D }, M: N, N: D, K: D, epi: 'bias', ev: bias('cross_attn.q_linear.bias'), y: { buf: OCQ.buf, off: OCQ.off, size: R1, ld: D } });
+    if (S.lh) loraLin(g, S, b, 'cross_attn.q_linear', { buf: X16.buf, off: X16.off, size: R1, ld: D }, 0, N, { f16: true, y: { buf: OCQ.buf, off: OCQ.off, size: R1, ld: D } });   // v4
     rmshead(g, { M: N, D, hd: 128, x: { buf: OCQ.buf, off: OCQ.off, ld: D }, w: { buf: sh.buf, off: t('cross_attn.q_norm.weight').off / 4 }, eps: 1e-6, out: { buf: QC.buf, off: QC.off }, Ltot: N });
     gemm(g, { acc: ac('crosskv'), w: t('cross_attn.kv_linear.weight'), x: { buf: S.y, ld: D }, M: 300, N: 2 * D, K: D, epi: 'bias', ev: bias('cross_attn.kv_linear.bias'), y: { buf: S.kvc, ld: 2 * D } });
     rmshead(g, { M: 300, D, hd: 128, x: { buf: S.kvc, ld: 2 * D, c0: 0 }, w: { buf: sh.buf, off: t('cross_attn.k_norm.weight').off / 4 }, eps: 1e-6, out: { buf: S.KC }, Ltot: 300 });
@@ -2958,6 +3137,7 @@ class SanaDiT {
     attention(g, { q: { buf: QC.buf, off: QC.off, size: R1 }, k: { buf: S.KC }, v: { buf: S.VC }, o: { buf: OC.buf, off: 0, size: R1, ld: D }, Lq: N, Lk: 300, Hq: 20, Hkv: 20, mode: 2, nvalid: S.nvalid,
       cfg: { BQ: 64, sg: false, pv16: true } });
     gemm(g, { acc: ac('crossproj'), w: t('cross_attn.proj.weight'), x: { buf: OC.buf, off: 0, size: R1, ld: D }, M: N, N: D, K: D, epi: 'resadd', bv: bias('cross_attn.proj.bias'), y: { buf: S.partial, ld: D } });
+    if (S.lh) loraLin(g, S, b, 'cross_attn.proj', { buf: OC.buf, off: 0, size: R1, ld: D }, 0, N, { y: { buf: S.partial, size: N * D * 4, ld: D } });   // v4
     // ---- MLP sublayer: hidden = aggregate(sources + partial); partial += gate_mlp * down(silu(gate(u)) * up(u)), u = LN(hidden)(1+scale)+shift
     castPartial();
     aggregate('mlp_proj', active + 1);
@@ -2976,24 +3156,24 @@ class SanaDiT {
     const g = this.g, st = this.store, N = S.N, K = S.keep, c = this.cfg;
     layout(g, { op: 'cast16', n: N * 128, xf: { buf: latent }, yh: { buf: S.tok } });
     gemm(g, { acc: 'f32', w: K.t('x_embedder.proj.weight'), x: { buf: S.tok, ld: 128 }, M: N, N: D, K: 128, epi: 'bias', ev: { buf: K.buf, off: K.t('x_embedder.proj.bias').off / 4 }, y: { buf: S.src, ld: D } });
-    let active = 1, sh = await st.upload('dit.block.00');
+    let active = 1, sh = await st.upload('dit.block.00'), lh = S.lora ? await S.lora.block(0) : null;   // v4: + the block's LoRA shard
     try {
       for (let b = 0; b < c.depth; b++) {
         const first = b % c.attn_res_block === 0;
-        this._block(S, sh, b, k, first, active);
+        S.lh = lh; this._block(S, sh, b, k, first, active);
         if (b % c.attn_res_block === c.attn_res_block - 1) {   // group end: the partial becomes a source
           layout(g, { op: 'cast2d', n: N * D, xf: { buf: S.partial }, yh: { buf: S.src, off: active * N * D * 2 }, a: D, b: D, c: 0, d: D, e: 0 });
           active++;
         }
         g.runner.flush();
         const done = g.device.queue.onSubmittedWorkDone();
-        st.release(sh);
-        if (b + 1 < c.depth) sh = await st.upload('dit.block.' + String(b + 1).padStart(2, '0'));
+        st.release(sh); if (lh) S.lora.release(lh);
+        if (b + 1 < c.depth) { sh = await st.upload('dit.block.' + String(b + 1).padStart(2, '0')); if (lh) lh = await S.lora.block(b + 1); }
         await done;
         if (opts.check) opts.check();
         if (opts.onBlock) opts.onBlock(b);
       }
-    } finally { if (sh) st.release(sh); }
+    } finally { if (sh) st.release(sh); if (lh) S.lora.release(lh); S.lh = null; }
     attnres(g, { src: { buf: S.src }, q: { buf: K.buf, off: K.t('attn_res.final_proj.weight').off / 4 }, out: { buf: S.hidden }, N, D, ns: active });
     rowstats(g, { x: { buf: S.hidden }, rows: N, cols: D, mode: 'ln', eps: 1e-6, st: { buf: S.stats } });
     gemm(g, { acc: 'f32', w: K.t('final_layer.linear.weight'), x: { buf: S.hidden, ld: D, mode: 'lnmod' }, stats: { buf: S.stats }, pv: { buf: S.fin, off: k * 2 * D + D, stride: neg(D) },
@@ -3565,6 +3745,7 @@ const { SanaDiT, sanaStepFlops } = __M["models/sana_dit.js"];
 const { LTX2Decoder, ltxFlopsPerPixelFrame } = __M["models/ltx2_vae.js"];
 const { gaussianTokens, sha } = __M["pipelines/klein.js"];
 const { muxMp4 } = __M["vendor/mp4mux.js"];
+const { SanaLora } = __M["lora/sana_lora.js"];   // v4: job.lora = {id, scale, store} (the engine resolves it)
 const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } return null; };
 const VIDEO_CKPT = 'pocketvideo:ckpt';
 const DIR = 'engine/sanavideo2-5b/run';
@@ -3627,7 +3808,7 @@ class SanaVideoPipeline {
   static checkpoint() { try { return JSON.parse(LS(VIDEO_CKPT) || 'null'); } catch (e) { return null; } }
 
   /** job {prompt, width, height, frames, seed, fps, check, onProgress, noise0?, noiseT?, condOverride?, keepVelocity?, stepLatents?, keepLatent?,
-   *  noEncode?, keepFrames?, noResume?} */
+   *  noEncode?, keepFrames?, noResume?, lora? (v4: {id, scale, store})} */
   async run(job) {
     const g = this.g, c = this.ctx.store.m.model, W = job.width, H = job.height, F = job.frames, T = (F - 1) / c.vae.t_compress + 1, h = H / 32, w = W / 32, N = T * h * w;
     const fps = job.fps || c.video.fps, steps = c.dit.sigmas.length, t0 = performance.now(), up0 = this.ctx.store.stats.uploadMs;
@@ -3635,7 +3816,11 @@ class SanaVideoPipeline {
     const timings = { text: 0, denoise: 0, steps: [], decode: 0, encode: 0, tileLog: [] }, rate = g.rate, r32 = rate.mm32 || rate.mm, r16 = rate.mm16 || rate.mm;
     const vaeRate = (g.tune && g.tune.vaeAcc === 'f16' ? r16 : r32) * 0.8, plan = this.vae.plan(T, h, w);
     if (!plan) throw Object.assign(new Error('this size does not fit the decoder memory budget'), { code: 'OUT_OF_MEMORY' });
-    const key = await sha(JSON.stringify([job.prompt, W, H, F, job.seed, this.ctx.store.m.pack_version]));
+    const lora = job.lora ? new SanaLora(g, job.lora.store, job.lora.scale, job.lora.id) : null;   // v4
+    if (lora) lora.check(c.dit);
+    const kv = [job.prompt, W, H, F, job.seed, this.ctx.store.m.pack_version];
+    if (lora) kv.push(['lora', lora.id, lora.s, lora.store.m.pack_version]);   // v4: a clip with the LoRA never resumes one without it (or the other way)
+    const key = await sha(JSON.stringify(kv));
     // ---- resume?
     let ck = SanaVideoPipeline.checkpoint(), startStep = 0, latInit = null;
     if (ck && ck.key === key && !job.noResume && !job.noise0) { latInit = await this._read(`${DIR}/latent.bin`, N * 512); if (latInit) startStep = Math.min(steps, ck.step); }
@@ -3650,8 +3835,9 @@ class SanaVideoPipeline {
     };
     const finish = (e, s) => { done += e; corr = 0.5 * corr + 0.5 * (s / Math.max(e, 1e-3)); };
     const mark = (ph, extra) => LS('pocketvideo:running', JSON.stringify(Object.assign({ phase: ph, w: W, h: H, frames: F, t: Date.now() }, extra || {})));
-    const saveCk = async (k, lat) => { await this._write(`${DIR}/latent.bin`, new Uint8Array(await g.read(lat))); LS(VIDEO_CKPT, JSON.stringify({ key, step: k, prompt: job.prompt, width: W, height: H, frames: F, seed: job.seed, t: Date.now() })); };
+    const saveCk = async (k, lat) => { await this._write(`${DIR}/latent.bin`, new Uint8Array(await g.read(lat))); LS(VIDEO_CKPT, JSON.stringify(Object.assign({ key, step: k, prompt: job.prompt, width: W, height: H, frames: F, seed: job.seed, t: Date.now() }, lora ? { lora: { id: lora.id, scale: lora.s } } : {}))); };
     const result = { resumedFromStep: startStep, nvalid: null, textCached: false };
+    if (lora) result.lora = lora.info();   // v4 (filled in again at the end)
     let lat = null;
     try {
       if (startStep < steps) {
@@ -3664,7 +3850,7 @@ class SanaVideoPipeline {
         result.textCached = cond.cached; result.nvalid = cond.nvalid;
         // ---- denoise (from startStep)
         phase = 'denoise'; mark('denoise', { step: startStep }); emit(0, 'Preparing', true); ts = performance.now();
-        const S = await this.dit.prepare(cond, T, h, w);
+        const S = lora ? await this.dit.prepare(cond, T, h, w, { lora }) : await this.dit.prepare(cond, T, h, w);
         g.runner.flush(); g.free(cond.cond);
         lat = g.upload(latInit || job.noise0 || gaussianTokens(job.seed, T * h, w), 'latent');
         let nbuf = null;
@@ -3717,6 +3903,7 @@ class SanaVideoPipeline {
     LS(VIDEO_CKPT, null);
     timings.upload = +((this.ctx.store.stats.uploadMs - up0) / 1000).toFixed(2);
     result.timings = timings; result.seconds = (performance.now() - t0) / 1000; result.peakMB = Math.round(g.peak / 1e6);
+    if (lora) result.lora = lora.info();   // v4: with its upload time over the whole job
     phase = 'encode'; emit(total - done, 'done', true);
     LS('pocketvideo:running', null);
     return result;
@@ -3737,6 +3924,7 @@ const { gemm } = __M["ops/gemm.js"];
 const { attention } = __M["ops/attention.js"];
 const { KleinPipeline, sha } = __M["pipelines/klein.js"];
 const { SanaVideoPipeline } = __M["pipelines/sana_video.js"];
+const { LoraSet, LORA } = __M["lora/sana_lora.js"];   // v4: the video model's LoRA packs (createEngine({loras: {id: packUrl}}))
 const ENGINE_VERSION = '0.3.4';
 const MAX_PIX = 1280 * 720, MAX_VIDEO_PIX = 1280 * 736;
 /** model registry: the pack manifest's model.arch must match; each model keeps its own OPFS folder */
@@ -3815,7 +4003,7 @@ class Engine {
     try {
       if (!navigator.gpu) c.reason = 'needs iOS 26 Safari (or another browser) with WebGPU';
       else {
-        const ad = await navigator.gpu.requestAdapter(this.opts.powerPreference ? { powerPreference: this.opts.powerPreference } : undefined);
+        const ad = await navigator.gpu.requestAdapter({ powerPreference: this.opts.powerPreference || 'high-performance' });   // v4: the adapter its device asks for (a laptop's card where the browser honours it)
         if (!ad) c.reason = 'no WebGPU adapter';
         else {
           const i = ad.info || {};
@@ -3833,6 +4021,9 @@ class Engine {
     } catch (e) { c.reason = String(e && e.message || e); }
     this.caps = c;
     this.store = new WeightStore(null, { base: this.opts.packUrl, dir: this.opts.dir, source: this.opts.source });
+    // v4: the LoRA packs this video engine may use ({id: pack address}); each its own OPFS folder (LORA.dir), the video store's worker
+    this._loras = this.reg.kind === 'video' && this.opts.loras && Object.keys(this.opts.loras).some((k) => this.opts.loras[k])
+      ? new LoraSet(this.opts.loras, { source: this.opts.source, storage: this.store.st }) : null;
     const run = LS(this.reg.running);
     if (run) {
       LS(this.reg.running, null);
@@ -3881,6 +4072,20 @@ class Engine {
   /** video: the unfinished clip of the last run ({prompt, width, height, frames, seed, step}; step 4 = decode only) or null.
    *  textToVideo with the same prompt / size / frames / seed resumes it automatically. */
   videoCheckpoint() { return this.reg.kind === 'video' ? SanaVideoPipeline.checkpoint() : null; }
+  /** v4: the LoRA ids this video engine knows ([] without any) */
+  loras() { return this._loras ? this._loras.ids() : []; }
+  /** v4: one LoRA pack: {id, complete, haveBytes, totalBytes, packVersion, name, rank, license, credit} */
+  async loraStatus(id) { if (!this._loras) throw err('UNSUPPORTED', 'This engine has no LoRA.'); return this._loras.status(id); }
+  /** v4: downloads one LoRA pack (resumable per 16 MiB chunk, every chunk verified); onProgress as download(); signal pauses */
+  async downloadLora(id, o = {}) { if (!this._loras) throw err('UNSUPPORTED', 'This engine has no LoRA.'); return this._loras.download(id, o); }
+  /** v4: removes one LoRA pack from this phone (not while a job runs) */
+  async deleteLora(id) { if (!this._loras) throw err('UNSUPPORTED', 'This engine has no LoRA.'); if (this.job) throw err('BUSY', 'A video is being made.'); return this._loras.remove(id); }
+  /** v4: a job's `lora` option ({id, scale = 1} | id | null) -> what the pipeline runs with, or null (none, or scale 0) */
+  async _lora(spec) {
+    if (!spec) return null;
+    if (!this._loras) throw err('UNSUPPORTED', 'This engine has no LoRA.');
+    return this._loras.resolve(spec);
+  }
   tune(o = {}) {
     if (o.decodeBudgetMB) { this.opts.decodeBudgetMB = o.decodeBudgetMB; if (this.pipe && this.pipe.vae) this.pipe.vae.budget = o.decodeBudgetMB * 1e6; }
     if (o.acc) this.opts.acc = o.acc; if (o.attn) this.opts.attn = o.attn; if (this.gpu) { if (o.acc) this.gpu.tune.acc = o.acc; if (o.attn) this.gpu.tune.attn = Object.assign({}, this.gpu.tune.attn, o.attn); } return this.gpu ? this.gpu.tune : this.opts; }
@@ -3932,11 +4137,12 @@ class Engine {
       LS(this.reg.running, JSON.stringify({ phase: 'load', w, h, frames: F, t: Date.now() }));
       if (o.onProgress) o.onProgress({ phase: 'load', frac: 0, step: 0, steps: 4, etaSeconds: null, message: 'Preparing' });
       await this._load();
+      const lora = o.lora ? await this._lora(o.lora) : null;   // v4: {id, scale} -> the pack (NOT_DOWNLOADED when it is not on this phone)
       const check = () => { if (ctl.signal.aborted) throw abortErr(); if (this.gpu.lost) throw err('GPU_LOST', 'The GPU was reset.'); };
       let r;
       try {
-        r = await this.pipe.run({ prompt, width: w, height: h, frames: F, seed, fps: o.fps, check, onProgress: o.onProgress,
-          noResume: o.resume === false, noise0: o._noise0, noiseT: o._noiseT, condOverride: o._cond, keepVelocity: o._keepVelocity, stepLatents: o._stepLatents, keepLatent: o._keepLatent, keepFrames: o._keepFrames, noEncode: o._noEncode });
+        r = await this.pipe.run(Object.assign({ prompt, width: w, height: h, frames: F, seed, fps: o.fps, check, onProgress: o.onProgress,
+          noResume: o.resume === false, noise0: o._noise0, noiseT: o._noiseT, condOverride: o._cond, keepVelocity: o._keepVelocity, stepLatents: o._stepLatents, keepLatent: o._keepLatent, keepFrames: o._keepFrames, noEncode: o._noEncode }, lora ? { lora } : {}));
       } catch (e) {
         if (ctl.signal.aborted || (e && e.name === 'AbortError')) throw abortErr();
         if (this.gpu && this.gpu.lost) { this.gpu = null; throw err('GPU_LOST', 'The GPU was reset. Try again.'); }
@@ -3948,7 +4154,7 @@ class Engine {
       const blob = r.mp4 ? new Blob([r.mp4], { type: 'video/mp4' }) : null;
       return { blob, url: blob ? URL.createObjectURL(blob) : null, frames: r.frames, width: r.width, height: r.height, fps: r.fps, seed, prompt, codec: r.codec,
         seconds: (performance.now() - t0) / 1000, timings: Object.assign({ load: (performance.now() - t0) / 1000 - r.seconds }, r.timings), peakMB: r.peakMB, textCached: r.textCached, resumedFromStep: r.resumedFromStep, aliveBeforeDecodeMB: r.aliveBeforeDecodeMB,
-        gpu: this.gpu.describe(), calib: this.gpu.calib, tune: this.gpu.tune, gpuPool: this.gpu.poolStats(), _r: r };
+        lora: r.lora || null, gpu: this.gpu.describe(), calib: this.gpu.calib, tune: this.gpu.tune, gpuPool: this.gpu.poolStats(), _r: r };
     } finally { this.job = null; LS(this.reg.running, null); this._setState('idle'); }
   }
   imageToImage(o) { return this._run('i2i', o || {}); }
@@ -4007,7 +4213,7 @@ class Engine {
   }
 }
 
-return { ENGINE_VERSION, MODELS, calibrate, referenceSize, createEngine };
+return { ENGINE_VERSION, MODELS, calibrate, referenceSize, createEngine, LORA };
 })();
 // ---- i2v/still_encoder.js
 __M["i2v/still_encoder.js"] = (() => {
@@ -4142,6 +4348,227 @@ class LTX2StillEncoder {
 
 return { patchify, LTX2StillEncoder };
 })();
+// ---- v2v/video_encoder.js
+__M["v2v/video_encoder.js"] = (() => {
+// v4 (p0pc0rn): the LTX-2.3 VIDEO encoder (Diffusers AutoencoderKLLTX2Video.encoder: causal in time, 8x / 32x / 32x down) on WebGPU, for
+// style video-to-video: a clip of 8k + 1 frames -> k + 1 SANA-Video 2.0 latent frames, normalised exactly as the lab's Vae.encode_video.
+// It runs the lab's own tiled encode (Diffusers tiled_encode: 512-px tiles every 448 px, each encoded alone, then blended over 2 latent
+// rows / columns in place, in the same order), so the phone's latent is the lab's latent, not the untiled one (3.5 % apart).
+// Inside a tile the network runs stage by stage (conv_in + down0, down1, down2, down3, mid + conv_out: one weight shard on the GPU at a
+// time) and, inside a stage, a few frames at a time: every causal 3x3x3 conv keeps the last 2 frames of its input (its history; at the
+// first frame the frame itself, twice: the replicate padding), so a chunk sees exactly what the whole clip would. A temporal downsampler
+// puts the first frame in front once (Diffusers' cat), then pairs frames; its residual is the group mean of the same space-to-depth.
+// Kernels: the engine's GEMM 'conv3' kind (time taps t-2..t via padT 1 over [history | chunk]), pixstats (PixelNorm + SiLU fused into
+// the next conv), the residual add in the epilogue - the still encoder's - plus s2dres3 (3-D space-to-depth + group-mean residual).
+// f16 activations; the sums as the decoder's (g.tune.vaeAcc: f16 partials per 32-k where tuned so: rel 4.6e-3 vs the lab, 4.5e-3 with
+// f32, 15 % faster on the desk iGPU); the stream after down3 is / 64 (the pack pre-scales those convs; PixelNorm makes it exact).
+// The store keeps no shard after a clip (drainPool): the DiT's steps that follow get the encoder's memory back.
+'use strict';
+const { gemm } = __M["ops/gemm.js"];
+const { pixstats } = __M["ops/video.js"];
+const { P, toF16, fromF16 } = __M["core/gpu.js"];
+const S2DRES3 = `
+enable f16;
+struct P { Ho: u32, Wo: u32, Ci: u32, Cc: u32, Co: u32, st: u32, sh: u32, sw: u32, G: u32, rs: f32, n2: u32, pad: u32 };
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var<storage, read> X: array<f16>;          // the downsampler's input sequence  [To*st][Ho*sh][Wo*sw][Ci]
+@group(0) @binding(2) var<storage, read> C: array<f16>;          // its conv                          [To*st][Ho*sh][Wo*sw][Cc]
+@group(0) @binding(3) var<storage, read_write> Y: array<u32>;    // f16 pairs                         [To][Ho][Wo][Co]
+// channel j of a (st, sh, sw) space-to-depth = ((c * st + pt) * sh + ph) * sw + pw  (Diffusers: permute(0, 1, 3, 5, 7, 2, 4, 6).flatten(1, 4))
+fn tap(j: u32) -> vec4<u32> { let PP = p.st * p.sh * p.sw; let r = j % PP; let SS = p.sh * p.sw; return vec4<u32>(j / PP, r / SS, (r % SS) / p.sw, r % p.sw); }
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
+  let i = g.x + g.y * nw.x * 256u; if (i >= p.n2) { return; }
+  let C2 = p.Co / 2u; let j0 = (i % C2) * 2u; let vox = i / C2; let ox = vox % p.Wo; let oy = (vox / p.Wo) % p.Ho; let ot = vox / (p.Wo * p.Ho);
+  let Wi = p.Wo * p.sw; let Hi = p.Ho * p.sh;
+  var o = vec2<f32>(0.0);
+  for (var e = 0u; e < 2u; e = e + 1u) {
+    let j = j0 + e; let t = tap(j);
+    let v = f32(C[(((ot * p.st + t.y) * Hi + oy * p.sh + t.z) * Wi + ox * p.sw + t.w) * p.Cc + t.x]);
+    var s = 0.0;
+    for (var q = 0u; q < p.G; q = q + 1u) { let u = tap(j * p.G + q); s = s + f32(X[(((ot * p.st + u.y) * Hi + oy * p.sh + u.z) * Wi + ox * p.sw + u.w) * p.Ci + u.x]); }
+    o[e] = v + (s / f32(p.G)) * p.rs;
+  }
+  Y[i] = pack2x16float(o);
+}`;
+const bv = (b, off = 0, size = null) => ({ buffer: b, offset: off, size: Math.floor((size == null ? b._pf - off : size) / 16) * 16 });
+function s2dres3(g, a) {
+  const pipe = g.pipeline('v2v.s2dres3', () => S2DRES3), n2 = a.To * a.Ho * a.Wo * a.Co / 2, wgs = Math.ceil(n2 / 256);
+  const PP = a.st * a.sh * a.sw, G = (a.Ci * PP) / a.Co;
+  g.runner.dispatch(pipe, [bv(a.x, a.xo || 0, a.xs), bv(a.c), bv(a.y, a.yo || 0, a.ys)],
+    P().u32(a.Ho).u32(a.Wo).u32(a.Ci).u32(a.Cc).u32(a.Co).u32(a.st).u32(a.sh).u32(a.sw).u32(G).f32(a.rs || 1).u32(n2).u32(0).ab,
+    [Math.min(wgs, 65535), Math.ceil(wgs / 65535)], n2 * (2 + G) * 4 / g.rate.mem);
+}
+
+/** Diffusers tiled_encode's tiles along one axis: [start, size] every `stride` px while start < total */
+function tilesOf(total, tile, stride) { const o = []; for (let s = 0; s < total; s += stride) o.push([s, Math.min(tile, total - s)]); return o; }
+
+/** JS: RGBA8 frame (W x H) -> the f16 patch tensor of a tile [th/4][tw/4][64] (channel c*16 + dx*4 + dy, px / 127.5 - 1; 48..63 zero) */
+function patchTile(rgba, W, x0, y0, tw, th) {
+  const Wp = tw / 4, Hp = th / 4, out = new Float32Array(Hp * Wp * 64);
+  for (let py = 0; py < Hp; py++) for (let px = 0; px < Wp; px++) {
+    const o = (py * Wp + px) * 64;
+    for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 4; dx++) {
+      const s = ((y0 + 4 * py + dy) * W + x0 + 4 * px + dx) * 4;
+      for (let c = 0; c < 3; c++) out[o + c * 16 + dx * 4 + dy] = rgba[s + c] / 127.5 - 1;
+    }
+  }
+  return toF16(out);
+}
+
+/** Diffusers' in-place blends on tile latents {h, w, T, d: Float32Array [T][h][w][128]} (a above / left of b; extent in latent cells) */
+function blendV(a, b, ext) {
+  ext = Math.min(a.h, b.h, ext);
+  for (let y = 0; y < ext; y++) { const f = y / ext, ya = a.h - ext + y;
+    for (let t = 0; t < b.T; t++) for (let x = 0; x < b.w; x++) for (let c = 0; c < 128; c++) { const i = ((t * b.h + y) * b.w + x) * 128 + c, j = ((t * a.h + ya) * a.w + x) * 128 + c; b.d[i] = a.d[j] * (1 - f) + b.d[i] * f; } }
+}
+function blendH(a, b, ext) {
+  ext = Math.min(a.w, b.w, ext);
+  for (let x = 0; x < ext; x++) { const f = x / ext, xa = a.w - ext + x;
+    for (let t = 0; t < b.T; t++) for (let y = 0; y < b.h; y++) for (let c = 0; c < 128; c++) { const i = ((t * b.h + y) * b.w + x) * 128 + c, j = ((t * a.h + y) * a.w + xa) * 128 + c; b.d[i] = a.d[j] * (1 - f) + b.d[i] * f; } }
+}
+
+class LTX2VideoEncoder {
+  /** store: a WeightStore over the ltx2-video-encoder pack (its own OPFS folder) */
+  constructor(gpu, store, opts = {}) { this.g = gpu; this.store = store; this.cfg = store.m.model.enc; this.acc = opts.acc || (gpu.tune && gpu.tune.vaeAcc) || 'f32'; }
+
+  /** causal 3x3x3 conv: x = {buf, n, H, W, C} holds [2 history | n] frames; out [n] frames into y at frame offset yf (bias; res = add in place) */
+  conv(sh, name, x, Cout, o) {
+    const w = sh.t(name + '.weight'), b = { buf: sh.buf, off: sh.t(name + '.bias').off / 4 }, F = x.H * x.W;
+    if (w.cols !== 27 * x.C) throw new Error(`video encoder: ${name} K ${w.cols} != 27 x ${x.C}`);
+    gemm(this.g, { acc: this.acc, w, x: { buf: x.buf, off: 0, size: (2 + x.n) * F * x.C * 2 }, M: x.n * F, N: Cout, K: 27 * x.C, epi: 'bias', ev: b, res: !!o.res,
+      stats: o.pn ? { buf: o.pn } : undefined, y: { buf: o.y, off: (o.yf || 0) * F * Cout * 2, size: x.n * F * Cout * 2 },
+      conv: { kind: 'conv3', Hi: x.H, Wi: x.W, Ci: x.C, Ho: x.H, Wo: x.W, stride: 2 + x.n, padT: 1, padL: 0, ks: 1, pn: !!o.pn } });
+  }
+  /** frames 0, 1 of a [2 | n] buffer: the conv's history (hist: a 2-frame buffer), or at the clip's first frame frame 2 twice (through
+   *  hist: a copy within one buffer is not allowed; tail() rewrites hist after the conv) */
+  head(buf, F, hist, first) {
+    const r = this.g.runner;
+    if (first) { r.copy(buf, 2 * F, hist, 0, F); r.copy(buf, 2 * F, hist, F, F); }
+    r.copy(hist, 0, buf, 0, 2 * F);
+  }
+  /** the last 2 frames of a [2 | n] buffer -> hist (the next chunk's history) */
+  tail(buf, F, n, hist) { this.g.runner.copy(buf, n * F, hist, 0, 2 * F); }
+
+  /** one tile: the frames' patches -> raw (un-normalised) latent mean [T][h][w][128] f32. src(i) -> f16 patch tensor of frame i */
+  async tile(src, nF, tw, th, opts) {
+    const g = this.g, st = this.store, c = this.cfg, keep = [], live = (b) => { keep.push(b); return b; };
+    const drop = (...bs) => { g.runner.flush(); for (const b of bs) if (b) { g.free(b); const i = keep.indexOf(b); if (i >= 0) keep.splice(i, 1); } };
+    let sh = null;
+    try {
+      let H = th / 4, W = tw / 4, T = nF, rate = 1, input = null, Cin = c.in_ch_padded;   // input: the stage's input, all frames [T][H][W][C] (stage 0: the patches)
+      const nst = c.stages.length + 1;
+      for (let si = 0; si < nst; si++) {
+        const mid = si === c.stages.length, S = mid ? null : c.stages[si], C = mid ? c.mid.ch : S.ch, L = 8 / rate, F = H * W, FC = F * C;
+        sh = await st.upload(mid ? c.mid.shard : S.shard);
+        const nres = mid ? c.mid.res : S.res, pre = mid ? 'encoder.mid_block' : `encoder.down_blocks.${si}`;
+        const A = live(g.buffer((2 + L) * FC * 2, 'venc.x')), B = live(g.buffer((2 + L) * FC * 2, 'venc.h')), R = live(g.buffer((2 + L) * F * 4, 'venc.rstd'));
+        const hx = [], hh = []; for (let r = 0; r < nres; r++) { hx.push(live(g.buffer(2 * FC * 2, 'venc.hist'))); hh.push(live(g.buffer(2 * FC * 2, 'venc.hist'))); }
+        // conv_in (stage 0): the patches through [2 | n] with its own history; else the stage input's chunk copied into A
+        const IN = si === 0 ? live(g.buffer((2 + L) * F * Cin * 2, 'venc.in')) : null, hin = si === 0 ? live(g.buffer(2 * F * Cin * 2, 'venc.hist')) : null;
+        // the downsampler (or conv_out): its input [2 | prepend? + n], its conv, its history; the stage output, all frames
+        const ds = mid ? null : S, Cc = mid ? c.conv_out.ch : ds.conv_ch, PP = mid ? 1 : ds.down[0] * ds.down[1] * ds.down[2];
+        const D = live(g.buffer((3 + L) * FC * 2, 'venc.ds')), hd = live(g.buffer(2 * FC * 2, 'venc.hist')), CB = live(g.buffer((1 + L) * F * Cc * 2, 'venc.dsconv'));
+        const st_ = mid ? 1 : ds.down[0], Ho = mid ? H : H / ds.down[1], Wo = mid ? W : W / ds.down[2], Co = mid ? Cc : ds.out;
+        const Tout = st_ === 2 ? (T + 1) / 2 : T, OUT = live(g.buffer(Tout * Ho * Wo * Co * (mid ? 2 : 2), 'venc.out'));
+        let t = 0, to = 0;
+        while (t < T) {
+          const n = t === 0 ? 1 : Math.min(L, T - t), first = t === 0;
+          // ---- the chunk's input into A[2..]
+          if (si === 0) {
+            for (let i = 0; i < n; i++) g.upload(await src(t + i), '', IN, (2 + i) * F * Cin * 2);
+            this.head(IN, F * Cin * 2, hin, first);
+            this.conv(sh, 'encoder.conv_in', { buf: IN, n, H, W, C: Cin }, C, { y: A, yf: 2 });
+            this.tail(IN, F * Cin * 2, n, hin);
+          } else g.runner.copy(input, t * FC * 2, A, 2 * FC * 2, n * FC * 2);
+          // ---- the resnets: x = A[2..], h = B[2..]; out = x + conv2(silu(norm(conv1(silu(norm(x)))))) in place in A
+          for (let r = 0; r < nres; r++) {
+            this.head(A, FC * 2, hx[r], first);
+            pixstats(g, { x: { buf: A }, r: { buf: R }, V: (2 + n) * F, C });
+            this.conv(sh, `${pre}.resnets.${r}.conv1`, { buf: A, n, H, W, C }, C, { pn: R, y: B, yf: 2 });
+            this.tail(A, FC * 2, n, hx[r]);
+            this.head(B, FC * 2, hh[r], first);
+            pixstats(g, { x: { buf: B }, r: { buf: R }, V: (2 + n) * F, C });
+            this.conv(sh, `${pre}.resnets.${r}.conv2`, { buf: B, n, H, W, C }, C, { pn: R, y: A, yf: 2, res: true });
+            this.tail(B, FC * 2, n, hh[r]);
+          }
+          if (mid) {   // norm_out + SiLU + conv_out (the mean channels)
+            this.head(A, FC * 2, hd, first);
+            pixstats(g, { x: { buf: A }, r: { buf: R }, V: (2 + n) * F, C });
+            this.conv(sh, 'encoder.conv_out', { buf: A, n, H, W, C }, Cc, { pn: R, y: OUT, yf: to });
+            this.tail(A, FC * 2, n, hd); to += n;
+          } else {     // the downsampler: [history | (first frame again) | n] -> conv -> space-to-depth + group-mean residual
+            const pp = first && st_ === 2 ? 1 : 0, m = n + pp;
+            g.runner.copy(A, 2 * FC * 2, D, (2 + pp) * FC * 2, n * FC * 2);
+            if (pp) g.runner.copy(A, 2 * FC * 2, D, 2 * FC * 2, FC * 2);
+            this.head(D, FC * 2, hd, first);
+            this.conv(sh, `${pre}.downsamplers.0.conv`, { buf: D, n: m, H, W, C }, Cc, { y: CB, yf: 0 });
+            this.tail(D, FC * 2, m, hd);
+            const k = m / st_;
+            s2dres3(g, { x: D, xo: 2 * FC * 2, xs: m * FC * 2, c: CB, y: OUT, yo: to * Ho * Wo * Co * 2, ys: k * Ho * Wo * Co * 2, To: k, Ho, Wo, Ci: C, Cc, Co, st: st_, sh: ds.down[1], sw: ds.down[2], rs: ds.res_scale });
+            to += k;
+          }
+          t += n;
+          g.runner.flush(); await g.device.queue.onSubmittedWorkDone();
+          if (opts.check) opts.check();
+        }
+        if (to !== Tout) throw new Error(`video encoder: stage ${si} made ${to} frames, not ${Tout}`);
+        drop(A, B, R, IN, hin, D, hd, CB, ...hx, ...hh); if (input) drop(input);
+        st.release(sh); sh = null;
+        if (opts.onStage) opts.onStage(si + 1, nst);
+        input = OUT; T = Tout; H = Ho; W = Wo; Cin = Co; if (st_ === 2) rate *= 2;
+      }
+      const raw = fromF16(new Uint16Array(await g.read(input))); drop(input);
+      return { T, h: H, w: W, d: raw };
+    } finally { if (sh && sh.buf) st.release(sh); g.runner.flush(); for (const b of keep) g.free(b); }
+  }
+
+  /** readFrame(i) -> RGBA8 (W x H) of frame i (called once per frame per tile column / row); F = 8k + 1 frames ->
+   *  {tokens: Float32Array [(F-1)/8 + 1][H/32][W/32][128] normalised latent, T, h, w, tiles, ms, uploadMs, peakMB} */
+  async encode(readFrame, F, W, H, opts = {}) {
+    const g = this.g, st = this.store, c = this.cfg, t0 = performance.now(), up0 = st.stats.uploadMs;
+    if (W % 32 || H % 32) throw new Error('video encoder: W and H must be multiples of 32');
+    if ((F - 1) % 8) throw new Error('video encoder: 8k + 1 frames');
+    const tl = c.tiles || { sample: 512, stride: 448 }, sc = c.s_compress, rows = tilesOf(H, tl.sample, tl.stride), cols = tilesOf(W, tl.sample, tl.stride);
+    const ext = (tl.sample - tl.stride) / sc, sL = tl.stride / sc, h = H / sc, w = W / sc, T = (F - 1) / 8 + 1;
+    const ntiles = rows.length * cols.length; let k = 0;
+    const lat = rows.map(() => []);
+    try {
+      for (let i = 0; i < rows.length; i++) for (let j = 0; j < cols.length; j++) {
+        const [y0, th] = rows[i], [x0, tw] = cols[j];
+        const r = await this.tile(async (fi) => patchTile(await readFrame(fi), W, x0, y0, tw, th), F, tw, th,
+          { check: opts.check, onStage: (s, n) => { if (opts.onStage) opts.onStage(k * n + s, ntiles * n); } });
+        lat[i].push(r); k++;
+      }
+    } finally { g.runner.flush(); st.drainPool(); }   // release() keeps the last shard (234 MB here) for a same-size upload: none follows
+    // normalise ((mean - latents_mean) * sf / latents_std), then Diffusers' blends in place, in its order, and the crop
+    const ms = await st.uploadPart(c.mid.shard, ['latents_mean', 'latents_std']);
+    let mean, std;
+    try { mean = new Float32Array(await g.read(ms.buf, ms.t('latents_mean').off, 512)); std = new Float32Array(await g.read(ms.buf, ms.t('latents_std').off, 512)); }
+    finally { g.runner.flush(); g.free(ms.buf); }
+    const sf = c.scaling_factor || 1;
+    for (const row of lat) for (const r of row) for (let p = 0; p < r.d.length; p += 128) for (let q = 0; q < 128; q++) r.d[p + q] = (r.d[p + q] - mean[q]) * sf / std[q];
+    const tokens = new Float32Array(T * h * w * 128);
+    let yo = 0;
+    for (let i = 0; i < rows.length; i++) {
+      let xo = 0, rh = 0;
+      for (let j = 0; j < cols.length; j++) {
+        const tile = lat[i][j];
+        if (i > 0) blendV(lat[i - 1][j], tile, ext);
+        if (j > 0) blendH(lat[i][j - 1], tile, ext);
+        const ch = Math.min(sL, tile.h), cw = Math.min(sL, tile.w); rh = ch;
+        for (let t = 0; t < T; t++) for (let y = 0; y < ch && yo + y < h; y++) for (let x = 0; x < cw && xo + x < w; x++)
+          tokens.set(tile.d.subarray(((t * tile.h + y) * tile.w + x) * 128, ((t * tile.h + y) * tile.w + x + 1) * 128), ((t * h + yo + y) * w + xo + x) * 128);
+        xo += cw;
+      }
+      yo += rh;
+    }
+    return { tokens, T, h, w, tiles: ntiles, ms: performance.now() - t0, uploadMs: st.stats.uploadMs - up0, peakMB: Math.round(g.peak / 1e6) };
+  }
+}
+
+return { LTX2VideoEncoder, tilesOf, patchTile, s2dres3 };
+})();
 // ---- i2v/sana_dit_cond.js
 __M["i2v/sana_dit_cond.js"] = (() => {
 // SANA-Video 2.0 DiT with FRAME CONDITIONING (p0pc0rn i2v / FLF spec, sections 1-2).
@@ -4160,6 +4587,7 @@ const { rowstats, layout } = __M["ops/misc.js"];
 const { laprep, kvstate, attn256, attnres } = __M["ops/video.js"];
 const { rmshead, vop } = __M["ops/video2.js"];
 const { SanaDiT } = __M["models/sana_dit.js"];
+const { loraQG, loraLin } = __M["lora/sana_lora.js"];   // v4: the run-time LoRA (off unless prepare gets opts.lora)
 const D = 2560, MLP = 10240, MODN = 6 * D, LDG = 2624, f = Math.fround, neg = (n) => (-n) >>> 0;
 
 class SanaDiTCond extends SanaDiT {
@@ -4168,9 +4596,12 @@ class SanaDiTCond extends SanaDiT {
     this.cfg = Object.assign({}, this.cfg, { timesteps: this.cfg.timesteps.concat([0]) });   // row `steps` = the t = 0 (pinned frame) embedding
     this.steps = this.cfg.sigmas.length; this.condRow = this.steps;
   }
-  /** pins: [{frame (latent index, negative = from the end)}]; -> S with S.segs [{r0, r1, cond}] (row ranges in tokens) */
-  async prepare(cond, T, H, W, pins = []) {
-    const S = await super.prepare(cond, T, H, W), hw = H * W;
+  /** pins: [{frame (latent index, negative = from the end)}]; -> S with S.segs [{r0, r1, cond}] (row ranges in tokens); opts as SanaDiT, and
+   *  v4: opts.sigmas + opts.timesteps = the job's own schedule (style video to video: one stage added), the t = 0 row after its last stage */
+  async prepare(cond, T, H, W, pins = [], opts = {}) {
+    const ts = opts.timesteps ? opts.timesteps.concat([0]) : this.cfg.timesteps;
+    const S = await super.prepare(cond, T, H, W, Object.assign({}, opts, { timesteps: ts })), hw = H * W;
+    S.condRow = ts.length - 1; S.sigmas = opts.sigmas || this.cfg.sigmas;
     const frames = new Set(pins.map((p) => (p.frame < 0 ? T + p.frame : p.frame)));
     S.segs = [];
     for (let fr = 0; fr < T; fr++) {
@@ -4190,7 +4621,7 @@ class SanaDiTCond extends SanaDiT {
     const castPartial = () => layout(g, { op: 'cast2d', n: N * D, xf: { buf: S.partial }, yh: slot(active), a: D, b: D, c: 0, d: D, e: 0 });
     const aggregate = (proj, ns) => attnres(g, { src: { buf: S.src }, q: { buf: K.buf, off: K.t('attn_res.' + proj + '.weight').off / 4 }, out: { buf: S.hidden }, N, D, ns });
     vop(g, { op: 'addvec', n: MODN, af: { buf: sh.buf }, a: t('scale_shift_table').off / 4, ah: { buf: S.t0 }, b: k * MODN, c: MODN, yf: { buf: S.mod } });
-    vop(g, { op: 'addvec', n: MODN, af: { buf: sh.buf }, a: t('scale_shift_table').off / 4, ah: { buf: S.t0 }, b: this.condRow * MODN, c: MODN, yf: { buf: S.modc } });
+    vop(g, { op: 'addvec', n: MODN, af: { buf: sh.buf }, a: t('scale_shift_table').off / 4, ah: { buf: S.t0 }, b: S.condRow * MODN, c: MODN, yf: { buf: S.modc } });
     const segs = S.segs, mb = (s) => (s.cond ? S.modc : S.mod);
     // one modulated GEMM per segment: rows [r0, r1); xo/yo give the byte offsets of row r0 in x / y
     const seg = (fn) => { for (const s of segs) fn(s, s.r1 - s.r0); };
@@ -4206,6 +4637,7 @@ class SanaDiTCond extends SanaDiT {
         const bw = t('attn.beta_proj.weight');
         gemm(g, { acc: ac('gate'), w: Object.assign({}, bw, { rows: 20, cols: D }), x: lnx, stats: stt, pv: lnp, M, N: 20, K: D, epi: 'bias', ev: bias('attn.beta_proj.bias'), y: { buf: S.G, off: s.r0 * LDG * 2, ld: LDG, n0: D } });
       }
+      if (S.lh) loraQG(g, S, b, lnx, stt, lnp, s.r0, M);   // v4: the LoRA on qkv + output gate, with this segment's modulation
     });
     const qkw = { buf: sh.buf, off: t('attn.q_norm.weight').off };
     if (t('attn.k_norm.weight').off !== qkw.off + D * 4) throw new Error('pack: q_norm / k_norm must be adjacent');
@@ -4221,10 +4653,13 @@ class SanaDiTCond extends SanaDiT {
     }
     seg((s, M) => gemm(g, { acc: ac('proj'), w: t('attn.proj.weight'), x: { buf: O.buf, off: s.r0 * D * 2, size: M * D * 2, ld: D }, M, N: D, K: D, epi: 'resadd', store: true,
       ev: { buf: mb(s), off: 2 * D }, bv: bias('attn.proj.bias'), y: { buf: DL.buf, off: s.r0 * D * 4, ld: D } }));
+    if (S.lh) seg((s, M) => loraLin(g, S, b, 'attn.proj', { buf: O.buf, off: s.r0 * D * 2, size: M * D * 2, ld: D }, s.r0, M,   // v4: gated by this segment's gate
+      { gate: { buf: mb(s), off: 2 * D }, y: { buf: DL.buf, off: s.r0 * D * 4, size: M * D * 4, ld: D } }));
     vop(g, { op: 'add32', n: N * D, af: { buf: DL.buf, off: 0, size: N * D * 4 }, yf: { buf: S.partial }, a: first ? 1 : 0 });
     // ---- cross-attention on hidden + delta (unmodulated)
     vop(g, { op: 'add16', n: N * D / 2, af: { buf: S.hidden }, bf: { buf: DL.buf, off: 0, size: N * D * 4 }, yu: { buf: X16.buf, off: X16.off, size: R1 } });
     gemm(g, { acc: ac('crossq'), w: t('cross_attn.q_linear.weight'), x: { buf: X16.buf, off: X16.off, size: R1, ld: D }, M: N, N: D, K: D, epi: 'bias', ev: bias('cross_attn.q_linear.bias'), y: { buf: OCQ.buf, off: OCQ.off, size: R1, ld: D } });
+    if (S.lh) loraLin(g, S, b, 'cross_attn.q_linear', { buf: X16.buf, off: X16.off, size: R1, ld: D }, 0, N, { f16: true, y: { buf: OCQ.buf, off: OCQ.off, size: R1, ld: D } });   // v4
     rmshead(g, { M: N, D, hd: 128, x: { buf: OCQ.buf, off: OCQ.off, ld: D }, w: { buf: sh.buf, off: t('cross_attn.q_norm.weight').off / 4 }, eps: 1e-6, out: { buf: QC.buf, off: QC.off }, Ltot: N });
     gemm(g, { acc: ac('crosskv'), w: t('cross_attn.kv_linear.weight'), x: { buf: S.y, ld: D }, M: 300, N: 2 * D, K: D, epi: 'bias', ev: bias('cross_attn.kv_linear.bias'), y: { buf: S.kvc, ld: 2 * D } });
     rmshead(g, { M: 300, D, hd: 128, x: { buf: S.kvc, ld: 2 * D, c0: 0 }, w: { buf: sh.buf, off: t('cross_attn.k_norm.weight').off / 4 }, eps: 1e-6, out: { buf: S.KC }, Ltot: 300 });
@@ -4232,6 +4667,7 @@ class SanaDiTCond extends SanaDiT {
     attention(g, { q: { buf: QC.buf, off: QC.off, size: R1 }, k: { buf: S.KC }, v: { buf: S.VC }, o: { buf: OC.buf, off: 0, size: R1, ld: D }, Lq: N, Lk: 300, Hq: 20, Hkv: 20, mode: 2, nvalid: S.nvalid,
       cfg: { BQ: 64, sg: false, pv16: true } });
     gemm(g, { acc: ac('crossproj'), w: t('cross_attn.proj.weight'), x: { buf: OC.buf, off: 0, size: R1, ld: D }, M: N, N: D, K: D, epi: 'resadd', bv: bias('cross_attn.proj.bias'), y: { buf: S.partial, ld: D } });
+    if (S.lh) loraLin(g, S, b, 'cross_attn.proj', { buf: OC.buf, off: 0, size: R1, ld: D }, 0, N, { y: { buf: S.partial, size: N * D * 4, ld: D } });   // v4
     // ---- MLP sublayer (modulated in and out, per segment, chunked inside each segment)
     castPartial();
     aggregate('mlp_proj', active + 1);
@@ -4252,32 +4688,33 @@ class SanaDiTCond extends SanaDiT {
     const g = this.g, st = this.store, N = S.N, K = S.keep, c = this.cfg;
     layout(g, { op: 'cast16', n: N * 128, xf: { buf: latent }, yh: { buf: S.tok } });
     gemm(g, { acc: 'f32', w: K.t('x_embedder.proj.weight'), x: { buf: S.tok, ld: 128 }, M: N, N: D, K: 128, epi: 'bias', ev: { buf: K.buf, off: K.t('x_embedder.proj.bias').off / 4 }, y: { buf: S.src, ld: D } });
-    let active = 1, sh = await st.upload('dit.block.00');
+    let active = 1, sh = await st.upload('dit.block.00'), lh = S.lora ? await S.lora.block(0) : null;   // v4: + the block's LoRA shard
     try {
       for (let b = 0; b < c.depth; b++) {
         const first = b % c.attn_res_block === 0;
-        this._block(S, sh, b, k, first, active);
+        S.lh = lh; this._block(S, sh, b, k, first, active);
         if (b % c.attn_res_block === c.attn_res_block - 1) {
           layout(g, { op: 'cast2d', n: N * D, xf: { buf: S.partial }, yh: { buf: S.src, off: active * N * D * 2 }, a: D, b: D, c: 0, d: D, e: 0 });
           active++;
         }
         g.runner.flush();
         const done = g.device.queue.onSubmittedWorkDone();
-        st.release(sh);
-        if (b + 1 < c.depth) sh = await st.upload('dit.block.' + String(b + 1).padStart(2, '0'));
+        st.release(sh); if (lh) S.lora.release(lh);
+        if (b + 1 < c.depth) { sh = await st.upload('dit.block.' + String(b + 1).padStart(2, '0')); if (lh) lh = await S.lora.block(b + 1); }
         await done;
         if (opts.check) opts.check();
         if (opts.onBlock) opts.onBlock(b);
       }
-    } finally { if (sh) st.release(sh); }
+    } finally { if (sh) st.release(sh); if (lh) S.lora.release(lh); S.lh = null; }
     attnres(g, { src: { buf: S.src }, q: { buf: K.buf, off: K.t('attn_res.final_proj.weight').off / 4 }, out: { buf: S.hidden }, N, D, ns: active });
     rowstats(g, { x: { buf: S.hidden }, rows: N, cols: D, mode: 'ln', eps: 1e-6, st: { buf: S.stats } });
     for (const s of S.segs) {   // final layer: (table + t) of each segment's own timestep (T2IFinalLayer.forward_frame_aware)
-      const row = s.cond ? this.condRow : k;
+      const row = s.cond ? S.condRow : k;
       gemm(g, { acc: 'f32', w: K.t('final_layer.linear.weight'), x: { buf: S.hidden, off: s.r0 * D * 4, ld: D, mode: 'lnmod' }, stats: { buf: S.stats, off: s.r0 }, pv: { buf: S.fin, off: row * 2 * D + D, stride: neg(D) },
         M: s.r1 - s.r0, N: 128, K: D, epi: 'resadd', store: true, bv: { buf: K.buf, off: K.t('final_layer.linear.bias').off / 4 }, y: { buf: S.v, off: s.r0 * 512, ld: 128 } });
     }
-    const sg = c.sigmas[k], s2 = k + 1 < c.sigmas.length ? c.sigmas[k + 1] : 0;
+    const sg = S.sigmas[k], s2 = k + 1 < S.sigmas.length ? S.sigmas[k + 1] : 0;
+    if (opts.velocityOnly) return new Float32Array(await g.read(S.v));   // v4 (video to video): the caller makes the update (its source layout swap)
     if (opts.keepVelocity) opts.keepVelocity.push(new Float32Array(await g.read(S.v)));
     vop(g, { op: 'dmd', n: N * 128, yf: { buf: latent }, af: { buf: S.v }, bf: noise && s2 > 0 ? { buf: noise } : null, s0: sg, s1: s2 > 0 ? f(1 - s2) : 1, s2: s2 > 0 ? s2 : 0 });
     for (const p of pins) g.runner.copy(p.buf, 0, latent, p.frame * S.hw * 512, S.hw * 512);   // LTXFlowEuler: pinned frames never updated
@@ -4286,6 +4723,61 @@ class SanaDiTCond extends SanaDiT {
 }
 
 return { SanaDiTCond };
+})();
+// ---- v2v/v2v_sampler.js
+__M["v2v/v2v_sampler.js"] = (() => {
+// v4 (p0pc0rn): the lab's video-to-video sampler (svcore.dmd_sample_v2v) on token-major latents [T][h][w][128], in JS on the CPU (a 2 s
+// 832 x 480 clip is 250 k floats a step): the source's latent re-noised to stage k0 with that stage's draw, frame 0 pinned to the styled
+// picture, then the 4-step DMD stages from k0; optional `lowswap` (cell f, through stage kmax, delta): each estimate keeps the model's fine
+// detail and takes the source's f x f-cell layout (x0 - LP(x0) + LP(src)); delta = the source's coarse CHANGE since its frame 0, laid on the
+// pinned picture's layout. LP = avg_pool3d((1, f, f), ceil_mode) and trilinear back (align_corners False), as torch computes it.
+'use strict';
+/** lowpass of x [T][h][w][128] -> new Float32Array */
+function lowpass(x, T, h, w, f) {
+  const hp = Math.ceil(h / f), wp = Math.ceil(w / f), P = new Float32Array(T * hp * wp * 128), acc = new Float64Array(128);
+  for (let t = 0; t < T; t++) for (let i = 0; i < hp; i++) for (let j = 0; j < wp; j++) {
+    const y0 = i * f, y1 = Math.min(y0 + f, h), x0 = j * f, x1 = Math.min(x0 + f, w), n = (y1 - y0) * (x1 - x0); acc.fill(0);
+    for (let y = y0; y < y1; y++) for (let xx = x0; xx < x1; xx++) { const b = ((t * h + y) * w + xx) * 128; for (let c = 0; c < 128; c++) acc[c] += x[b + c]; }
+    const o = ((t * hp + i) * wp + j) * 128; for (let c = 0; c < 128; c++) P[o + c] = acc[c] / n;
+  }
+  const lin = (n, m) => { const s = Math.fround(n / m), r = []; for (let d = 0; d < m; d++) { let src = Math.fround(s * (d + 0.5) - 0.5); if (src < 0) src = 0; const i0 = Math.floor(src), i1 = i0 + (i0 < n - 1 ? 1 : 0), l1 = src - i0; r.push([i0, i1, 1 - l1, l1]); } return r; };
+  const Y = lin(hp, h), X = lin(wp, w), out = new Float32Array(T * h * w * 128);
+  for (let t = 0; t < T; t++) for (let y = 0; y < h; y++) { const [a0, a1, h0, h1] = Y[y];
+    for (let xx = 0; xx < w; xx++) { const [b0, b1, w0, w1] = X[xx], o = ((t * h + y) * w + xx) * 128;
+      const p00 = ((t * hp + a0) * wp + b0) * 128, p01 = ((t * hp + a0) * wp + b1) * 128, p10 = ((t * hp + a1) * wp + b0) * 128, p11 = ((t * hp + a1) * wp + b1) * 128;
+      for (let c = 0; c < 128; c++) out[o + c] = h0 * (w0 * P[p00 + c] + w1 * P[p01 + c]) + h1 * (w0 * P[p10 + c] + w1 * P[p11 + c]); } }
+  return out;
+}
+/** the layout every estimate takes through stage kmax: LP(src), or (delta) LP(src) - LP(src)[frame 0] + LP(pin) */
+function swapTarget(xs, pin0, T, h, w, ls) {
+  const L = lowpass(xs, T, h, w, ls.cell), hw = h * w * 128;
+  if (!ls.delta) return L;
+  if (!pin0) throw new Error('lowswap delta needs the pinned first frame');
+  const Lp = lowpass(pin0, 1, h, w, ls.cell), out = new Float32Array(L.length);
+  for (let t = 0; t < T; t++) for (let i = 0; i < hw; i++) out[t * hw + i] = L[t * hw + i] - L[i] + Lp[i];
+  return out;
+}
+/** x = (1 - s0) src + s0 noise[k0], pinned frames set */
+function v2vStart(xs, noise, s0, pins, hw) {
+  const x = new Float32Array(xs.length), a = Math.fround(1 - s0);
+  for (let i = 0; i < x.length; i++) x[i] = a * xs[i] + s0 * noise[i];
+  for (const p of pins) x.set(p.tok, p.frame * hw * 128);
+  return x;
+}
+/** one stage: x0 = x - s v; [x0 = x0 - LP(x0) + target]; pins; x = (1 - s2) x0 + s2 noise (s2 > 0) else x0; pins. -> new x */
+function v2vUpdate(x, v, s, s2, noise, pins, dims, target) {
+  const [T, h, w] = dims, hw = h * w, x0 = new Float32Array(x.length);
+  for (let i = 0; i < x.length; i++) x0[i] = x[i] - s * v[i];
+  if (target) { const L = lowpass(x0, T, h, w, target.cell); for (let i = 0; i < x0.length; i++) x0[i] = x0[i] - L[i] + target.L[i]; }
+  for (const p of pins) x0.set(p.tok, p.frame * hw * 128);
+  if (!(s2 > 0)) return x0;
+  const a = Math.fround(1 - s2), out = new Float32Array(x.length);
+  for (let i = 0; i < out.length; i++) out[i] = a * x0[i] + s2 * noise[i];
+  for (const p of pins) out.set(p.tok, p.frame * hw * 128);
+  return out;
+}
+
+return { lowpass, swapTarget, v2vStart, v2vUpdate };
 })();
 // ---- i2v/i2v_pipeline.js
 __M["i2v/i2v_pipeline.js"] = (() => {
@@ -4303,8 +4795,15 @@ const { sanaStepFlops } = __M["models/sana_dit.js"];
 const { gaussianTokens, sha } = __M["pipelines/klein.js"];
 const { SanaDiTCond } = __M["i2v/sana_dit_cond.js"];
 const { LTX2StillEncoder } = __M["i2v/still_encoder.js"];
+const { SanaLora } = __M["lora/sana_lora.js"];   // v4: job.lora = {id, scale, store} (the engine resolves it)
+const { LTX2VideoEncoder } = __M["v2v/video_encoder.js"];   // v4: style video to video (runV2V)
+const { swapTarget, v2vStart, v2vUpdate } = __M["v2v/v2v_sampler.js"];
 const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } return null; };
 const I2V_CKPT = 'p0pc0rn:i2v:ckpt';
+/** v4: style video to video's "Follow the motion" (Nov 3). close (the default): from stage 2 (sigma 0.857) with one stage added at 0.76, the
+ *  same 3 transformer calls as loose; it keeps the source's motion (stage 1 keeps only ~5 % of the source's signal, so moving arms and
+ *  hands froze). loose: the model's own stages 1-3 from 0.947, the strongest look. sigmas null = the model's own 4 stages */
+const V2V_FOLLOW = { close: { startStep: 2, sigmas: [0.9998332262, 0.9471688271, 0.8568977118, 0.76, 0.666370213] }, loose: { startStep: 1, sigmas: null } };
 const DIR = 'engine/sanavideo2-5b/i2v-run';
 const STILL_FLOPS = (W, H) => 0.56e12 * (W * H) / (832 * 480);
 
@@ -4317,12 +4816,14 @@ class SanaI2VPipeline extends SanaVideoPipeline {
     this.te = new GemmaTE(gpu, this.ctx.store); this.dit = new SanaDiTCond(gpu, this.ctx.store);
     this.vae = new LTX2Decoder(gpu, this.ctx.store, Object.assign({ budgetBytes: apple ? 450e6 : 1.2e9 }, this.ctx.vaeOpts || {}));
     this.enc = this.ctx.encStore ? new LTX2StillEncoder(gpu, this.ctx.encStore) : null;
+    if (this.ctx.vencStore) this.ctx.vencStore.gpu = gpu;
+    this.venc = this.ctx.vencStore ? new LTX2VideoEncoder(gpu, this.ctx.vencStore) : null;   // v4: the clip reader (style video to video)
   }
   static checkpoint() { try { return JSON.parse(LS(I2V_CKPT) || 'null'); } catch (e) { return null; } }
 
   /** job {prompt, width, height, frames, seed, fps, mode: 'i2v'|'flf', stills: [{rgba, hash}] (first [, last]), check, onProgress,
    *  resume (true = continue the stored checkpoint without pictures), noise0?, noiseT?, condOverride?, pinOverride? ([Float32Array tokens]),
-   *  keepVelocity?, stepLatents?, keepLatent?, keepPins?, noEncode?, keepFrames?, noResume?} */
+   *  keepVelocity?, stepLatents?, keepLatent?, keepPins?, noEncode?, keepFrames?, noResume?, lora? (v4: {id, scale, store})} */
   async run(job) {
     const g = this.g, c = this.ctx.store.m.model, W = job.width, H = job.height, F = job.frames, T = (F - 1) / c.vae.t_compress + 1, h = H / 32, w = W / 32, N = T * h * w, hw = h * w;
     const fps = job.fps || c.video.fps, steps = c.dit.sigmas.length, t0 = performance.now(), up0 = this.ctx.store.stats.uploadMs;
@@ -4333,7 +4834,11 @@ class SanaI2VPipeline extends SanaVideoPipeline {
     const vaeRate = (g.tune && g.tune.vaeAcc === 'f16' ? r16 : r32) * 0.8, plan = this.vae.plan(T, h, w);
     if (!plan) throw Object.assign(new Error('this size does not fit the decoder memory budget'), { code: 'OUT_OF_MEMORY' });
     const encVer = this.ctx.encStore && this.ctx.encStore.m ? this.ctx.encStore.m.pack_version : '';
-    const key = await sha(JSON.stringify(['i2v', job.mode, job.prompt, W, H, F, job.seed, this.ctx.store.m.pack_version, encVer, (job.stills || []).map((s) => s.hash)]));
+    const lora = job.lora ? new SanaLora(g, job.lora.store, job.lora.scale, job.lora.id) : null;   // v4
+    if (lora) lora.check(c.dit);
+    const kv = ['i2v', job.mode, job.prompt, W, H, F, job.seed, this.ctx.store.m.pack_version, encVer, (job.stills || []).map((s) => s.hash)];
+    if (lora) kv.push(['lora', lora.id, lora.s, lora.store.m.pack_version]);   // v4: a clip with the LoRA never resumes one without it (or the other way)
+    const key = await sha(JSON.stringify(kv));
     // ---- resume? (same job, or job.resume = the stored checkpoint, pictures not needed)
     let ck = SanaI2VPipeline.checkpoint(), startStep = 0, latInit = null, pinTok = null;
     if (ck && (ck.key === key || job.resume) && !job.noResume && !job.noise0) {
@@ -4355,8 +4860,9 @@ class SanaI2VPipeline extends SanaVideoPipeline {
     const finish = (e, s) => { done += e; corr = 0.5 * corr + 0.5 * (s / Math.max(e, 1e-3)); };
     const mark = (ph, extra) => LS('p0pc0rn:i2v:running', JSON.stringify(Object.assign({ phase: ph, w: W, h: H, frames: F, mode: job.mode, t: Date.now() }, extra || {})));
     const saveCk = async (k, lat) => { await this._write(`${DIR}/latent.bin`, new Uint8Array(await g.read(lat)));
-      LS(I2V_CKPT, JSON.stringify({ key, step: k, mode: job.mode, prompt: job.prompt, width: W, height: H, frames: F, seed: job.seed, t: Date.now() })); };
+      LS(I2V_CKPT, JSON.stringify(Object.assign({ key, step: k, mode: job.mode, prompt: job.prompt, width: W, height: H, frames: F, seed: job.seed, t: Date.now() }, lora ? { lora: { id: lora.id, scale: lora.s } } : {}))); };
     const result = { resumedFromStep: startStep, nvalid: null, textCached: false, mode: job.mode };
+    if (lora) result.lora = lora.info();   // v4 (filled in again at the end)
     let lat = null; const pinBufs = [];
     try {
       // ---- pictures -> pinned latent frames (before anything else: the encoder's ~0.25 GB is gone before the DiT starts)
@@ -4385,7 +4891,7 @@ class SanaI2VPipeline extends SanaVideoPipeline {
         result.textCached = cond.cached; result.nvalid = cond.nvalid;
         // ---- denoise with the pins
         phase = 'denoise'; mark('denoise', { step: startStep }); emit(0, 'Preparing', true); ts = performance.now();
-        const S = await this.dit.prepare(cond, T, h, w, pinFrames.map((f) => ({ frame: f })));
+        const S = lora ? await this.dit.prepare(cond, T, h, w, pinFrames.map((f) => ({ frame: f })), { lora }) : await this.dit.prepare(cond, T, h, w, pinFrames.map((f) => ({ frame: f })));
         g.runner.flush(); g.free(cond.cond);
         const pins = pinFrames.map((f, i) => ({ frame: f, buf: g.upload(pinTok[i], 'pin' + i) })); pinBufs.push(...pins.map((p) => p.buf));
         lat = g.upload(latInit || job.noise0 || gaussianTokens(job.seed, T * h, w), 'latent');
@@ -4413,7 +4919,162 @@ class SanaI2VPipeline extends SanaVideoPipeline {
       g.runner.flush(); for (const b of pinBufs.splice(0)) g.free(b);
       this.te.freeCache(); this.te.tok = null; g.runner.flush(); await g.done();
       result.aliveBeforeDecodeMB = Math.round(g.alive / 1e6); result.denoisePeakMB = Math.round(g.peak / 1e6); g.resetPeak();
-      // ---- decode: tiles -> OPFS frames file
+      if (job.noDecode) result.noDecode = true;   // v4: steps only (the Video benchmark's LoRA-off clip): no frames, no file
+      else {
+        // ---- decode: tiles -> OPFS frames file
+        phase = 'decode'; mark('decode'); emit(0, 'Making the frames', true); let ts = performance.now();
+        const fname = `${DIR}/frames.rgba`;
+        await this.st.call('truncate', { name: fname, size: F * H * W * 4 });
+        const sink = async (rgba, x0, y0, cw, ch, nf, f0) => { const ab = rgba.buffer; await this.st.call('writeRect', { name: fname, buf: ab, F: nf, f0, H, W, x0, y0, cw, ch }, [ab]); };
+        const dec = await this.vae.decode(lat, T, h, w, sink, { check: job.check, onStage: (s) => {
+          timings.tileLog.push(s);
+          emit(est.decode * (s.tile + (s.subs ? s.sub / s.subs : 0)) / s.tiles, `Frames: tile ${s.tile + 1}/${s.tiles}${s.subs ? ` part ${s.sub}/${s.subs}` : ''} (GPU ${s.aliveMB} MB alive, peak ${s.peakMB})`, true, { aliveMB: s.aliveMB, pool: s.pool });
+        } });
+        await this.st.call('flush', { name: fname });
+        timings.decode = (performance.now() - ts) / 1000; timings.tiles = dec.tiles; timings.tileGrid = dec.grid; timings.decodePeakMB = Math.round(g.peak / 1e6); finish(est.decode, timings.decode);
+        g.runner.flush(); g.free(lat); lat = null;
+        // ---- encode: one frame at a time from OPFS
+        phase = 'encode'; mark('encode'); emit(0, 'Saving the video', true); ts = performance.now();
+        let fb = new ArrayBuffer(W * H * 4);
+        const readFrame = async (f) => { const r = await this.st.call('read', { name: fname, at: f * W * H * 4, len: W * H * 4, buf: fb }, [fb]); fb = r.buf; return new Uint8Array(r.buf, 0, W * H * 4).slice(); };
+        if (job.keepFrames) { result.readFrames = async (fn) => { for (let f = 0; f < F; f++) await fn(f, await readFrame(f)); }; result.readFrame = readFrame; }   // v026.3: one frame (the music video's handoff)
+        if (!job.noEncode) { const e = await encodeMp4(readFrame, F, H, W, fps, (f) => emit(est.encode * (f + 1) / F, 'Saving the video')); result.mp4 = e.mp4; result.codec = e.codec; }
+        timings.encode = (performance.now() - ts) / 1000;
+      }
+      Object.assign(result, { frames: F, width: W, height: H, fps });
+    } finally { g.runner.flush(); if (lat) g.free(lat); for (const b of pinBufs) g.free(b); }
+    if (!job.keepFrames) { try { await this.st.call('truncate', { name: `${DIR}/frames.rgba`, size: 0 }); await this.st.call('close', { name: `${DIR}/frames.rgba` }); } catch (e) { /* */ } }
+    LS(I2V_CKPT, null);
+    timings.upload = +((this.ctx.store.stats.uploadMs - up0) / 1000).toFixed(2);
+    result.timings = timings; result.seconds = (performance.now() - t0) / 1000; result.peakMB = Math.max(result.denoisePeakMB || 0, timings.decodePeakMB || 0, result.imagePeakMB || 0);
+    if (lora) result.lora = lora.info();   // v4: with its upload time over the whole job
+    phase = 'encode'; emit(total - done, 'done', true);
+    LS('p0pc0rn:i2v:running', null);
+    return result;
+  }
+
+  /** v4: STYLE VIDEO TO VIDEO (the lab's svcore.dmd_sample_v2v): the source clip's latent (the LTX-2.3 video encoder, the lab's tiling)
+   *  re-noised to stage k0 with that stage's draw, frame 0 pinned to the styled picture (the still encoder), then the DMD stages from k0
+   *  with the job's LoRA; lowswap {cell, until, delta} optional. The schedule: follow 'close' (the default: stage 2 of 0.9998 / 0.947 /
+   *  0.857 / 0.76 / 0.666) or 'loose' (stage 1 of the model's own 4), or startStep (+ sigmas, else the model's own) as given. Checkpoints like a picture clip (its own `mode` 'v2v'):
+   *  the latent after every stage, the pin and the source latent, so a resume needs neither the clip nor the picture.
+   *  job {prompt, width, height, frames, seed, fps, stills: [{rgba, hash}] (the styled first frame), source: {read(i) -> RGBA, hash}, follow,
+   *  startStep, sigmas, lowswap, lora, check, onProgress, resume, noResume, srcOverride? (Float32Array tokens), pinOverride?, condOverride?, noiseList? (one per stage),
+   *  keepLatent?, keepSrc?, noEncode?, keepFrames?} */
+  async runV2V(job) {
+    const g = this.g, c = this.ctx.store.m.model, W = job.width, H = job.height, F = job.frames, T = (F - 1) / c.vae.t_compress + 1, h = H / 32, w = W / 32, N = T * h * w, hw = h * w;
+    if (job.follow && !V2V_FOLLOW[job.follow]) throw Object.assign(new Error('follow is close or loose'), { code: 'BAD_SIZE' });
+    const fol = job.startStep == null && !job.sigmas ? V2V_FOLLOW[job.follow || 'close'] : null, own0 = (x) => c.dit.sigmas.findIndex((y) => Math.abs(y - x) < 1e-6);
+    const sig = ((fol ? fol.sigmas : job.sigmas) || c.dit.sigmas).map((x) => (own0(x) >= 0 ? c.dit.sigmas[own0(x)] : x));   // the model's own stages as its manifest has them
+    const fps = job.fps || c.video.fps, steps = sig.length, k0 = fol ? fol.startStep : job.startStep == null ? 1 : job.startStep, t0 = performance.now(), up0 = this.ctx.store.stats.uploadMs;
+    if (!(steps >= 2 && steps <= 8 && sig.every((x, i) => x > 0 && x <= 1 && (!i || x < sig[i - 1])))) throw Object.assign(new Error('sigmas: 2..8 falling values in (0, 1]'), { code: 'BAD_SIZE' });
+    if (!(k0 >= 0 && k0 < steps)) throw Object.assign(new Error('startStep is 0..' + (steps - 1)), { code: 'BAD_SIZE' });
+    const own = sig.length === c.dit.sigmas.length && sig.every((x, i) => x === c.dit.sigmas[i]);   // the model's own stages: its own timesteps
+    const tsteps = sig.map((x) => (own0(x) >= 0 ? c.dit.timesteps[own0(x)] : 1000 * x));   // an added stage: 1000 sigma, as the lab
+    if (hw % 2) throw Object.assign(new Error('frame conditioning needs an even (H/32)*(W/32)'), { code: 'BAD_SIZE' });
+    const ls = job.lowswap ? { cell: job.lowswap.cell || 2, until: job.lowswap.until == null ? 2 : job.lowswap.until, delta: !!job.lowswap.delta } : null;
+    await this.st.start();
+    const timings = { image: 0, clip: 0, text: 0, denoise: 0, steps: [], decode: 0, encode: 0, tileLog: [] }, rate = g.rate, r32 = rate.mm32 || rate.mm, r16 = rate.mm16 || rate.mm;
+    const vaeRate = (g.tune && g.tune.vaeAcc === 'f16' ? r16 : r32) * 0.8, plan = this.vae.plan(T, h, w);
+    if (!plan) throw Object.assign(new Error('this size does not fit the decoder memory budget'), { code: 'OUT_OF_MEMORY' });
+    const lora = job.lora ? new SanaLora(g, job.lora.store, job.lora.scale, job.lora.id) : null;
+    if (lora) lora.check(c.dit);
+    const encVer = this.ctx.encStore && this.ctx.encStore.m ? this.ctx.encStore.m.pack_version : '', vencVer = this.ctx.vencStore && this.ctx.vencStore.m ? this.ctx.vencStore.m.pack_version : '';
+    const kv = ['v2v', job.prompt, W, H, F, job.seed, k0, sig, ls, this.ctx.store.m.pack_version, encVer, vencVer, (job.stills || []).map((s) => s.hash), job.source ? job.source.hash || null : null];
+    if (lora) kv.push(['lora', lora.id, lora.s, lora.store.m.pack_version]);
+    const key = await sha(JSON.stringify(kv));
+    let ck = SanaI2VPipeline.checkpoint(), startStep = k0, latInit = null, pinTok = null, xs = null;
+    if (ck && ck.mode === 'v2v' && (ck.key === key || job.resume) && !job.noResume && !job.noiseList) {
+      latInit = await this._read(`${DIR}/latent.bin`, N * 512); const p0 = await this._read(`${DIR}/pin0.bin`, hw * 512); xs = await this._read(`${DIR}/xsrc.bin`, N * 512);
+      if (latInit && p0 && xs) { startStep = Math.max(k0, Math.min(steps, ck.step)); pinTok = [p0]; } else { latInit = null; xs = null; }
+    }
+    if (job.resume && !latInit) throw Object.assign(new Error('no unfinished clip to resume'), { code: 'NO_CHECKPOINT' });
+    const tileFactor = plan.tot / (h * w) * 1.25, venc = !xs && !job.srcOverride;
+    const est = { image: pinTok ? 0 : STILL_FLOPS(W, H) / r32 + 0.5, clip: venc ? F * 0.93e12 * (W * H) / (832 * 480) / r32 + 2 : 0, text: startStep >= steps ? 0 : 1.2e12 / r32 + 1,
+      step: sanaStepFlops(N) / r16 + 2.9e9 / 2e9 + 0.3, decode: (ltxFlopsPerPixelFrame * F * H * W * tileFactor) / vaeRate + 2, encode: F * 0.05 };
+    let total = est.image + est.clip + est.text + (steps - startStep) * est.step + est.decode + est.encode, done = 0, corr = 1, phase = 'load', step = startStep, last = 0;
+    const emit = (frac, msg, force, extra) => {
+      const now = performance.now(); if (!force && now - last < 200) return; last = now;
+      const p = Object.assign({ phase, frac: msg === 'done' ? 1 : Math.min(0.999, (done + frac) / total), step, steps, startStep: k0, etaSeconds: Math.max(0, Math.round((total - done - frac) * corr)), message: msg || phase,
+        elapsed: (now - t0) / 1000, aliveMB: Math.round(g.alive / 1e6), peakMB: Math.round(g.peak / 1e6), pool: g.poolStats ? g.poolStats() : null }, extra || {});
+      if (job.onProgress) job.onProgress(p); if (this.ctx.emit) this.ctx.emit(p);
+    };
+    const finish = (e, s) => { done += e; corr = 0.5 * corr + 0.5 * (s / Math.max(e, 1e-3)); };
+    const mark = (ph, extra) => LS('p0pc0rn:i2v:running', JSON.stringify(Object.assign({ phase: ph, w: W, h: H, frames: F, mode: 'v2v', t: Date.now() }, extra || {})));
+    const saveCk = async (k, x) => { await this._write(`${DIR}/latent.bin`, new Uint8Array(x.buffer, x.byteOffset, x.byteLength));
+      LS(I2V_CKPT, JSON.stringify(Object.assign({ key, step: k, mode: 'v2v', prompt: job.prompt, width: W, height: H, frames: F, seed: job.seed, startStep: k0, sigmas: sig, t: Date.now() },
+        ls ? { lowswap: ls } : {}, lora ? { lora: { id: lora.id, scale: lora.s } } : {}))); };
+    const result = { resumedFromStep: startStep > k0 ? startStep : 0, startStep: k0, sigmas: sig, follow: fol ? job.follow || 'close' : null, nvalid: null, textCached: false, mode: 'v2v', lowswap: ls };
+    if (!own) result.timesteps = tsteps;
+    if (lora) result.lora = lora.info();
+    const noiseOf = (k) => (job.noiseList ? job.noiseList[k] : gaussianTokens(k === 0 ? job.seed : (job.seed ^ (0x9e3779b1 * k)) >>> 0, T * h, w));
+    let lat = null, x = latInit; const pinBufs = [];
+    try {
+      // ---- the styled first frame -> the pin (the still encoder), before anything else
+      if (!pinTok) {
+        phase = 'image'; mark('image'); emit(0, 'Reading the picture', true);
+        const ts = performance.now();
+        if (job.pinOverride) pinTok = job.pinOverride.slice(0, 1);
+        else {
+          if (!this.enc) throw Object.assign(new Error('the still encoder is not installed'), { code: 'NOT_DOWNLOADED' });
+          g.resetPeak();
+          const r = await this.enc.encodeMany([job.stills[0].rgba], W, H, { check: job.check }); pinTok = r.tokens; result.imagePeakMB = r.peakMB;
+        }
+        timings.image = (performance.now() - ts) / 1000; finish(est.image, timings.image);
+        LS(I2V_CKPT, null);   // a fresh job: the old picture clip's record goes before its files are overwritten
+        await this._write(`${DIR}/pin0.bin`, new Uint8Array(pinTok[0].buffer, pinTok[0].byteOffset, pinTok[0].byteLength));
+      }
+      // ---- the source clip -> its latent (the video encoder), kept for a resume
+      if (!xs) {
+        phase = 'clip'; mark('clip'); emit(0, 'Reading the clip', true);
+        const ts = performance.now();
+        if (job.srcOverride) xs = job.srcOverride;
+        else {
+          if (!this.venc) throw Object.assign(new Error('the clip reader is not installed'), { code: 'NOT_DOWNLOADED' });
+          g.resetPeak();
+          const r = await this.venc.encode((i) => job.source.read(i), F, W, H, { check: job.check, onStage: (s, n) => emit(est.clip * s / n, 'Reading the clip') });
+          if (r.T !== T || r.h !== h || r.w !== w) throw new Error('video encoder: the latent is not the clip\'s size');
+          xs = r.tokens; result.clipPeakMB = r.peakMB; timings.clipUpload = +(r.uploadMs / 1000).toFixed(2); timings.clipTiles = r.tiles;
+        }
+        timings.clip = (performance.now() - ts) / 1000; finish(est.clip, timings.clip);
+        await this._write(`${DIR}/xsrc.bin`, new Uint8Array(xs.buffer, xs.byteOffset, xs.byteLength));
+        if (job.keepSrc) result.src = xs.slice();
+      }
+      const pins = [{ frame: 0, tok: pinTok[0] }], target = ls ? { cell: ls.cell, L: swapTarget(xs, pinTok[0], T, h, w, ls) } : null;
+      if (startStep < steps) {
+        phase = 'text'; mark('text'); emit(0, 'Reading the prompt', true);
+        let ts = performance.now();
+        const cond = job.condOverride ? { cond: g.upload(job.condOverride.data, 'cond'), nvalid: job.condOverride.nvalid, cached: false } :
+          await this.getCond(job.prompt, (l) => emit(est.text * (l + 1) / 26, 'Reading the prompt'), job.check);
+        timings.text = (performance.now() - ts) / 1000; if (cond.cached) total -= est.text; else finish(est.text, timings.text);
+        result.textCached = cond.cached; result.nvalid = cond.nvalid;
+        phase = 'denoise'; mark('denoise', { step: startStep }); emit(0, 'Preparing', true); ts = performance.now(); g.resetPeak();
+        const S = await this.dit.prepare(cond, T, h, w, [{ frame: 0 }], Object.assign({ sigmas: sig, timesteps: tsteps }, lora ? { lora } : {}));
+        g.runner.flush(); g.free(cond.cond);
+        const pinG = [{ frame: 0, buf: g.upload(pinTok[0], 'pin0') }]; pinBufs.push(pinG[0].buf);
+        if (!x) x = v2vStart(xs, noiseOf(k0), sig[k0], pins, hw);
+        lat = g.upload(x, 'latent');
+        try {
+          let best = Infinity;
+          for (let k = startStep; k < steps; k++) {
+            step = k + 1; const tk = performance.now(); emit(0, `Step ${k + 1} of ${steps}`, true); mark('denoise', { step: k + 1 });
+            const v = await this.dit.step(S, k, lat, null, { check: job.check, velocityOnly: true, onBlock: (i) => emit(est.step * (i + 1) / 33, `Step ${k + 1} of ${steps}`) }, pinG);
+            const s2 = k + 1 < steps ? sig[k + 1] : 0;
+            x = v2vUpdate(x, v, sig[k], s2, s2 > 0 ? noiseOf(k + 1) : null, pins, [T, h, w], target && k <= ls.until ? target : null);
+            g.upload(x, '', lat);
+            const sec = (performance.now() - tk) / 1000; timings.steps.push(+sec.toFixed(2)); finish(est.step, sec);
+            if (sec > 1.25 * best && this.ctx.warn && !result.hot) { result.hot = true; this.ctx.warn('HOT', `Step time grew from ${best.toFixed(1)} s to ${sec.toFixed(1)} s: the phone is probably throttling.`); }
+            best = Math.min(best, sec);
+            await saveCk(k + 1, x);
+          }
+        } finally { this.dit.free(S); }
+        timings.denoise = (performance.now() - ts) / 1000; result.denoisePeakMB = Math.round(g.peak / 1e6);
+      } else lat = g.upload(x, 'latent');
+      if (job.keepLatent) result.latent = x.slice();
+      g.runner.flush(); for (const b of pinBufs.splice(0)) g.free(b);
+      this.te.freeCache(); this.te.tok = null; g.runner.flush(); await g.done();
+      result.aliveBeforeDecodeMB = Math.round(g.alive / 1e6); g.resetPeak();
+      // ---- decode and encode: as a picture clip (run())
       phase = 'decode'; mark('decode'); emit(0, 'Making the frames', true); let ts = performance.now();
       const fname = `${DIR}/frames.rgba`;
       await this.st.call('truncate', { name: fname, size: F * H * W * 4 });
@@ -4425,11 +5086,10 @@ class SanaI2VPipeline extends SanaVideoPipeline {
       await this.st.call('flush', { name: fname });
       timings.decode = (performance.now() - ts) / 1000; timings.tiles = dec.tiles; timings.tileGrid = dec.grid; timings.decodePeakMB = Math.round(g.peak / 1e6); finish(est.decode, timings.decode);
       g.runner.flush(); g.free(lat); lat = null;
-      // ---- encode: one frame at a time from OPFS
       phase = 'encode'; mark('encode'); emit(0, 'Saving the video', true); ts = performance.now();
       let fb = new ArrayBuffer(W * H * 4);
       const readFrame = async (f) => { const r = await this.st.call('read', { name: fname, at: f * W * H * 4, len: W * H * 4, buf: fb }, [fb]); fb = r.buf; return new Uint8Array(r.buf, 0, W * H * 4).slice(); };
-      if (job.keepFrames) { result.readFrames = async (fn) => { for (let f = 0; f < F; f++) await fn(f, await readFrame(f)); }; result.readFrame = readFrame; }   // v026.3: one frame (the music video's handoff)
+      if (job.keepFrames) { result.readFrames = async (fn) => { for (let f = 0; f < F; f++) await fn(f, await readFrame(f)); }; result.readFrame = readFrame; }
       if (!job.noEncode) { const e = await encodeMp4(readFrame, F, H, W, fps, (f) => emit(est.encode * (f + 1) / F, 'Saving the video')); result.mp4 = e.mp4; result.codec = e.codec; }
       timings.encode = (performance.now() - ts) / 1000;
       Object.assign(result, { frames: F, width: W, height: H, fps });
@@ -4437,14 +5097,16 @@ class SanaI2VPipeline extends SanaVideoPipeline {
     if (!job.keepFrames) { try { await this.st.call('truncate', { name: `${DIR}/frames.rgba`, size: 0 }); await this.st.call('close', { name: `${DIR}/frames.rgba` }); } catch (e) { /* */ } }
     LS(I2V_CKPT, null);
     timings.upload = +((this.ctx.store.stats.uploadMs - up0) / 1000).toFixed(2);
-    result.timings = timings; result.seconds = (performance.now() - t0) / 1000; result.peakMB = Math.max(result.denoisePeakMB || 0, timings.decodePeakMB || 0, result.imagePeakMB || 0);
+    result.timings = timings; result.seconds = (performance.now() - t0) / 1000;
+    result.peakMB = Math.max(result.denoisePeakMB || 0, timings.decodePeakMB || 0, result.imagePeakMB || 0, result.clipPeakMB || 0);
+    if (lora) result.lora = lora.info();
     phase = 'encode'; emit(total - done, 'done', true);
     LS('p0pc0rn:i2v:running', null);
     return result;
   }
 }
 
-return { I2V_CKPT, STILL_FLOPS, SanaI2VPipeline };
+return { I2V_CKPT, STILL_FLOPS, SanaI2VPipeline, V2V_FOLLOW };
 })();
 // ---- i2v/i2v_engine.js
 __M["i2v/i2v_engine.js"] = (() => {
@@ -4468,6 +5130,8 @@ const { SanaI2VPipeline } = __M["i2v/i2v_pipeline.js"];
 const I2V_VERSION = '0.2.0';
 /** the picture reader (LTX-2.3 still encoder pack): its own OPFS folder, kept apart from the video model's */
 const ENCODER = { id: 'ltx23-still-enc', arch: 'ltx2-still-encoder', for: ['sana-video2'], dir: 'engine/ltx23-still-enc/pack', wipe: ['engine/ltx23-still-enc'], running: 'p0pc0rn:i2v:running' };
+/** v4: the clip reader (LTX-2.3 video encoder pack, style video to video): its own OPFS folder */
+const VIDEO_ENCODER = { id: 'ltx23-video-enc', arch: 'ltx2-video-encoder', for: ['sana-video2'], dir: 'engine/ltx23-video-enc/pack', wipe: ['engine/ltx23-video-enc'] };
 const I2V_CKPT_KEY = 'p0pc0rn:i2v:ckpt';
 const TERMS_VERSION = '2026-10-14.2', CONSENT_KEY = 'p0pc0rn:consent';
 const err = (code, message) => { const e = new Error(message); e.code = code; return e; };
@@ -4498,6 +5162,33 @@ class I2VEngine {
     this.base = base; this.opts = opts; this.job = null;
     this.encStore = new WeightStore(null, { base: opts.encoderPackUrl || './pack/', dir: opts.encoderDir || ENCODER.dir, source: opts.source });
     this.encDl = null;   // the picture reader's download in flight (a picture job never waits for it: it refuses with BUSY)
+    // v4: the clip reader (style video to video), only when the app passes its pack
+    this.vencStore = opts.videoEncoderPackUrl ? new WeightStore(null, { base: opts.videoEncoderPackUrl, dir: VIDEO_ENCODER.dir, source: opts.source }) : null;
+    this.vencDl = null;
+  }
+  async _openVenc() { if (!this.vencStore) throw err('UNSUPPORTED', 'This build has no clip reader.'); if (!this.vencStore.m) await this.vencStore.open(); return this.vencStore; }
+  /** v4: the clip reader alone: {complete, haveBytes, totalBytes, packVersion} */
+  async videoEncoderStatus() { await this._openVenc(); const s = this.vencStore.status(); return { complete: s.complete, haveBytes: s.have, totalBytes: s.total, packVersion: this.vencStore.m.pack_version }; }
+  /** v4: downloads the clip reader (resumable per 16 MiB chunk, verified); signal pauses */
+  async downloadVideoEncoder({ onProgress, signal, parallel } = {}) {
+    if (this.vencDl) throw err('BUSY', 'Already downloading.');
+    const run = (async () => {
+      await this._openVenc(); let last = 0;
+      try {
+        await this.vencStore.download({ signal, parallel, onProgress: (p) => {
+          const now = performance.now(); if (now - last < 250 && p.have < p.total) return; last = now;
+          if (onProgress) onProgress({ haveBytes: p.have, totalBytes: p.total, bytesPerSec: p.bytesPerSec, etaSeconds: p.bytesPerSec > 0 ? Math.round((p.total - p.have) / p.bytesPerSec) : null, part: 'clip reader:' + (p.shard || '') });
+        } });
+      } catch (e) { if (e && e.name === 'AbortError') throw abortErr(); throw e; }
+      return this.videoEncoderStatus();
+    })();
+    this.vencDl = run;
+    try { return await run; } finally { this.vencDl = null; }
+  }
+  async deleteVideoEncoder() {
+    if (this.job || this.base.job) throw err('BUSY', 'A video is being made.');
+    if (this.vencDl) throw err('BUSY', 'The clip reader is downloading.');
+    await this._openVenc(); if (!this.vencStore.http) { await this.vencStore.st.start(); await this.vencStore.remove(); } this.pipe = null;
   }
   capabilities() { return this.base.capabilities(); }
   requestPersistentStorage() { return this.base.requestPersistentStorage(); }
@@ -4559,9 +5250,14 @@ class I2VEngine {
   imageToVideo(o = {}) { return this._run('i2v', o, [o.image]); }
   /** {first, last, prompt, ...} -> clip; the clip starts on `first` and ends on `last` (latent pins, zero-shot; see the spec) */
   framesToVideo(o = {}) { return this._run('flf', o, [o.first, o.last]); }
+  /** v4: style video to video. {source: {frames, read(i) -> image or RGBA (the clip's frame i), hash?}, first (the styled frame 0), prompt,
+   *  width, height, frames (8k + 1, at most source.frames), seed, follow = 'close' | 'loose' ("Follow the motion": closely, the default, starts
+   *  at stage 2 with a stage added at sigma 0.76; loosely is stages 1-3, the strongest look; both 3 transformer calls), or startStep (+ sigmas,
+   *  else the model's own 4) for a bench, lowswap?, lora?, attested, onProgress, signal} -> clip */
+  videoToVideo(o = {}) { return this._run('v2v', o, [o.first]); }
   resumeVideo(o = {}) {
     const ck = SanaI2VPipeline.checkpoint(); if (!ck) return Promise.reject(err('NO_CHECKPOINT', 'There is no unfinished clip.'));
-    return this._run(ck.mode, Object.assign({ prompt: ck.prompt, width: ck.width, height: ck.height, frames: ck.frames, seed: ck.seed }, o, { _resume: true }), []);
+    return this._run(ck.mode, Object.assign({ prompt: ck.prompt, width: ck.width, height: ck.height, frames: ck.frames, seed: ck.seed, startStep: ck.startStep, sigmas: ck.sigmas || null, lowswap: ck.lowswap || null }, o, { _resume: true, lora: ck.lora || null }), []);   // v4: + its LoRA (and a style clip's schedule and swap: one saved before Nov 3 has no sigmas, the model's own)
   }
 
   async _run(mode, o, images) {
@@ -4569,6 +5265,7 @@ class I2VEngine {
     if (this.job || this.base.job) throw err('BUSY', 'A video is already being made.');
     if (this.base.state === 'downloading') throw err('BUSY', 'The model is downloading.');
     if (this.encDl) throw err('BUSY', 'The picture reader is downloading.');
+    if (mode === 'v2v' && this.vencDl) throw err('BUSY', 'The clip reader is downloading.');
     const caps = this.base.capabilities(); if (!caps.supported) throw err('UNSUPPORTED', caps.reason || 'This device cannot run the engine.');
     const prompt = String(o.prompt || '').trim();
     if (!prompt) throw err('EMPTY_PROMPT', 'Type what should happen.');
@@ -4580,6 +5277,7 @@ class I2VEngine {
     if (!Number.isInteger(w) || !Number.isInteger(h) || w % 32 || h % 32 || w < 256 || h < 256 || w * h > 1280 * 736) throw err('BAD_SIZE', 'Width and height must be multiples of 32, at most 1280x736 pixels.');
     if (!Number.isInteger(F) || F < 9 || F > 121 || (F - 1) % 8) throw err('BAD_SIZE', 'frames must be 8k + 1 (9 .. 121).');
     if (mode === 'flf' && F < 17) throw err('BAD_SIZE', 'first/last-frame clips need at least 17 frames (1 s).');
+    if (mode === 'v2v' && !o._resume && !o._src && !(o.source && typeof o.source.read === 'function' && (o.source.frames == null || o.source.frames >= F))) throw err('BAD_VIDEO', 'Pick a clip with enough frames first.');
     const ctl = new AbortController();
     if (o.signal) { if (o.signal.aborted) throw abortErr(); o.signal.addEventListener('abort', () => ctl.abort(), { once: true }); }
     this.job = ctl; this.base.job = ctl; this.base._setState('working');
@@ -4589,10 +5287,13 @@ class I2VEngine {
       if (o.onProgress) o.onProgress({ phase: 'load', frac: 0, step: 0, steps: 4, etaSeconds: null, message: 'Preparing' });
       await this._openEnc();
       if (!this.encStore.http && !this.encStore.status().complete && !o._pinOverride) throw err('NOT_DOWNLOADED', 'Download the picture reader first.');
+      if (mode === 'v2v' && !o._resume && !o._src) { await this._openVenc(); if (!this.vencStore.http && !this.vencStore.status().complete) throw err('NOT_DOWNLOADED', 'Download the clip reader first.'); }
       const pipe0 = await this.base._load();                 // GPU device + calibration + the SANA store (shared with textToVideo)
-      if (!this.pipe || this.pipe.g !== this.base.gpu) {
+      const lora = o.lora ? await this.base._lora(o.lora) : null;   // v4: {id, scale} -> the pack (NOT_DOWNLOADED when it is not on this phone)
+      if (!this.pipe || this.pipe.g !== this.base.gpu || (mode === 'v2v' && !this.pipe.venc && this.vencStore && this.vencStore.m)) {   // v4: a style clip needs the clip reader in the pipeline
         if (!this.encStore.http) await this.encStore.st.start();
-        this.pipe = new SanaI2VPipeline(Object.assign({}, pipe0.ctx, { encStore: this.encStore }));
+        if (this.vencStore && this.vencStore.m && !this.vencStore.http) await this.vencStore.st.start();
+        this.pipe = new SanaI2VPipeline(Object.assign({}, pipe0.ctx, { encStore: this.encStore }, this.vencStore && this.vencStore.m ? { vencStore: this.vencStore } : {}));
       }
       const check = () => { if (ctl.signal.aborted) throw abortErr(); if (this.base.gpu.lost) throw err('GPU_LOST', 'The GPU was reset.'); };
       const stills = [];
@@ -4600,9 +5301,15 @@ class I2VEngine {
       check();
       let r;
       try {
-        r = await this.pipe.run({ mode, prompt, width: w, height: h, frames: F, seed, fps: o.fps, stills, check, onProgress: o.onProgress, resume: !!o._resume,
+        if (mode === 'v2v') {   // v4: style video to video; the clip's frames read lazily, each scaled to the clip size like a picture
+          const src = o.source ? { hash: o.source.hash || null, read: async (i) => { const im = await o.source.read(i); return im && im.length === w * h * 4 && !(im instanceof Blob) ? im : prepareStill(im, w, h); } } : null;
+          r = await this.pipe.runV2V(Object.assign({ prompt, width: w, height: h, frames: F, seed, fps: o.fps, stills, source: src, follow: o.follow || null, startStep: o.startStep, sigmas: o.sigmas || null, lowswap: o.lowswap || null, check, onProgress: o.onProgress,
+            resume: !!o._resume, noResume: o.resume === false, srcOverride: o._src, pinOverride: o._pinOverride, condOverride: o._cond, noiseList: o._noiseList, keepLatent: o._keepLatent, keepSrc: o._keepSrc,
+            keepFrames: o._keepFrames, noEncode: o._noEncode }, lora ? { lora } : {}));
+        } else
+        r = await this.pipe.run(Object.assign({ mode, prompt, width: w, height: h, frames: F, seed, fps: o.fps, stills, check, onProgress: o.onProgress, resume: !!o._resume,
           noResume: o.resume === false, noise0: o._noise0, noiseT: o._noiseT, condOverride: o._cond, pinOverride: o._pinOverride, keepVelocity: o._keepVelocity,
-          stepLatents: o._stepLatents, keepLatent: o._keepLatent, keepPins: o._keepPins, keepFrames: o._keepFrames, noEncode: o._noEncode });
+          stepLatents: o._stepLatents, keepLatent: o._keepLatent, keepPins: o._keepPins, keepFrames: o._keepFrames, noEncode: o._noEncode, noDecode: !!o._noDecode }, lora ? { lora } : {}));
       } catch (e) {
         if (ctl.signal.aborted || (e && e.name === 'AbortError')) throw abortErr();
         if (this.base.gpu && this.base.gpu.lost) { this.base.gpu = null; this.pipe = null; throw err('GPU_LOST', 'The GPU was reset. Try again.'); }
@@ -4615,7 +5322,7 @@ class I2VEngine {
       return { blob, url: blob ? URL.createObjectURL(blob) : null, mode, frames: r.frames, width: r.width, height: r.height, fps: r.fps, seed, prompt, codec: r.codec,
         seconds: (performance.now() - t0) / 1000, timings: Object.assign({ load: (performance.now() - t0) / 1000 - r.seconds }, r.timings), peakMB: r.peakMB, imagePeakMB: r.imagePeakMB,
         denoisePeakMB: r.denoisePeakMB, textCached: r.textCached, resumedFromStep: r.resumedFromStep, aliveBeforeDecodeMB: r.aliveBeforeDecodeMB,
-        gpu: this.base.gpu.describe(), calib: this.base.gpu.calib, tune: this.base.gpu.tune, gpuPool: this.base.gpu.poolStats(), _r: r };
+        lora: r.lora || null, gpu: this.base.gpu.describe(), calib: this.base.gpu.calib, tune: this.base.gpu.tune, gpuPool: this.base.gpu.poolStats(), _r: r };
     } finally { this.job = null; this.base.job = null; LS('p0pc0rn:i2v:running', null); this.base._setState('idle'); }
   }
 }
@@ -4645,12 +5352,18 @@ function attachI2V(base, opts = {}) {
     resumeVideo: (o = {}) => {
       const ck = ckOf(o.mode);
       if (!ck) return Promise.reject(err('NO_CHECKPOINT', 'There is no unfinished clip.'));
-      if (ck.mode === 't2v') return base.textToVideo(Object.assign({}, o, { prompt: ck.prompt, width: ck.width, height: ck.height, frames: ck.frames, seed: ck.seed, resume: true }));
+      if (ck.mode === 't2v') return base.textToVideo(Object.assign({}, o, { prompt: ck.prompt, width: ck.width, height: ck.height, frames: ck.frames, seed: ck.seed, resume: true, lora: ck.lora || null }));   // v4: + its LoRA
       return x.resumeVideo(o);
     },
     encoderStatus: () => x.encoderStatus(),
     downloadEncoder: (o) => x.downloadEncoder(o || {}),
     deleteEncoder: () => x.deleteEncoder(),
+    /** v4: style video to video and its clip reader (when createEngine got videoEncoderPackUrl) */
+    videoToVideo: (o) => x.videoToVideo(o || {}),
+    videoEncoderStatus: () => x.videoEncoderStatus(),
+    downloadVideoEncoder: (o) => x.downloadVideoEncoder(o || {}),
+    deleteVideoEncoder: () => x.deleteVideoEncoder(),
+    hasVideoEncoder: () => !!x.vencStore,
     /** the unfinished clip {mode: 't2v' | 'i2v' | 'flf', prompt, width, height, frames, seed, step, t} or null. mode argument: 't2v' = the
      *  text-to-video slot, 'picture' (or 'i2v' / 'flf') = the picture slot, none = the newer of the two. The slots never overwrite each other. */
     videoCheckpoint: (mode) => ckOf(mode),
@@ -4666,7 +5379,7 @@ function attachI2V(base, opts = {}) {
   return base;
 }
 
-return { I2V_VERSION, ENCODER, prepareStill, createI2VEngine, createEngine, attachI2V };
+return { I2V_VERSION, ENCODER, VIDEO_ENCODER, prepareStill, createI2VEngine, createEngine, attachI2V };
 })();
-export const { ENGINE_VERSION, MODELS, calibrate, referenceSize } = __M['engine.js'];
-export const { createEngine, createI2VEngine, attachI2V, I2V_VERSION, ENCODER, prepareStill } = __M['i2v/i2v_engine.js'];
+export const { ENGINE_VERSION, MODELS, calibrate, referenceSize, LORA } = __M['engine.js'];
+export const { createEngine, createI2VEngine, attachI2V, I2V_VERSION, ENCODER, VIDEO_ENCODER, prepareStill } = __M['i2v/i2v_engine.js'];

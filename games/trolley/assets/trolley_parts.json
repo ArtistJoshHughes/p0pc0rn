@@ -1,0 +1,2027 @@
+{
+ "asset": {
+  "source": "NVIDIA SimReady equipment_trash_trolley_a01 (sm_equipment_trash_trolley_a01_01.usd)",
+  "license": "CC BY 4.0 - credit NVIDIA SimReady when shipping",
+  "glb": "trolley.glb",
+  "mb": 16.67,
+  "triangles": 304967,
+  "source_triangles": 2727168,
+  "draw_calls": 60
+ },
+ "conventions": {
+  "units": "metres, kilograms, radians",
+  "axes": "glTF +Y up, +X forward (= USD +X), +Z = USD -Y. USD point (x, y, z) -> glTF (x, z, -y).",
+  "pivot": "world position of the node origin at rest (all rest rotations are identity, so it is also sum of translation_in_parent up the chain).",
+  "joint_axis": "unit axis in the PARENT's frame (= node frame at rest). Apply as node.quaternion.setFromAxisAngle(axis, angle); positive angle = right-hand rule about the axis. Angle 0 = the pose in the GLB.",
+  "limits": "[lower, upper] radians; null with continuous=true for the wheels.",
+  "colliders": "in the node's local frame (origin = pivot), glTF axes. cuboid half_extents; cylinder radius/half_height along the stated axis."
+ },
+ "materials": {
+  "light_red": {
+   "animate": true,
+   "what": "4 red end lights (lens + LED); USD refractive glass replaced by plain emissive red",
+   "emissiveFactor": [
+    1,
+    0.0103,
+    0.0103
+   ],
+   "KHR_materials_emissive_strength": 1.2,
+   "usd_source": "m_trans__glass__red_a01 + m_opaque__plastic__emissive_red_a01 (emissive_intensity 40)",
+   "hint": "material.emissiveIntensity ~1.0-1.5 reads as saturated red with Neutral/ACES tone mapping; above ~2 it washes towards pink unless you use bloom."
+  },
+  "glow_cyan": {
+   "animate": true,
+   "what": "4 tiny cyan LEDs (4 mm) inside the front/back U-channels + 1 status LED on the crate rim",
+   "emissiveFactor": [
+    0,
+    0.8228,
+    1
+   ],
+   "KHR_materials_emissive_strength": 2.0,
+   "usd_source": "m_opaque__plastic__emissive_blue_a01 (emissive_intensity 3000)",
+   "hint": "the visible under-glow in the SimReady thumbnail is light cast by these LEDs; three.js needs real lights for that - see suggested_lights."
+  },
+  "diamond_plate": {
+   "what": "front/back aluminium tread-plate U-channels, baked from 296,272 high-poly triangles to 1,200 + 2048x1024 normal/colour/ORM maps"
+  },
+  "trolley_body": {
+   "what": "all UDIM-textured surfaces (rubber/metal/painted/plastic/decal equipment_trash_trolley_a01), UDIM 1001-1005 packed in a 3x2 atlas"
+  }
+ },
+ "suggested_lights": [
+  {
+   "name": "underglow_1",
+   "type": "PointLight",
+   "color": "#00d2ff",
+   "position": [
+    0.35,
+    0.077,
+    -0.151
+   ],
+   "distance": 0.35,
+   "decay": 2,
+   "intensity_hint": "0.3-1.0 (physically-correct units); parent it to trolley_01 and drive it together with glow_cyan",
+   "note": "LED faces the inside of the U-channel; light placed 1 cm off the LED"
+  },
+  {
+   "name": "underglow_2",
+   "type": "PointLight",
+   "color": "#00d2ff",
+   "position": [
+    0.35,
+    0.077,
+    0.146
+   ],
+   "distance": 0.35,
+   "decay": 2,
+   "intensity_hint": "0.3-1.0 (physically-correct units); parent it to trolley_01 and drive it together with glow_cyan",
+   "note": "LED faces the inside of the U-channel; light placed 1 cm off the LED"
+  },
+  {
+   "name": "underglow_3",
+   "type": "PointLight",
+   "color": "#00d2ff",
+   "position": [
+    -0.348,
+    0.077,
+    -0.151
+   ],
+   "distance": 0.35,
+   "decay": 2,
+   "intensity_hint": "0.3-1.0 (physically-correct units); parent it to trolley_01 and drive it together with glow_cyan",
+   "note": "LED faces the inside of the U-channel; light placed 1 cm off the LED"
+  },
+  {
+   "name": "underglow_4",
+   "type": "PointLight",
+   "color": "#00d2ff",
+   "position": [
+    -0.348,
+    0.077,
+    0.146
+   ],
+   "distance": 0.35,
+   "decay": 2,
+   "intensity_hint": "0.3-1.0 (physically-correct units); parent it to trolley_01 and drive it together with glow_cyan",
+   "note": "LED faces the inside of the U-channel; light placed 1 cm off the LED"
+  },
+  {
+   "name": "endlight_1",
+   "type": "PointLight",
+   "color": "#ff1a1a",
+   "position": [
+    0.417,
+    0.303,
+    0.211
+   ],
+   "distance": 0.4,
+   "decay": 2,
+   "optional": true,
+   "note": "red end light lens centre, 2 cm in front of the lens"
+  },
+  {
+   "name": "endlight_2",
+   "type": "PointLight",
+   "color": "#ff1a1a",
+   "position": [
+    0.417,
+    0.303,
+    -0.216
+   ],
+   "distance": 0.4,
+   "decay": 2,
+   "optional": true,
+   "note": "red end light lens centre, 2 cm in front of the lens"
+  },
+  {
+   "name": "endlight_3",
+   "type": "PointLight",
+   "color": "#ff1a1a",
+   "position": [
+    -0.415,
+    0.303,
+    0.211
+   ],
+   "distance": 0.4,
+   "decay": 2,
+   "optional": true,
+   "note": "red end light lens centre, 2 cm in front of the lens"
+  },
+  {
+   "name": "endlight_4",
+   "type": "PointLight",
+   "color": "#ff1a1a",
+   "position": [
+    -0.415,
+    0.303,
+    -0.216
+   ],
+   "distance": 0.4,
+   "decay": 2,
+   "optional": true,
+   "note": "red end light lens centre, 2 cm in front of the lens"
+  }
+ ],
+ "nodes": [
+  {
+   "name": "trolley_01",
+   "parent": null,
+   "role": "passive",
+   "pivot": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "translation_in_parent": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "joint": null,
+   "mass_kg": 52.7666,
+   "collider": {
+    "shape": "compound",
+    "parts": [
+     {
+      "shape": "cuboid",
+      "label": "spine (between wheel wells)",
+      "center": [
+       0.0009,
+       0.1962,
+       0.0
+      ],
+      "half_extents": [
+       0.399,
+       0.1502,
+       0.26
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "side skirt glTF -z (USD +y)",
+      "center": [
+       0.0,
+       0.2055,
+       -0.329
+      ],
+      "half_extents": [
+       0.2,
+       0.1585,
+       0.0689
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "side skirt glTF +z (USD -y)",
+      "center": [
+       0.0,
+       0.2055,
+       0.3263
+      ],
+      "half_extents": [
+       0.2,
+       0.1585,
+       0.0662
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "corner pod over wheel well (glTF x+ z-)",
+      "center": [
+       0.298,
+       0.2831,
+       -0.3432
+      ],
+      "half_extents": [
+       0.098,
+       0.0928,
+       0.083
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "corner pod over wheel well (glTF x+ z+)",
+      "center": [
+       0.298,
+       0.2831,
+       0.3407
+      ],
+      "half_extents": [
+       0.098,
+       0.0928,
+       0.0806
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "corner pod over wheel well (glTF x- z-)",
+      "center": [
+       -0.297,
+       0.2831,
+       -0.3431
+      ],
+      "half_extents": [
+       0.097,
+       0.0928,
+       0.0829
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "corner pod over wheel well (glTF x- z+)",
+      "center": [
+       -0.297,
+       0.2831,
+       0.3405
+      ],
+      "half_extents": [
+       0.097,
+       0.0928,
+       0.0804
+      ]
+     }
+    ],
+    "note": "7 cuboids; wheels and steering modules have their own colliders. The lens/lights are inside these boxes."
+   },
+   "triangles": 111568,
+   "source_triangles": 974160,
+   "materials": [
+    "carbon_fiber",
+    "diamond_plate",
+    "glow_cyan",
+    "light_red",
+    "paint_yellow",
+    "plastic_black_grainy",
+    "plastic_dark_glossy",
+    "plexi_black",
+    "steel_stainless",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__plastic__equipment_trash_trolley_a01",
+   "mass_kg_including_lens": 53.0169,
+   "merged_parts": [
+    "headlightGlass_01 (USD fixed joint, 0.25 kg, lens -> light_red)"
+   ],
+   "note": "root body of the articulated trolley (no joint; moved by its wheels). headlightGlass_01 (fixed joint, 0.25 kg) is merged into this node's mesh; add its mass if you sum masses."
+  },
+  {
+   "name": "trashbox_01",
+   "parent": null,
+   "role": "passive",
+   "pivot": [
+    0.0,
+    0.36054,
+    0.0
+   ],
+   "translation_in_parent": [
+    0.0,
+    0.36054,
+    0.0
+   ],
+   "joint": null,
+   "mass_kg": 39.8193,
+   "collider": {
+    "shape": "compound",
+    "parts": [
+     {
+      "shape": "cuboid",
+      "label": "floor",
+      "center": [
+       0.0,
+       0.0203,
+       0.0
+      ],
+      "half_extents": [
+       0.3883,
+       0.02,
+       0.3883
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "wall +x",
+      "center": [
+       0.3783,
+       0.3531,
+       0.0
+      ],
+      "half_extents": [
+       0.01,
+       0.3528,
+       0.3883
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "wall -x",
+      "center": [
+       -0.3783,
+       0.3531,
+       0.0
+      ],
+      "half_extents": [
+       0.01,
+       0.3528,
+       0.3883
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "wall +z",
+      "center": [
+       0.0,
+       0.3531,
+       0.3783
+      ],
+      "half_extents": [
+       0.3883,
+       0.3528,
+       0.01
+      ]
+     },
+     {
+      "shape": "cuboid",
+      "label": "wall -z",
+      "center": [
+       0.0,
+       0.3531,
+       -0.3783
+      ],
+      "half_extents": [
+       0.3883,
+       0.3528,
+       0.01
+      ]
+     }
+    ],
+    "outer_aabb": {
+     "shape": "cuboid",
+     "label": "outer AABB incl. rim",
+     "center": [
+      -0.0003,
+      0.3531,
+      -0.0003
+     ],
+     "half_extents": [
+      0.4243,
+      0.3528,
+      0.4163
+     ]
+    },
+    "note": "open-top bin: floor + 4 walls (2 cm). Use the single outer_aabb cuboid if nothing ever goes inside."
+   },
+   "triangles": 124999,
+   "source_triangles": 1267462,
+   "materials": [
+    "aluminium_brushed",
+    "fabric_liner_orange",
+    "glow_cyan",
+    "paint_yellow",
+    "plastic_black_grainy",
+    "plastic_blue_rim",
+    "rubber_black",
+    "steel_stainless",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__plastic__equipment_trash_trolley_a01",
+   "note": "loose rigid body (no joint in USD): rests on the deck, held by the clamps."
+  },
+  {
+   "name": "wheelEngine_01",
+   "parent": "trolley_01",
+   "role": "actuated",
+   "pivot": [
+    0.31172,
+    0.16046,
+    0.31149
+   ],
+   "translation_in_parent": [
+    0.31172,
+    0.16046,
+    0.31149
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     0.0,
+     1.5708
+    ],
+    "limits_deg": [
+     0.0,
+     90.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": null,
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 5.5997,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0,
+     -0.0667,
+     0.0039
+    ],
+    "half_extents": [
+     0.0675,
+     0.0675,
+     0.0617
+    ]
+   },
+   "triangles": 5500,
+   "source_triangles": 34872,
+   "materials": [
+    "steel_stainless",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__steelStainless_clean_a01"
+  },
+  {
+   "name": "wheel_01",
+   "parent": "wheelEngine_01",
+   "role": "actuated",
+   "pivot": [
+    0.31172,
+    0.09375,
+    0.34715
+   ],
+   "translation_in_parent": [
+    0.0,
+    -0.0667,
+    0.03566
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     0.0,
+     -1.0
+    ],
+    "limits": null,
+    "limits_deg": null,
+    "continuous": true,
+    "usd_axis": "Y",
+    "usd_authored_drive": null
+   },
+   "mass_kg": 5.2873,
+   "collider": {
+    "shape": "cylinder",
+    "axis": "local z (= joint axis)",
+    "radius": 0.0934,
+    "half_height": 0.0327,
+    "center": [
+     0.0,
+     0.0,
+     0.0327
+    ],
+    "note": "rapier: roundCylinder/cylinder is Y-aligned, rotate it 90 deg about X"
+   },
+   "triangles": 6000,
+   "source_triangles": 53152,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__rubber__equipment_trash_trolley_a01"
+  },
+  {
+   "name": "wheelEngine_02",
+   "parent": "trolley_01",
+   "role": "actuated",
+   "pivot": [
+    0.31172,
+    0.16046,
+    -0.31685
+   ],
+   "translation_in_parent": [
+    0.31172,
+    0.16046,
+    -0.31685
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -1.5708,
+     0.0
+    ],
+    "limits_deg": [
+     -90.0,
+     0.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": null,
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 5.5914,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0001,
+     -0.0667,
+     -0.0039
+    ],
+    "half_extents": [
+     0.0674,
+     0.0674,
+     0.0616
+    ]
+   },
+   "triangles": 5500,
+   "source_triangles": 34872,
+   "materials": [
+    "steel_stainless",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__steelStainless_clean_a01"
+  },
+  {
+   "name": "wheel_02",
+   "parent": "wheelEngine_02",
+   "role": "actuated",
+   "pivot": [
+    0.31171,
+    0.09375,
+    -0.3527
+   ],
+   "translation_in_parent": [
+    -1e-05,
+    -0.0667,
+    -0.03585
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     0.0,
+     -1.0
+    ],
+    "limits": null,
+    "limits_deg": null,
+    "continuous": true,
+    "usd_axis": "Y",
+    "usd_authored_drive": null
+   },
+   "mass_kg": 5.2873,
+   "collider": {
+    "shape": "cylinder",
+    "axis": "local z (= joint axis)",
+    "radius": 0.0934,
+    "half_height": 0.0327,
+    "center": [
+     0.0,
+     0.0,
+     -0.0327
+    ],
+    "note": "rapier: roundCylinder/cylinder is Y-aligned, rotate it 90 deg about X"
+   },
+   "triangles": 6000,
+   "source_triangles": 53162,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__rubber__equipment_trash_trolley_a01"
+  },
+  {
+   "name": "wheelEngine_03",
+   "parent": "trolley_01",
+   "role": "actuated",
+   "pivot": [
+    -0.30911,
+    0.16046,
+    0.31149
+   ],
+   "translation_in_parent": [
+    -0.30911,
+    0.16046,
+    0.31149
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -1.5708,
+     0.0
+    ],
+    "limits_deg": [
+     -90.0,
+     0.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": null,
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 5.5881,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0,
+     -0.0667,
+     0.0039
+    ],
+    "half_extents": [
+     0.0674,
+     0.0674,
+     0.0616
+    ]
+   },
+   "triangles": 5500,
+   "source_triangles": 34872,
+   "materials": [
+    "steel_stainless",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__steelStainless_clean_a01"
+  },
+  {
+   "name": "wheel_03",
+   "parent": "wheelEngine_03",
+   "role": "actuated",
+   "pivot": [
+    -0.30906,
+    0.09375,
+    0.34715
+   ],
+   "translation_in_parent": [
+    5e-05,
+    -0.0667,
+    0.03566
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     0.0,
+     -1.0
+    ],
+    "limits": null,
+    "limits_deg": null,
+    "continuous": true,
+    "usd_axis": "Y",
+    "usd_authored_drive": null
+   },
+   "mass_kg": 5.2873,
+   "collider": {
+    "shape": "cylinder",
+    "axis": "local z (= joint axis)",
+    "radius": 0.0934,
+    "half_height": 0.0327,
+    "center": [
+     0.0,
+     0.0,
+     0.0327
+    ],
+    "note": "rapier: roundCylinder/cylinder is Y-aligned, rotate it 90 deg about X"
+   },
+   "triangles": 6000,
+   "source_triangles": 53162,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__rubber__equipment_trash_trolley_a01"
+  },
+  {
+   "name": "wheelEngine_04",
+   "parent": "trolley_01",
+   "role": "actuated",
+   "pivot": [
+    -0.30912,
+    0.16046,
+    -0.3168
+   ],
+   "translation_in_parent": [
+    -0.30912,
+    0.16046,
+    -0.3168
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     0.0,
+     1.5708
+    ],
+    "limits_deg": [
+     0.0,
+     90.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": null,
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 5.5914,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0001,
+     -0.0667,
+     -0.0039
+    ],
+    "half_extents": [
+     0.0674,
+     0.0674,
+     0.0616
+    ]
+   },
+   "triangles": 5500,
+   "source_triangles": 34872,
+   "materials": [
+    "steel_stainless",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__steelStainless_clean_a01"
+  },
+  {
+   "name": "wheel_04",
+   "parent": "wheelEngine_04",
+   "role": "actuated",
+   "pivot": [
+    -0.30906,
+    0.09375,
+    -0.35246
+   ],
+   "translation_in_parent": [
+    5e-05,
+    -0.0667,
+    -0.03566
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     0.0,
+     -1.0
+    ],
+    "limits": null,
+    "limits_deg": null,
+    "continuous": true,
+    "usd_axis": "Y",
+    "usd_authored_drive": null
+   },
+   "mass_kg": 5.2873,
+   "collider": {
+    "shape": "cylinder",
+    "axis": "local z (= joint axis)",
+    "radius": 0.0934,
+    "half_height": 0.0327,
+    "center": [
+     0.0,
+     0.0,
+     -0.0327
+    ],
+    "note": "rapier: roundCylinder/cylinder is Y-aligned, rotate it 90 deg about X"
+   },
+   "triangles": 6000,
+   "source_triangles": 53162,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__painted_equipment_trash_trolley_a01",
+   "note": "USD binds this wheel's collision to the painted-metal physics material (the other wheels use rubber); probably an authoring slip - use the rubber friction for all four wheels."
+  },
+  {
+   "name": "leftClamp_01",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    0.35624,
+    0.37739,
+    0.33767
+   ],
+   "translation_in_parent": [
+    0.35624,
+    0.37739,
+    0.33767
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     0.0,
+     0.94248
+    ],
+    "limits_deg": [
+     0.0,
+     54.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.322,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0314,
+     0.0,
+     -0.0048
+    ],
+    "half_extents": [
+     0.0415,
+     0.0098,
+     0.0149
+    ]
+   },
+   "triangles": 500,
+   "source_triangles": 3174,
+   "materials": [
+    "paint_yellow",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "leftClamp_02",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    0.35624,
+    0.3774,
+    -0.27985
+   ],
+   "translation_in_parent": [
+    0.35624,
+    0.3774,
+    -0.27985
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     0.0,
+     0.94248
+    ],
+    "limits_deg": [
+     0.0,
+     54.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.287,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0314,
+     0.0,
+     -0.0048
+    ],
+    "half_extents": [
+     0.0415,
+     0.0098,
+     0.0149
+    ]
+   },
+   "triangles": 500,
+   "source_triangles": 3174,
+   "materials": [
+    "paint_yellow",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "leftClamp_03",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    -0.35628,
+    0.37739,
+    0.33771
+   ],
+   "translation_in_parent": [
+    -0.35628,
+    0.37739,
+    0.33771
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -0.94248,
+     0.0
+    ],
+    "limits_deg": [
+     -54.0,
+     0.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.287,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0314,
+     0.0,
+     -0.0048
+    ],
+    "half_extents": [
+     0.0415,
+     0.0098,
+     0.0149
+    ]
+   },
+   "triangles": 500,
+   "source_triangles": 2982,
+   "materials": [
+    "paint_yellow",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "leftClamp_04",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    -0.35628,
+    0.3774,
+    -0.27982
+   ],
+   "translation_in_parent": [
+    -0.35628,
+    0.3774,
+    -0.27982
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -0.94248,
+     0.0
+    ],
+    "limits_deg": [
+     -54.0,
+     0.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.287,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0314,
+     0.0,
+     -0.0048
+    ],
+    "half_extents": [
+     0.0415,
+     0.0098,
+     0.0149
+    ]
+   },
+   "triangles": 500,
+   "source_triangles": 2984,
+   "materials": [
+    "paint_yellow",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "rightClamp_01",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    0.35624,
+    0.37739,
+    0.28006
+   ],
+   "translation_in_parent": [
+    0.35624,
+    0.37739,
+    0.28006
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -0.94248,
+     0.0
+    ],
+    "limits_deg": [
+     -54.0,
+     0.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.287,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0314,
+     0.0,
+     0.0048
+    ],
+    "half_extents": [
+     0.0415,
+     0.0098,
+     0.0149
+    ]
+   },
+   "triangles": 500,
+   "source_triangles": 3174,
+   "materials": [
+    "paint_yellow",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "rightClamp_02",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    0.35624,
+    0.3774,
+    -0.33762
+   ],
+   "translation_in_parent": [
+    0.35624,
+    0.3774,
+    -0.33762
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -0.94248,
+     0.0
+    ],
+    "limits_deg": [
+     -54.0,
+     0.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.287,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0314,
+     0.0,
+     0.0048
+    ],
+    "half_extents": [
+     0.0415,
+     0.0098,
+     0.0149
+    ]
+   },
+   "triangles": 500,
+   "source_triangles": 3174,
+   "materials": [
+    "paint_yellow",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "rightClamp_03",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    -0.35628,
+    0.37739,
+    0.27999
+   ],
+   "translation_in_parent": [
+    -0.35628,
+    0.37739,
+    0.27999
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     0.0,
+     0.94248
+    ],
+    "limits_deg": [
+     0.0,
+     54.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.287,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0314,
+     0.0,
+     0.0049
+    ],
+    "half_extents": [
+     0.0415,
+     0.0098,
+     0.0149
+    ]
+   },
+   "triangles": 500,
+   "source_triangles": 2984,
+   "materials": [
+    "paint_yellow",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "rightClamp_04",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    -0.35628,
+    0.3774,
+    -0.33762
+   ],
+   "translation_in_parent": [
+    -0.35628,
+    0.3774,
+    -0.33762
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     0.0,
+     0.94248
+    ],
+    "limits_deg": [
+     0.0,
+     54.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.287,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0314,
+     0.0,
+     0.0048
+    ],
+    "half_extents": [
+     0.0415,
+     0.0098,
+     0.0149
+    ]
+   },
+   "triangles": 500,
+   "source_triangles": 2982,
+   "materials": [
+    "paint_yellow",
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "lock_01",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    0.38235,
+    0.35291,
+    0.30896
+   ],
+   "translation_in_parent": [
+    0.38235,
+    0.35291,
+    0.30896
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     0.0,
+     -1.0
+    ],
+    "limits": [
+     -0.1,
+     1.91986
+    ],
+    "limits_deg": [
+     -5.7,
+     110.0
+    ],
+    "continuous": false,
+    "usd_axis": "Y",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.6493,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0442,
+     -0.0102,
+     0.0
+    ],
+    "half_extents": [
+     0.0558,
+     0.0218,
+     0.0244
+    ],
+    "note": "L-shaped part: one AABB cuboid is loose (fill ~35-47 %); a convex hull of the render mesh (<= 24 verts) fits better"
+   },
+   "triangles": 1500,
+   "source_triangles": 10020,
+   "materials": [
+    "paint_yellow"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "lock_02",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    0.38235,
+    0.35291,
+    -0.30896
+   ],
+   "translation_in_parent": [
+    0.38235,
+    0.35291,
+    -0.30896
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     0.0,
+     -1.0
+    ],
+    "limits": [
+     -0.1,
+     1.64061
+    ],
+    "limits_deg": [
+     -5.7,
+     94.0
+    ],
+    "continuous": false,
+    "usd_axis": "Y",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.6493,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0442,
+     -0.0102,
+     0.0
+    ],
+    "half_extents": [
+     0.0558,
+     0.0218,
+     0.0244
+    ],
+    "note": "L-shaped part: one AABB cuboid is loose (fill ~35-47 %); a convex hull of the render mesh (<= 24 verts) fits better"
+   },
+   "triangles": 1500,
+   "source_triangles": 10020,
+   "materials": [
+    "paint_yellow"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "lock_03",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    -0.38235,
+    0.35291,
+    0.30896
+   ],
+   "translation_in_parent": [
+    -0.38235,
+    0.35291,
+    0.30896
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     0.0,
+     -1.0
+    ],
+    "limits": [
+     -1.50098,
+     0.1
+    ],
+    "limits_deg": [
+     -86.0,
+     5.7
+    ],
+    "continuous": false,
+    "usd_axis": "Y",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.6493,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0442,
+     -0.0102,
+     0.0
+    ],
+    "half_extents": [
+     0.0558,
+     0.0218,
+     0.0244
+    ],
+    "note": "L-shaped part: one AABB cuboid is loose (fill ~35-47 %); a convex hull of the render mesh (<= 24 verts) fits better"
+   },
+   "triangles": 1500,
+   "source_triangles": 10020,
+   "materials": [
+    "paint_yellow"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "lock_04",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    -0.38235,
+    0.35291,
+    -0.30896
+   ],
+   "translation_in_parent": [
+    -0.38235,
+    0.35291,
+    -0.30896
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     0.0,
+     -1.0
+    ],
+    "limits": [
+     -1.50098,
+     0.1
+    ],
+    "limits_deg": [
+     -86.0,
+     5.7
+    ],
+    "continuous": false,
+    "usd_axis": "Y",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.6493,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0442,
+     -0.0102,
+     0.0
+    ],
+    "half_extents": [
+     0.0558,
+     0.0218,
+     0.0244
+    ],
+    "note": "L-shaped part: one AABB cuboid is loose (fill ~35-47 %); a convex hull of the render mesh (<= 24 verts) fits better"
+   },
+   "triangles": 1500,
+   "source_triangles": 10020,
+   "materials": [
+    "paint_yellow"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__paintedWorn_gray_a01"
+  },
+  {
+   "name": "stopperJoint_01",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    0.35989,
+    0.22688,
+    0.35621
+   ],
+   "translation_in_parent": [
+    0.35989,
+    0.22688,
+    0.35621
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -1.5708,
+     0.0
+    ],
+    "limits_deg": [
+     -90.0,
+     0.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": null,
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.2417,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0177,
+     0.0,
+     0.0
+    ],
+    "half_extents": [
+     0.0301,
+     0.0149,
+     0.0125
+    ]
+   },
+   "triangles": 600,
+   "source_triangles": 4130,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__equipment_trash_trolley_a01"
+  },
+  {
+   "name": "stopperJoint_02",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    0.35989,
+    0.22688,
+    -0.36143
+   ],
+   "translation_in_parent": [
+    0.35989,
+    0.22688,
+    -0.36143
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     0.0,
+     1.65806
+    ],
+    "limits_deg": [
+     0.0,
+     95.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": null,
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.2412,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0177,
+     0.0,
+     0.0
+    ],
+    "half_extents": [
+     0.0301,
+     0.0149,
+     0.0124
+    ]
+   },
+   "triangles": 600,
+   "source_triangles": 4130,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__equipment_trash_trolley_a01"
+  },
+  {
+   "name": "stopperJoint_03",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    -0.35785,
+    0.22688,
+    0.35618
+   ],
+   "translation_in_parent": [
+    -0.35785,
+    0.22688,
+    0.35618
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     0.0,
+     1.72788
+    ],
+    "limits_deg": [
+     0.0,
+     99.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": null,
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.2398,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0177,
+     0.0,
+     0.0
+    ],
+    "half_extents": [
+     0.03,
+     0.0148,
+     0.0124
+    ]
+   },
+   "triangles": 600,
+   "source_triangles": 4130,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__equipment_trash_trolley_a01"
+  },
+  {
+   "name": "stopperJoint_04",
+   "parent": "trolley_01",
+   "role": "passive",
+   "pivot": [
+    -0.35785,
+    0.22688,
+    -0.36148
+   ],
+   "translation_in_parent": [
+    -0.35785,
+    0.22688,
+    -0.36148
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -1.65806,
+     0.0
+    ],
+    "limits_deg": [
+     -95.0,
+     0.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": null,
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.2404,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0177,
+     0.0,
+     0.0
+    ],
+    "half_extents": [
+     0.0301,
+     0.0149,
+     0.0124
+    ]
+   },
+   "triangles": 600,
+   "source_triangles": 4130,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__equipment_trash_trolley_a01"
+  },
+  {
+   "name": "stopper_01",
+   "parent": "stopperJoint_01",
+   "role": "passive",
+   "pivot": [
+    0.39979,
+    0.22688,
+    0.35429
+   ],
+   "translation_in_parent": [
+    0.0399,
+    0.0,
+    -0.00191
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -0.7854,
+     2.47837
+    ],
+    "limits_deg": [
+     -45.0,
+     142.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.2573,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0033,
+     0.0,
+     0.0426
+    ],
+    "half_extents": [
+     0.0404,
+     0.0275,
+     0.0517
+    ],
+    "note": "L-shaped part: one AABB cuboid is loose (fill ~35-47 %); a convex hull of the render mesh (<= 24 verts) fits better"
+   },
+   "triangles": 2500,
+   "source_triangles": 13048,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__equipment_trash_trolley_a01",
+   "note": "child of its stopperJoint bracket, matching the USD joint chain (body0 = stopperJoint). Limits were swept with the bracket at rest; with the bracket swung the arm's free range changes."
+  },
+  {
+   "name": "stopper_02",
+   "parent": "stopperJoint_02",
+   "role": "passive",
+   "pivot": [
+    0.39975,
+    0.22688,
+    -0.3596
+   ],
+   "translation_in_parent": [
+    0.03986,
+    0.0,
+    0.00182
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -1.93732,
+     0.85521
+    ],
+    "limits_deg": [
+     -111.0,
+     49.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.2595,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     -0.0033,
+     0.0,
+     -0.0428
+    ],
+    "half_extents": [
+     0.0406,
+     0.0276,
+     0.0519
+    ],
+    "note": "L-shaped part: one AABB cuboid is loose (fill ~35-47 %); a convex hull of the render mesh (<= 24 verts) fits better"
+   },
+   "triangles": 2500,
+   "source_triangles": 13048,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__equipment_trash_trolley_a01",
+   "note": "child of its stopperJoint bracket, matching the USD joint chain (body0 = stopperJoint). Limits were swept with the bracket at rest; with the bracket swung the arm's free range changes."
+  },
+  {
+   "name": "stopper_03",
+   "parent": "stopperJoint_03",
+   "role": "passive",
+   "pivot": [
+    -0.39757,
+    0.22688,
+    0.3543
+   ],
+   "translation_in_parent": [
+    -0.03973,
+    0.0,
+    -0.00188
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -1.93732,
+     0.76794
+    ],
+    "limits_deg": [
+     -111.0,
+     44.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.2545,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0033,
+     0.0,
+     0.0424
+    ],
+    "half_extents": [
+     0.0402,
+     0.0273,
+     0.0514
+    ],
+    "note": "L-shaped part: one AABB cuboid is loose (fill ~35-47 %); a convex hull of the render mesh (<= 24 verts) fits better"
+   },
+   "triangles": 2500,
+   "source_triangles": 13048,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__equipment_trash_trolley_a01",
+   "note": "child of its stopperJoint bracket, matching the USD joint chain (body0 = stopperJoint). Limits were swept with the bracket at rest; with the bracket swung the arm's free range changes."
+  },
+  {
+   "name": "stopper_04",
+   "parent": "stopperJoint_04",
+   "role": "passive",
+   "pivot": [
+    -0.39762,
+    0.22688,
+    -0.35961
+   ],
+   "translation_in_parent": [
+    -0.03977,
+    0.0,
+    0.00187
+   ],
+   "joint": {
+    "type": "revolute",
+    "axis": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "limits": [
+     -0.85521,
+     1.91986
+    ],
+    "limits_deg": [
+     -49.0,
+     110.0
+    ],
+    "continuous": false,
+    "usd_axis": "Z",
+    "usd_authored_drive": {
+     "damping": 1.0
+    },
+    "limits_source": "sweep4.txt free range (contact-limited ends = last clear 1-degree step)"
+   },
+   "mass_kg": 0.2551,
+   "collider": {
+    "shape": "cuboid",
+    "label": "local AABB",
+    "center": [
+     0.0033,
+     0.0,
+     -0.0424
+    ],
+    "half_extents": [
+     0.0403,
+     0.0274,
+     0.0514
+    ],
+    "note": "L-shaped part: one AABB cuboid is loose (fill ~35-47 %); a convex hull of the render mesh (<= 24 verts) fits better"
+   },
+   "triangles": 2500,
+   "source_triangles": 13048,
+   "materials": [
+    "trolley_body"
+   ],
+   "usd_physics_material": "physics_mat_m_opaque__metal__equipment_trash_trolley_a01",
+   "note": "child of its stopperJoint bracket, matching the USD joint chain (body0 = stopperJoint). Limits were swept with the bracket at rest; with the bracket swung the arm's free range changes."
+  }
+ ],
+ "notes": [
+  "Node tree: trolley_01 (chassis) root -> wheelEngine_0N -> wheel_0N; clamps, locks and stopperJoint brackets under trolley_01; stopper_0N arms under their stopperJoint_0N bracket (USD joint chain). trashbox_01 (crate) is a separate top-level node (loose body in USD, rests on the deck held by the clamps).",
+  "28 revolute joints + 1 fixed (lens, merged into trolley_01).",
+  "Steering: each wheelEngine turns about a vertical axis 68 mm inboard of its wheel's centre, so steering also swings the wheel around the kingpin (that is how the USD is rigged); 90 deg is clear of the body (sweep4).",
+  "Limits were measured one joint at a time (sweep4). Combining extreme poses (e.g. a stopper arm at +142 deg with its wheel steered 90 deg) can interpenetrate.",
+  "No TANGENT attributes on purpose: three.js builds the tangent frame per pixel from UV derivatives, which is the frame the diamond-plate normal map was baked against. The Khronos validator reports 28 MESH_PRIMITIVE_GENERATED_TANGENT_SPACE warnings for this; 0 errors.",
+  "Masses are the per-part USD (base.usda) masses; the crate's 39.8 kg includes its liner."
+ ]
+}

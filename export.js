@@ -52,8 +52,27 @@ function tagPng(b) {
 }
 
 // ---------------------------------------------------------------- JPEG
+// v4 (Make HDR): an HDR picture (a JPEG with a gain map, engine/hdr/gainmap.js) is written with the label (its COM + its XMP's
+// dc:description) and only its HDR metadata (MPF, Ultra HDR XMP, ISO 21496-1, ICC); it goes out as it is (re-writing its header would
+// break the MPF offsets and drop the gain map's XMP). Anything else in its header and it is labelled like any JPEG.
+function labelledGainMap(b) {
+  const txt = (s, e) => String.fromCharCode(...b.subarray(s, e));
+  let i = 2, mpf = false, label = false;
+  while (i + 4 <= b.length) {
+    if (b[i] !== 0xFF) return false;
+    const m = b[i + 1]; if (m === 0xDA) break;
+    const len = (b[i + 2] << 8) | b[i + 3], p = i + 4, e = i + 2 + len; if (len < 2 || e > b.length) return false;
+    if (m === 0xE1) { if (txt(p, p + 29) !== 'http://ns.adobe.com/xap/1.0/\0' || !new TextDecoder().decode(b.subarray(p, e)).includes(AI_TAG)) return false; label = true; }
+    else if (m === 0xE2) { const h = txt(p, Math.min(e, p + 27)); if (h.startsWith('MPF\0')) mpf = true; else if (h !== 'urn:iso:std:iso:ts:21496:-1' && !h.startsWith('ICC_PROFILE')) return false; }
+    else if (m === 0xFE) { if (txt(p, e) !== AI_TAG) return false; }
+    else if (m >= 0xE3 && m <= 0xEF) return false;
+    i = e;
+  }
+  return mpf && label;
+}
 function tagJpeg(b) {
   if (b.length < 4 || b[0] !== 0xFF || b[1] !== 0xD8) return null;
+  if (labelledGainMap(b)) return b;   // v4 (Make HDR)
   const keep = [], tag = [];
   const com = enc.encode(AI_TAG), xmp = cat([str('http://ns.adobe.com/xap/1.0/'), new Uint8Array([0]), enc.encode(XMP)]);
   tag.push(cat([new Uint8Array([0xFF, 0xFE]), u16(com.length + 2), com]), cat([new Uint8Array([0xFF, 0xE1]), u16(xmp.length + 2), xmp]));

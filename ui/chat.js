@@ -468,9 +468,12 @@ export function createChat(api) {
 
   // ---------------------------------------------------------------------------------------------- bubbles
   function textBlock(text, cls = 'msg-text') {
-    const body = String(text || ''), i = body.search(/\n\nSources: \[1\]/);
+    let body = String(text || ''); const wx = /\n\nForecast: (US National Weather Service) \(weather\.gov\)\s*$/.exec(body);   // v4: a forecast's credit (agent.js finish)
+    if (wx) body = body.slice(0, wx.index);
+    const i = body.search(/\n\nSources: \[1\]/);
     const wrap = mk('div'), p = mk('p', cls, i >= 0 ? body.slice(0, i) : body); wrap.append(p);
     if (i >= 0) wrap.append(sources(body.slice(i + 2)));
+    if (wx) { const c = mk('p', 'footnote dim wx-credit', 'Forecast: '), a = mk('a', null, wx[1]); a.href = 'https://www.weather.gov/'; a.target = '_blank'; a.rel = 'noopener'; c.append(a); wrap.append(c); }
     return wrap;
   }
   /** "Sources: [1] "Title", Wikipedia, <permalink> (authors: <history>), CC BY-SA 4.0 <licence url> · [2] ..." -> real links (CC BY-SA attribution) */
@@ -514,8 +517,8 @@ export function createChat(api) {
     }
     const kind = m.kind || 'text', b = mk('div', `msg bot k-${kind}`); b.dataset.mid = m.id;
     if (kind === 'status') {
-      b.append(mk('p', 'msg-text footnote', m.text));
-      if (m.jobId) { const c = card(m.jobId); if (c) b.append(c); }
+      const t = mk('p', 'msg-text footnote', m.text); t.dataset.said = m.text || ''; b.append(t);   // v4: its own words (a stopped job's line replaces them)
+      if (m.jobId) { const c = card(m.jobId); if (c) { b.append(c); paintCard(c, Q().get(m.jobId)); } }   // v4: painted again inside its message (its words)
       return b;
     }
     if (kind === 'notice') {   // 3.8: a notice an app posted (Weather Alerts, Wildfire Watch...): plain text, labelled with the app; never sent to Juli's model
@@ -540,6 +543,8 @@ export function createChat(api) {
       if (k && offerable(k)) { const row = mk('div', 'row-btns'); row.append(dlButton(k)); b.append(row); }   // music = ONE button for the model + the lyrics planner (v021)
     }
     if (kind === 'result' && m.media) b.append(result(m));
+    if (m.nowcast && api.nowcastCard) { const c = api.nowcastCard(m); if (c) b.append(c); }   // v4: the Nowcast's rain map under its answer (nowcast/)
+    if (m.forecast && api.forecastCard) { const c = api.forecastCard(m); if (c) b.append(c); }   // v4: this place's week and rain map, under a weather answer
     if (Array.isArray(m.research) && m.research.length) { const rl = researchList(m.research); if (rl) b.append(rl); }   // v026.2: what was looked up, collapsed
     tidyFoot(b);   // 3.9 polish: Sources + what was looked up, one quiet row of chips
     return b;
@@ -719,7 +724,9 @@ export function createChat(api) {
     const bar = mk('div', 'bar jc-bar'); bar.append(mk('i'));
     const row = mk('div', 'jc-row'); row.append(mk('span', 'jc-time footnote dim num'));
     if (j.kind === 'mvflf' && api.openBoard) { const sbb = mk('button', 'mini jc-board', 'Storyboard'); sbb.type = 'button'; sbb.onclick = () => api.openBoard(jobId); row.append(sbb); }   // v023
-    const x = mk('button', 'mini jc-cancel', 'Cancel'); x.type = 'button'; x.onclick = () => cancelTap(jobId, x); row.append(x);
+    // v4 (security review): Stop, one tap, for the job this message announced (Juli queues a render from a chat turn, or Make again):
+    // waiting, it leaves the queue; running, it stops (the queue's own cancel). Then the message says it stopped and Stop goes
+    const x = mk('button', 'mini jc-cancel jc-stop', 'Stop'); x.type = 'button'; x.setAttribute('aria-label', `Stop the ${api.NOUN[j.kind] || 'job'}`); x.onclick = () => stopTap(jobId, x); row.append(x);
     c.append(top, art, mk('p', 'jc-phase footnote'), bar, row);
     C.cards.set(jobId, c); paintCard(c, j);
     return c;
@@ -735,8 +742,17 @@ export function createChat(api) {
     const p = f.progress || {}, left = running && p.etaSeconds != null && ((p.phase === 'denoise' && p.step >= 2) || p.phase === 'decode' || p.phase === 'encode') ? p.etaSeconds - (Date.now() - (p.at || Date.now())) / 1000 : null;
     c.querySelector('.jc-time').textContent = ms ? (live ? `${Math.round(frac * 100)}%` : '') : running ? (left != null ? (left < 10 ? 'Almost done' : `${about(left)} left`) : `${Math.round(frac * 100)}%`) : '';
     const x = c.querySelector('.jc-cancel'); x.hidden = !live || api.readOnly();
-    if (!C.armed.has(j.id)) x.textContent = j.cancelRequested ? 'Stopping…' : 'Cancel';
+    x.textContent = j.cancelRequested ? 'Stopping…' : 'Stop'; x.disabled = !!j.cancelRequested;   // v4
     c.querySelector('.jc-art').hidden = !(running && C.popJob === f.id);
+    // v4: the message that announced it says it stopped (its own words come back if the job runs again)
+    const said = c.parentElement && c.parentElement.querySelector(':scope > .msg-text');
+    if (said && said.dataset.said != null) said.textContent = j.status === 'cancelled' ? `Stopped: your ${api.NOUN[j.kind] || 'job'} won’t be made.` : said.dataset.said;
+  }
+  /** v4: the card's Stop: that exact job, through the queue's own cancel (a waiting job leaves the queue; a running one is stopped) */
+  function stopTap(jobId, x) {
+    const q = Q(), j = q && q.get(jobId); if (!j || TERMINAL.has(j.status) || api.readOnly()) return;
+    x.disabled = true; x.textContent = 'Stopping…';
+    Promise.resolve(q.cancel(jobId)).catch(() => {}).then(() => { const c = C.cards.get(jobId), y = q.get(jobId); if (c && y) paintCard(c, y); });
   }
   function cancelTap(jobId, x) {
     const q = Q(); if (!q) return;
@@ -814,15 +830,19 @@ export function createChat(api) {
     if (local) return localTurn(text, local, textArg == null);
     if (!api.consented()) return api.openLesson();   // anything that can make something waits for the agreement
     if (api.readOnly()) return api.toast('p0pc0rn is open in another tab.');
+    if (!C.photo && api.appCommand) {   // v4 (Token Watch): "watch closely" goes to the app, answered here in code (no model; its next check acts on it)
+      let ac = null; try { ac = await api.appCommand(text); } catch (e) { ac = null; }
+      if (ac && ac.text) return localTurn(text, { text: String(ac.text).slice(0, 600) }, textArg == null);
+    }
     if (C.photo && !C.photo.attest) { api.toast('Tick the box about your photo first.'); const b = $('as-attest-box'); b.classList.add('need'); setTimeout(() => b.classList.remove('need'), 2400); return; }
-    const photo = C.photo;
+    const photo = C.photo, voice = !!(api.takeVoice && api.takeVoice());   // v4: a message from the mic: she answers out loud (ui/voicein.js)
     if (textArg == null) { inp.value = ''; grow(); }
     if (photo) clearPhoto(true);
     renderComposer();
     try {
       await ensureSession();
       const shape = photo ? (photo.w > photo.h * 1.1 ? 'wide' : photo.h > photo.w * 1.1 ? 'tall' : 'square') : null;
-      await AG().ask(C.sid, text, photo ? { photoBlob: photo.blob, attested: !!photo.attest, shape } : {});
+      await AG().ask(C.sid, text, Object.assign(photo ? { photoBlob: photo.blob, attested: !!photo.attest, shape } : {}, voice ? { voice: true } : {}));
     } catch (e) { if (!isAbort(e)) api.toast("Couldn't send that. Try again."); if (textArg == null) { inp.value = text; grow(); } }
     finally { if (photo) URL.revokeObjectURL(photo.url); }
   }

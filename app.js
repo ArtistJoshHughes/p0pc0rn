@@ -36,6 +36,11 @@ import { createResearch } from './assistant/research.js';
 import { createStarterEngine } from './assistant/starter.js';   // v022: the starter knowledge pack (Settings › Models), research's second local source
 import { setSafetyTerms, MAIN_TOOLS, FRAMES as TFRAMES, CLIP_SIZE, properNames } from './assistant/tools.js';
 import { createChat } from './ui/chat.js';
+import { initVoiceIn, voiceSettings } from './ui/voicein.js';
+import { splitMood, wordsSoFar, fixCaps, sayZip, createVoicePackEngine } from './ui/voiceout.js';
+import { dropNoLive } from './assistant/weather.js';
+import { loadGeo } from './assistant/places.js';   // v4: the Nowcast's places (the same on-phone Census tables as Juli's weather)
+import { BENCH_KEY, pickLayout } from './ui/voicebench_plan.js';   // v4: the Voice in bench picks voice mode's layout on this phone   // v4: never "I don't have live weather" over the live forecast   // v4: voice mode's mood tag (never shown or spoken)   // v4: voice input in Juli's chat
 import { createKB } from './assistant/kb.js';   // v023: the likeness gate reads what the phone has looked up (read only)
 import { startMusicVideo, requestGo, requestFrameReroll, requestShotReroll, boardOf, progressOf, estimate as mvEstimate, mvRoot } from './assistant/mvflf.js';   // v023
 // p0pc0rn Cast (Josh, Oct 14: "Voice clone successful. Wire it in to cast under settings"): people the phone may use by name, their voice
@@ -46,23 +51,34 @@ import { initCast } from './cast/cast_ui.js';
 import { lipsyncRunner, talkRunner } from './cast/talk.js';
 import { initTalk } from './cast/talk_ui.js';
 import { initSettings, revealSetting } from './ui/settings.js';   // 3.9 polish: Settings in groups that open; Cast on its own screen
+import { initTune, scheduleAsk, tuning } from './ui/tune.js';   // v4: the kernel tune (its pop-up, Settings › Benchmark › Speed)
 import { NUDGE_MAX, shotsOfFrame } from './assistant/storyboard.js';   // v023
-import { createApps } from './makeapp/host.js';   // 3.8: the Apps tab (apps made from skeletons, agentic and non-agentic)
+import { createApps, phoneBusy } from './makeapp/host.js';   // 3.8: the Apps tab (apps made from skeletons, agentic and non-agentic); v4: + phoneBusy (a game on its own page waits for it)
 import { openAppOf, reopenApp, freshMoves } from './makeapp/freshapp.js';   // 3.9: the open app (a game) across a planned fresh page
 import { createBench, benchRunner } from './ui/bench.js';   // 3.8: Settings › Benchmark
 import { createAppIcon, iconPlanRunner, iconRenderRunner } from './ui/appicon.js';   // 3.9: "Make an icon" for a made app on the home screen (ui/appicon.js)
 let ICON = null;   // 3.9: the app icon maker, made in init() (also globalThis.P0APPICON for the shell and the Apps tab)
 import { createMusic } from './ui/music.js';   // 3.9: Music (songs, playlists, the lock screen)
 import { createClipThumbs, clipPoster, clipLibrary } from './ui/clipthumbs.js';   // 3.9: the Library's clip posters + play buttons (Josh, 10-26)
+import { LOOKS, lookOf, lookThumb, styleSize, fitText, maxLen, framesOf, lenFor, styleSeconds, styleMissing, editParams, clipParams, STYLE_CAP_S, PREP_SECONDS_PER_FRAME, STYLE_FPS,
+  partsOf, joinedFrames, wholeSeconds, wholeText, wholeNotice, longParams, JOIN_SECONDS, STYLE_FOLLOW, followOf, followFor, LOOK_FOLLOW } from './ui/style_v2v.js';   // v4 Phase 4: Create › Video › Restyle a clip (+ the whole video in parts)
+import { restyleRunner, restyleLongRunner } from './ui/style_run.js';   // v4 Phase 4: the queue's 'restyle' job; v4: 'restylelong', the whole video in parts
+import { createHdr, hdrMark, infoOf as hdrInfo, eligible as hdrOk } from './ui/hdr.js';   // v4: Make HDR (a picture's or clip's HDR copy, ui/hdr.js + engine/hdr/)
 let CLIPT = null;   // 3.9: the Library's clip posters (ui/clipthumbs.js), made in init() (also globalThis.P0CLIPT)
 let MUSIC = null;   // 3.9: the Music screen (ui/music.js), made in init()
 import { SHELL } from './ui/shell.js';   // 3.9: the phone-OS shell (home screen, dock, badges, wallpaper)
 
-const APP_VERSION = '3.9 · v043';
+const APP_VERSION = '4.0 · v054';
 const MODELS = {
   image: { id: 'flux2-klein-4b', name: 'FLUX.2 Klein 4B', what: 'Pictures', noun: 'picture', total: 4.62e9 },
   video: { id: 'sanavideo2-5b', name: 'SANA-Video 2.0 5B', what: 'Videos', noun: 'video', total: 5.72e9 },
   reader: { id: 'ltx23-still-enc', name: 'Picture reader', what: 'Reads pictures for clips', noun: 'picture reader', total: 212701440 },
+  // v4: the video LoRA (Josh's, for SANA-Video 2.0): rides on the video engine; clips from pictures run with it when it is on (Settings)
+  lora: { id: 'sanavideo2-5b-lora', name: 'Video LoRA', what: 'LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0) · clips from pictures', noun: 'video LoRA', total: 64061440 },
+  // v4 Phase 3: style video to video: the looks LoRA (c20, style jobs only: one LoRA a job, never stacked) and the clip reader (LTX-2.3's
+  // video encoder: a clip becomes latent frames), both riding on the video engine
+  lora2: { id: 'sanavideo2-5b-style-lora', name: 'Looks LoRA', what: 'LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0) · style video to video', noun: 'looks LoRA', total: 64061440 },
+  venc: { id: 'ltx23-video-enc', name: 'Clip reader', what: 'Reads clips for style video to video', noun: 'clip reader', total: 637964544 },
   // v019: the assistant, the music model and its optional lyrics planner (none of them needs a Hugging Face login)
   brain: { id: 'gemma4-e2b', name: 'Juli', what: 'Gemma 4 E2B, balanced 4/8-bit', noun: 'assistant', total: 3262871724 },
   // 3.8: the assistant's add-on: Google's Gemma 4 E2B MTP drafter. Answers come faster with the same words (it guesses ahead, the assistant checks)
@@ -81,28 +97,39 @@ const MODELS = {
   // p0pc0rn Cast: your Cast's voices (Qwen3-TTS 0.6B Base, the voice probe's pack) and the EXPERIMENTAL lip-sync (MuseTalk 1.5, the lip-sync probe's pack)
   voice: { id: 'qwen3-tts-0.6b', name: 'Voice', what: 'Qwen3-TTS 0.6B · your Cast speaks', noun: 'voice', total: 1388e6 },
   lipsync: { id: 'musetalk-1.5', name: 'Lip-sync (experimental)', what: 'MuseTalk 1.5 · experimental', noun: 'lip-sync', total: 1037e6 },
+  // v4: voice input (Josh, Nov 1: "Let's use Nvidia's best"): NVIDIA Nemotron 3.5 ASR Streaming 0.6B (OpenMDW-1.1), engine/stt/, ui/voicein.js;
+  // its row shows once config.js lists its pack, and only where it fits beside Juli (voiceHere)
+  stt: { id: 'nemotron35-asr-0.6b', name: 'Voice input', what: 'NVIDIA Nemotron 3.5 ASR · speak to Juli, 32 language choices', noun: 'voice input', total: 640473363 },
+  // v4: the Nowcast (Experimental): DeepMind DGMR (CC BY 4.0, modified), the next 90 minutes of rain on this phone (nowcast/); its row and
+  // screen show once config.js lists its pack. The float model (136 MB) by default; the 8-bit one (71 MB) where the float one cannot fit
+  // v4: Juli's own voice in voice mode (p0voice v3, ui/voiceout.js): its row shows once config.js lists its pack, where voice input shows;
+  // voice mode downloads it by itself the first time she speaks, and Delete frees it
+  jvoice: { id: 'p0voice-juli', name: 'Juli’s voice', what: 'p0voice v3 · p0pc0rn’s own voice · voice mode', noun: 'Juli’s voice', total: 24718711 },
+  nowcast: { id: 'dgmr-nowcast', name: 'Nowcast (experimental)', what: 'DeepMind DGMR · rain for the next 90 minutes · trained on UK radar', noun: 'nowcast', total: 135786355 },
 };
 const PACKS = (window.PF && PF.packs) || (window.P0_CONFIG && P0_CONFIG.packs) || {};   // v026.6: every pack address comes from config.js
 const CAST_PACKS = { voice: PACKS['qwen3-tts-0.6b'], lipsync: PACKS['musetalk-1.5'] };
 const CAST_KINDS = new Set(['say', 'talk', 'lipsync']);   // queue jobs of Cast (never on Create's stage)
 const KEYS = ['image', 'video'];             // the two engines made at boot (Create's pictures and clips)
-const DL = ['image', 'k9b', 'video', 'reader', 'brain', 'drafter', 'brain4', 'drafter4', 'music', 'planner', 'starter', 'voice', 'lipsync'];   // everything that downloads; the reader rides on the video engine, the planner on the music engine, the drafter (3.8) on the assistant's, the bigger brain's drafter (v040) on its
-const ADDON = { reader: 'video', planner: 'music', drafter: 'brain', drafter4: 'brain4' };   // add-ons that live inside another model's engine
-const KEY_OF = { 'flux2-klein-4b': 'image', 'flux2-klein-9b': 'k9b', 'sanavideo2-5b': 'video', 'gemma4-e2b': 'brain', 'bolt-e4b': 'brain4', 'acestep15-turbo': 'music', 'qwen3-tts-0.6b': 'voice', 'musetalk-1.5': 'lipsync' };
+const DL = ['image', 'k9b', 'video', 'reader', 'lora', 'lora2', 'venc', 'brain', 'drafter', 'brain4', 'drafter4', 'music', 'planner', 'starter', 'voice', 'lipsync', 'stt', 'jvoice', 'nowcast'];   // everything that downloads; the reader rides on the video engine, the planner on the music engine, the drafter (3.8) on the assistant's, the bigger brain's drafter (v040) on its
+const ADDON = { reader: 'video', lora: 'video', lora2: 'video', venc: 'video', planner: 'music', drafter: 'brain', drafter4: 'brain4' };   // add-ons that live inside another model's engine
+const KEY_OF = { 'flux2-klein-4b': 'image', 'flux2-klein-9b': 'k9b', 'sanavideo2-5b': 'video', 'gemma4-e2b': 'brain', 'bolt-e4b': 'brain4', 'acestep15-turbo': 'music', 'qwen3-tts-0.6b': 'voice', 'musetalk-1.5': 'lipsync', 'nemotron35-asr-0.6b': 'stt', 'p0voice-juli': 'jvoice', 'dgmr-nowcast': 'nowcast', 'dgmr-nowcast-int8': 'nowcast' };
 const K9B_PACK = PACKS['flux2-klein-9b'];   // v026.6 (the probe's pack and OPFS folder)
 // OPFS folders that belong to each model (the engine registry's `wipe` lists; refreshed from the engine at boot)
-const KEEP = { image: ['pocketflux/pack', 'pocketflux/cond', 'pocketflux/ckpt'], video: ['engine/sanavideo2-5b'], reader: ['engine/ltx23-still-enc'],
+const KEEP = { image: ['pocketflux/pack', 'pocketflux/cond', 'pocketflux/ckpt'], video: ['engine/sanavideo2-5b'], reader: ['engine/ltx23-still-enc'], lora: ['engine/sana-lora'], lora2: ['engine/sana-lora'], venc: ['engine/ltx23-video-enc'],
   brain: [(window.PF && PF.assistantPack && PF.assistantPack.dir) || 'pocketllm/pack'], drafter: [(window.PF && PF.drafterPack && PF.drafterPack.dir) || 'pocketllm/drafter'],
-  brain4: [(window.PF && PF.e4bPack && PF.e4bPack.dir) || 'pocketllm/e4b'], drafter4: [(window.PF && PF.e4bDrafterPack && PF.e4bDrafterPack.dir) || 'pocketllm/e4b_drafter'], music: ['engine/acestep15-turbo'], planner: ['engine/acestep15-turbo/lm'], voice: ['engine/qwen3-tts-0.6b'], lipsync: ['engine/musetalk-1.5'], k9b: ['pocketflux/k9b'] };
+  brain4: [(window.PF && PF.e4bPack && PF.e4bPack.dir) || 'pocketllm/e4b'], drafter4: [(window.PF && PF.e4bDrafterPack && PF.e4bDrafterPack.dir) || 'pocketllm/e4b_drafter'], music: ['engine/acestep15-turbo'], planner: ['engine/acestep15-turbo/lm'], voice: ['engine/qwen3-tts-0.6b'], lipsync: ['engine/musetalk-1.5'], k9b: ['pocketflux/k9b'], stt: ['engine/nemotron35-asr-0.6b'], jvoice: ['engine/p0voice-juli/pack'], nowcast: ['nowcast/dgmr_f16', 'nowcast/dgmr_int8'] };
 const VRUN = 'engine/sanavideo2-5b/run';   // the video engine's scratch folder: checkpoint latent + the frames file of a decode
 const IRUN = 'engine/sanavideo2-5b/i2v-run';   // the picture clips' own scratch folder: latent + pinned pictures + frames
 // where a clip starts: words (text-to-video), a picture (i2v: the picture is frame 0), two pictures (FLF: first and last frame)
-const SRC = { words: { kind: 't2v', n: 0, name: 'From words' }, pic: { kind: 'i2v', n: 1, name: 'From a picture' }, two: { kind: 'flf', n: 2, name: 'Between two pictures' } };
-const srcOf = (kind) => (kind === 'i2v' ? 'pic' : kind === 'flf' ? 'two' : 'words');
+// v4 Phase 4: + a clip restyled into a look (style video to video: the clip and its restyled first frame; no picture slots)
+const SRC = { words: { kind: 't2v', n: 0, name: 'From words' }, pic: { kind: 'i2v', n: 1, name: 'From a picture' }, two: { kind: 'flf', n: 2, name: 'Between two pictures' }, style: { kind: 'v2v', n: 0, name: 'Restyle a clip' } };
+const srcOf = (kind) => (kind === 'i2v' ? 'pic' : kind === 'flf' ? 'two' : kind === 'v2v' ? 'style' : 'words');
 const isPic = (kind) => kind === 'i2v' || kind === 'flf';
 const HINT = {
   pic: 'Describe what moves: the subject, the motion and the camera, e.g. “she turns to the window and smiles, hair moving in the breeze, slow push in.” Your picture is the first frame.',
   two: 'Describe the change from the first picture to the last, e.g. “the dog slowly turns its head to the left.” A movement travels smoothly; a change of look (expression, light, colour) can jump in the last half second.',
+  style: 'Say what is in the clip and what happens, e.g. “a fox gardener bends down to touch a leaf, then straightens up.” The look’s own words go in front by themselves. A clip from your Library brings its own words.',
 };
 const SIZES = [
   { id: 'wide', w: 1280, h: 720, name: 'Wide', g: 13 }, { id: 'tall', w: 720, h: 1280, name: 'Tall', g: 13 },
@@ -128,10 +155,11 @@ const CAPTION = { load: 'Getting ready', text: 'Reading your words', encode: 'St
 // a song's phases (engine/music): the planner, the style, the words and the band's set-up heat the kernels; the 8 steps and the mix pop them
 const SONG_CAPTION = { load: 'Getting ready', plan: 'Planning the song', text: 'Reading the style', lyrics: 'Reading the words', cond: 'Tuning the band', decode: 'Mixing', encode: 'Saving the song' };
 const SONG_HEAT = new Set(['load', 'plan', 'text', 'lyrics', 'cond']);
-const NOUN = { makeapp: 'app', appask: 'app question', bench: 'benchmark', picture: 'picture', edit: 'picture', clip: 'clip', animate: 'clip', between: 'clip', resume: 'clip', song: 'song', musicvideo: 'music video', assemble: 'music video', mvflf: 'music video', mvplan: 'storyboard', say: 'voice line', talk: 'lip-sync', lipsync: 'lip-sync' };
+const NOUN = { makeapp: 'app', appask: 'app question', bench: 'benchmark', picture: 'picture', edit: 'picture', clip: 'clip', animate: 'clip', between: 'clip', resume: 'clip', restyle: 'clip', restylelong: 'clip', song: 'song', musicvideo: 'music video', assemble: 'music video', mvflf: 'music video', mvplan: 'storyboard', say: 'voice line', talk: 'lip-sync', lipsync: 'lip-sync', hdr: 'HDR copy', nowcast: 'nowcast' };
 NOUN.appicon = 'app icon'; NOUN.appiconplan = 'icon idea';   // 3.9: "Make an icon" (ui/appicon.js)
 NOUN.appedit = 'app change';   // H39: an app changed by chat (makeapp/edit.js)
-NOUN.appchoose = 'game move';   // 3.9: Juli's move in a game app (makeapp/choose.js)
+NOUN.appchoose = 'game move';
+NOUN.appref = 'name reference';   // v4: Token Watch (the Bigger brain)   // 3.9: Juli's move in a game app (makeapp/choose.js)
 const DECODE = [450, 560, 700];
 // v030: clips decode with 700 MB by default (720p -36% against v027.3 on an iPhone 16 Pro Max: one tile, peak ~580 MB). Android
 // (experimental, not yet run on a device) keeps 450. A clip that runs out of memory still offers "Use 450 MB and retry".
@@ -158,13 +186,15 @@ const consented = () => !!rights.consent();
 const S = {
   phase: 'boot',        // boot | stop | setup (iPhone: "Add to Home Screen first") | ready | working | result | error
   tab: 'home', mode: ls.get('pf.app.mode') === 'video' ? 'video' : 'image',   // 3.9: the home screen (ui/shell.js) is where the app starts
-  caps: null, persisted: false, st: { image: null, video: null, reader: null, brain: null, drafter: null, brain4: null, drafter4: null, music: null, planner: null, voice: null, lipsync: null, k9b: null },
+  caps: null, persisted: false, st: { image: null, video: null, reader: null, lora: null, lora2: null, venc: null, brain: null, drafter: null, brain4: null, drafter4: null, music: null, planner: null, voice: null, lipsync: null, k9b: null, stt: null, jvoice: null, nowcast: null },
   dl: Object.fromEntries(DL.map((k) => [k, dlState(MODELS[k].total)])),
   stop: null,           // {title, text, detail, retry: 'reload' | 'boot'}
   free: null,           // bytes free for p0pc0rn on this phone (the chat's first message says it)
   form: Object.assign({ prompt: '', size: 'wide', steps: 4, seedMode: 'random', seed: '', ref: 'half', model: '4b' }, ls.get('pf.app.draft', {})),   // v026.6: + model ('4b' | '9b', remembered)
-  vform: Object.assign({ prompt: '', size: 'wide', len: 5, seedMode: 'random', seed: '', src: 'words', q: 'standard', end: '' }, ls.get('pf.app.vdraft', {})),   // v026.6: + q (standard | high | highest), end
+  vform: Object.assign({ prompt: '', size: 'wide', len: 5, seedMode: 'random', seed: '', src: 'words', q: 'standard', end: '', look: null, followPick: null }, ls.get('pf.app.vdraft', {})),   // v4: + look and followPick (Restyle a clip: "Follow the motion", the person's own pick; none = the look's)   // v026.6: + q (standard | high | highest), end
   hq: ls.get('pf.app.hq', null),   // v026.6: a High / Highest video's 9B frames being made or reviewed (survives the planned fresh pages)
+  sty: ls.get('pf.app.sty', null),   // v4: Restyle a clip: {stage: null | 'first' | 'review' | 'clip', clip, attest, seed, look}; its blobs: S.styB (store 'inputs' 'style')
+  styB: null, styPrep: null,         // v4: {pack, first, thumb, styled, urls}; the clip being read: {i, n}
   vslots: [null, null], // the clip's pictures: {blob, url, w, h, from: 'library' | 'phone', libId, thumb, attest}; [0] = the picture / first, [1] = last
   pending: false,       // a picture clip waits for the picture reader's download, then starts by itself
   sel: null,            // Library selection (ids in tap order) while picking two pictures, else null
@@ -182,15 +212,23 @@ if (S.form.steps !== 3) S.form.steps = 4;
 if (!VSIZES.some((z) => z.id === S.vform.size)) S.vform.size = 'wide';
 if (!FRAMES[S.vform.len]) S.vform.len = 5;
 if (!SRC[S.vform.src]) S.vform.src = 'words';
-const E = { image: null, video: null, reader: null, brain: null, drafter: null, brain4: null, drafter4: null, music: null, planner: null, starter: null, voice: null, lipsync: null };
+const E = { image: null, video: null, reader: null, lora: null, lora2: null, venc: null, brain: null, drafter: null, brain4: null, drafter4: null, music: null, planner: null, starter: null, voice: null, lipsync: null, stt: null, jvoice: null, nowcast: null };
 const CAST = createCast();   // p0pc0rn Cast (IndexedDB 'p0pc0rn-cast')
 let CASTUI = null, TALKUI = null;
 let armT = 0, tickT = 0, draftT = 0, storTok = 0, poppedT = 0;
 let pop = null;   // the popcorn progress canvas (popcorn.js), made in init()
 const POPPED_MS = 3000;
 // ---- v019: the queue, the assistant and its settings
-let Q = null, AG = null, RS = null, RUN = null, CH = null, APPS = null, BENCH = null;
+let Q = null, AG = null, RS = null, RUN = null, CH = null, APPS = null, BENCH = null, VOICEIN = null;
+// Connection: off in public builds (its tile says "Coming soon"); CONNECT_ON is false unless a test config sets P0_CONFIG.connect
+const CONNECT_ON = !!(window.P0_CONFIG && window.P0_CONFIG.connect === true);   // Connection (off in public builds)
+let CONNECT_P = null;
+const connectP = () => (CONNECT_ON ? (CONNECT_P || (CONNECT_P = import('./connect/app.js').then((m) => m.initConnect(connectApi())))) : Promise.reject(Object.assign(new Error('Connection is not in this version.'), { code: 'REMOTE_OFF' })));
+let VOICE_TURN = null;   // v4: the voice turn being answered ({ sid, job, spoke })
+let VOICE_PAUSED = null;   // v4: voice mode paused for this page ({ why }): Juli's second process ended twice, or she runs in one process here
+let VOICE_FAILS = 0;   // v4: second-process failures in voice mode this page
 const CJ = new Map();   // queue job id -> {params, input, srcs} of a Create job (what Again / Edit / the Library need; rebuilt after a reload)
+let HDR = null;   // v4: Make HDR (ui/hdr.js)
 const AS = { research: ls.get('pf.app.research', true) !== false, review: ls.get('pf.app.review', true) !== false, brainMode: ls.get('pf.app.brainMode', 'resident') === 'lean' ? 'lean' : 'resident' };
 /** Heating = before the first real work: loading the model, reading the words, reading a photo (a clip's 'encode' is the save at the end).
  *  A song heats while it plans, reads its style and words and sets up the band; a job still waiting its turn heats too. */
@@ -206,10 +244,12 @@ const toStage = () => { if (S.tab === 'create') $('main').scrollTo({ top: 0, beh
 /** the screen stays on while anything works: a picture, a clip or a download */
 const syncWake = () => (S.phase === 'working' || DL.some((k) => S.dl[k].sub === 'downloading') || (Q && (Q.active || Q.next())) ? wake.on() : wake.off());
 /** a clip job is in the queue (it resumes the engine's checkpoint itself): the "Unfinished clip" card stays hidden meanwhile */
-const queueHasClip = () => !!Q && Q.list({ includeTerminal: false }).some((j) => ['clip', 'animate', 'between', 'resume'].includes(j.kind));
+const queueHasClip = () => !!Q && (Q.list({ includeTerminal: false }).some((j) => ['clip', 'animate', 'between', 'resume', 'restyle', 'restylelong'].includes(j.kind)) || !!longKept());   // v4: + the whole video in parts (and one that stopped, kept for Carry on)
 /** the picture modes exist when the video engine carries the picture reader (engine i2v 0.2.0) */
 const picOK = () => !!E.reader;
-const vsrc = () => (picOK() ? S.vform.src : 'words');
+/** v4 Phase 4: Restyle a clip exists when this build carries the clip reader and the looks LoRA (config.js), with the picture modes */
+const styleOK = () => picOK() && !!E.venc && !!E.lora2;
+const vsrc = () => (picOK() && (S.vform.src !== 'style' || styleOK()) ? S.vform.src : 'words');
 const slotsNeeded = () => SRC[vsrc()].n;
 const activeSlots = () => S.vslots.slice(0, slotsNeeded());
 const slotsReady = () => activeSlots().every(Boolean);
@@ -220,6 +260,23 @@ function readerEngine(v) {
   if (!v || typeof v.encoderStatus !== 'function') return null;
   return { status: () => v.encoderStatus(), download: (o) => v.downloadEncoder(o), deleteModel: () => v.deleteEncoder(), requestPersistentStorage: () => v.requestPersistentStorage(), cancel() {} };
 }
+/** v4: a video LoRA as a model of its own (status / download / delete), carried by the video engine; null when this build has no pack for it */
+function loraEngine(v, k = 'lora') {
+  if (!v || typeof v.loras !== 'function' || !v.loras().includes(MODELS[k].id)) return null;
+  const id = MODELS[k].id;
+  return { status: () => v.loraStatus(id), download: (o) => v.downloadLora(id, o), deleteModel: () => v.deleteLora(id), requestPersistentStorage: () => v.requestPersistentStorage(), cancel() {} };
+}
+/** v4 Phase 3: the clip reader (LTX-2.3 video encoder) as a model of its own, carried by the video engine; null without its pack */
+function vencEngine(v) {
+  if (!v || typeof v.hasVideoEncoder !== 'function' || !v.hasVideoEncoder()) return null;
+  return { status: () => v.videoEncoderStatus(), download: (o) => v.downloadVideoEncoder(o), deleteModel: () => v.deleteVideoEncoder(), requestPersistentStorage: () => v.requestPersistentStorage(), cancel() {} };
+}
+/** v4: each video LoRA is used when it is on this phone and its switch is on (Settings › Models; on by default). One LoRA a job: picture
+ *  clips the video LoRA (f3), style video to video the looks LoRA (c20) */
+const loraOn = () => ls.get('pf.app.loraOn', true) !== false;
+const loraUse = () => (E.lora && done('lora') && loraOn() ? { id: MODELS.lora.id, scale: 1 } : null);
+const lora2On = () => ls.get('pf.app.lora2On', true) !== false;
+const styleLoraUse = () => (E.lora2 && done('lora2') && lora2On() ? { id: MODELS.lora2.id, scale: 1 } : null);
 /** v019: the lyrics planner as a model of its own (status / download / delete), carried by the music engine (its lm/ pack) */
 function plannerEngine(m) {
   if (!m || typeof m.lmStatus !== 'function') return null;
@@ -243,6 +300,7 @@ async function refreshStatus(k) {
   if (!E[k]) return;
   const r = await E[k].status().then((x) => x, (e) => ({ error: msg(e) }));
   S.st[k] = r; if (!r.error) Object.assign(S.dl[k], { have: r.haveBytes, total: r.totalBytes || S.dl[k].total });
+  if (k === 'stt') setVoiceLayout();   // v4: Juli's layout follows voice input (on this phone and switched on)
 }
 
 // ------------------------------------------------------------------------------------------------ boot
@@ -255,12 +313,16 @@ async function boot() {
       wire(e, k); E[k] = e;   // same tick, before any other await: KILLED_LAST_RUN comes from a setTimeout(0) inside createEngine
     }
     E.reader = readerEngine(E.video);
+    E.lora = loraEngine(E.video);   // v4
+    E.lora2 = loraEngine(E.video, 'lora2'); E.venc = vencEngine(E.video);   // v4 Phase 3
     S.caps = E.image.capabilities(); S.persisted = !!S.caps.persisted;
   } catch (e) {
     return set({ phase: 'stop', stop: { title: "p0pc0rn couldn't start", text: 'Check your connection, then try again.', detail: msg(e), retry: 'reload' } });
   }
   try { const reg = PF.registry && await PF.registry(); for (const k of KEYS) { const r = reg && reg[MODELS[k].id]; if (r && r.wipe && r.wipe.length) KEEP[k] = r.wipe.slice(); } } catch (e) { /* keep the built-in list */ }
   try { const enc = PF.encoder && await PF.encoder(); if (enc && enc.wipe && enc.wipe.length) KEEP.reader = enc.wipe.slice(); } catch (e) { /* keep the built-in list */ }
+  try { const lr = PF.lora && await PF.lora(); if (lr && lr.root) KEEP.lora = KEEP.lora2 = [lr.root]; } catch (e) { /* keep the built-in list */ }   // v4
+  try { const ve = PF.videoEncoder && await PF.videoEncoder(); if (ve && ve.wipe && ve.wipe.length) KEEP.venc = ve.wipe.slice(); } catch (e) { /* keep the built-in list */ }   // v4 Phase 3
   if (!S.caps.supported) return set({ phase: 'stop', stop: { title: "Can't run on this phone", text: unsupportedText(S.caps.reason), detail: S.caps.reason, retry: 'reload' } });
   const st = await Promise.all(KEYS.map((k) => E[k].status().then((s) => s, (e) => ({ error: msg(e) }))));
   KEYS.forEach((k, i) => { S.st[k] = st[i]; if (!st[i].error) Object.assign(S.dl[k], { have: st[i].haveBytes, total: st[i].totalBytes || S.dl[k].total }); });
@@ -268,6 +330,8 @@ async function boot() {
     const r = await E.reader.status().then((x) => x, (e) => ({ error: msg(e) }));
     S.st.reader = r; if (!r.error) Object.assign(S.dl.reader, { have: r.haveBytes, total: r.totalBytes || S.dl.reader.total });
   }
+  if (E.lora) await refreshStatus('lora');   // v4: never blocks the start either
+  if (E.lora2) await refreshStatus('lora2'); if (E.venc) await refreshStatus('venc');   // v4 Phase 3
   if (st.every((s) => s.error)) {
     return set({ phase: 'stop', stop: { title: 'Connect to Wi-Fi to set up p0pc0rn', text: "If you're on Wi-Fi, sign in to the server that hosts p0pc0rn first, then try again.", detail: st[0].error, retry: 'boot' } });
   }
@@ -291,7 +355,10 @@ async function boot() {
   if (!E.lipsync) E.lipsync = lazyEngine('lipsync', async () => (await import('./engine/lipsync/engine_lipsync.js')).createEngine({ model: MODELS.lipsync.id, packUrl: CAST_PACKS.lipsync }));
   if (!E.starter) E.starter = createStarterEngine({ base: PACKS['starter-kb'] });
   if (!E.k9b) E.k9b = lazyEngine('k9b', async () => (await import('./engine/k9b/k9b_engine.js')).createK9bEngine({ packUrl: K9B_PACK }));   // v026.6
-  await Promise.all(['brain', 'drafter', 'brain4', 'drafter4', 'music', 'planner', 'starter', 'voice', 'lipsync', 'k9b'].map(refreshStatus));
+  if (!E.stt && PACKS[MODELS.stt.id]) E.stt = lazyEngine('stt', async () => (await import('./engine/stt/stt_engine.js')).createSttEngine({ model: MODELS.stt.id, packUrl: PACKS[MODELS.stt.id] }));   // v4: voice input
+  if (!E.jvoice) E.jvoice = createVoicePackEngine();   // v4: Juli's voice (null when config.js has no pack for it)
+  if (!E.nowcast && PACKS[MODELS.nowcast.id]) E.nowcast = lazyEngine('nowcast', async () => (await import('./nowcast/engine.js')).createNowcastEngine({ packUrl: PACKS[MODELS.nowcast.id] }));   // v4: the Nowcast (Experimental)
+  await Promise.all(['brain', 'drafter', 'brain4', 'drafter4', 'music', 'planner', 'starter', 'voice', 'lipsync', 'k9b', 'stt', 'jvoice', 'nowcast'].map(refreshStatus));
   // 3.8: a lighter mode that an earlier version set by itself (not the person's own choice) goes back to Full once; one more failure
   // loading in full and it stays lighter (brainFullFailed)
   if (AS.brainMode === 'lean' && ls.get('pf.app.brainModeBy', null) !== 'user' && !ls.get('pf.app.leanReset38', null)) {
@@ -308,6 +375,7 @@ async function boot() {
   // else opens the app: a new install in the Assistant chat, an install that has a model or history on Create (homeTab)
   if (!onPhone() && !standalone() && !ANDROID) enterSetup(); else await enterApp();
   startQueue();
+  styLoad().catch(() => {});   // v4: a restyle's clip and first frame, back from the store (after a reload or a planned fresh page)
   restoreUi();
   setTimeout(seedLazy, 6000);   // v026.7: the first open after the update learns the lazy engines' status once, in the background
   setTimeout(offerDrafter, 4000);   // 3.8: once, to a phone that already has the assistant
@@ -360,7 +428,7 @@ async function restoreUi() {
   try {
     if (ui && ['ready', 'working', 'result', 'error'].includes(S.phase)) {
       if (['create', 'assistant', 'library', 'settings'].includes(ui.tab) || SHELL.restorable(ui.tab)) go(ui.tab);   // 3.9: + the home screen and the shell's screens
-      if (ui.app && APPS) await Promise.race([reopenApp(APPS, ui.app), new Promise((r) => setTimeout(r, 8000))]);   // 3.9: the app that was open opens again
+      if (ui.app && APPS && !SAFE) await Promise.race([reopenApp(APPS, ui.app), new Promise((r) => setTimeout(r, 8000))]);   // 3.9: the app that was open opens again (v4: not in safe mode; never one the page ended in)
       if (ui.tab === 'assistant' && S.chatShown) await Promise.race([S.chatShown, new Promise((r) => setTimeout(r, 4000))]);
       if (ui.board && Q && Q.get(ui.board)) openBoard(ui.board);
       else if (ui.queue && CH) CH.openQueue();
@@ -373,6 +441,7 @@ async function restoreUi() {
 function wire(e, k) {
   e.on('warning', (w) => onWarning(w, k));
   if (k === 'brain') e.on('split', onSplitOff);   // 3.8: Juli went on in one process
+  if (k === 'brain') { e.on('split-failed', (d) => juliSplitFailed(e, d)); e.on('split', (d) => { if (d && d.off && WEBKIT && VOICEIN && !VOICE_PAUSED) pauseVoice('Juli runs in one process here'); }); }   // v4: voice mode's safety
   if (k === 'brain4') e.on('split', (d) => { if (d && d.down) { E4B_DOWN = { code: 'SPLIT_GONE', t: Date.now() }; diag('bigger brain off for this page', { why: d.why || '' }); } });   // 3.8 port: its work goes to Juli, no note
   e.on('split-failed', (d) => diag('second process failed', Object.assign({ model: k }, d)));   // 3.8 port: for the benchmark card / diagnostics
   e.on('gpu-lost', () => { if (S.phase === 'working' && S.job && !S.job.waiting && S.job.mk === k && Q && Q.active && Q.active.job.id === S.job.id) set({ gpuReset: true }); });   // the queue's own unload destroys idle devices: not a reset
@@ -395,11 +464,12 @@ function unsupportedText(reason = '') {
 async function enterApp() {
   const first = S.phase !== 'ready';
   if (!done(S.mode) && !(S.dl[S.mode].have > 0)) S.mode = KEYS.find(done) || S.mode;   // open on a model that is there
-  const home = first ? SHELL.startTab(await homeTab()) : S.tab;   // 3.9: an install that opened on Create opens on the home screen
+  const home = first ? (APPS && APPS.brokeAtBoot && APPS.brokeAtBoot() ? 'home' : SHELL.startTab(await homeTab())) : S.tab;   // 3.9: an install that opened on Create opens on the home screen (v4: so does one whose last page ended in an app)
   set({ phase: 'ready' });
   if (first) { const c = $('compose'); c.classList.add('stagger'); setTimeout(() => c.classList.remove('stagger'), 700); freeSpace(); }
   syncPrompt(); placeAll();   // the shell is visible now, so the selectors can be measured
   if (home !== S.tab) go(home);
+  if (first && APPS && APPS.booted) APPS.booted();   // v4: the app is on screen: the sheet for an app the page ended in last time (makeapp/host.js)
   if (!consented()) openLesson();   // the rights lesson and the agreement come before anything is made, on every tab
 }
 /** anything downloaded on this phone (any model, complete or partly) */
@@ -440,7 +510,8 @@ function startDownload(k) {
   if (!['idle', 'paused', 'dropped', 'failed'].includes(u.sub)) return;   // Resume only after the old call has settled (no BUSY)
   if (LTX_KEYS.has(k) && !ltxOk()) return openLtx(() => startDownload(k));   // v026.4: the LTX-2 licence (+ the Gemma tick), accepted first: every download path comes here
   if (k === 'k9b' && !fluxAccepted()) return openFlux(() => startDownload(k));   // v026.6: the FLUX Non-Commercial License, accepted once
-  if (k === 'brain4' && !mdwAccepted()) return openMdw(() => startDownload(k));   // 3.8 (v040): NVIDIA's OpenMDW-1.1, accepted once
+  if ((k === 'brain4' || k === 'stt') && !mdwAccepted(k)) return openMdw(() => startDownload(k), k);
+  if (k === 'nowcast' && !ls.get(NC_LIC, null)) return openNcLicence(() => startDownload(k));   // v4: the Nowcast model's licence and what it is, shown once   // 3.8 (v040): NVIDIA's OpenMDW-1.1, accepted once (v4: voice input's too)
   const other = DL.find((m) => m !== k && ['downloading', 'pausing'].includes(S.dl[m].sub));
   if (other) { if (k === 'reader') S.pending = false; return toast(`One download at a time. Pause ${theNoun(other)} first.`); }
   if (!E[k]) return toast("Couldn't reach the model server. Check Wi-Fi, then try again.");
@@ -453,6 +524,12 @@ function startDownload(k) {
       try { S.st[k] = await E[k].status(); } catch (e) { S.st[k] = { complete: false }; }
       if (!done(k)) Object.assign(u, { sub: 'failed', detail: 'The download ended early.' });
       else if (k === 'reader') { u.sub = 'idle'; if (!S.pending) toast('The picture reader is ready'); }
+      else if (k === 'lora') { u.sub = 'idle'; toast(loraOn() ? 'The video LoRA is ready: clips from pictures use it' : 'The video LoRA is ready (it is switched off in Settings › Models)'); }   // v4
+      else if (k === 'lora2') { u.sub = 'idle'; toast(lora2On() ? 'The looks LoRA is ready: style video to video uses it' : 'The looks LoRA is ready (it is switched off in Settings › Models)'); }   // v4 Phase 3
+      else if (k === 'venc') { u.sub = 'idle'; toast('The clip reader is ready'); }
+      else if (k === 'stt') { u.sub = 'idle'; setVoiceLayout(); toast('Voice input is ready: tap the mic in Juli’s chat'); }   // v4
+      else if (k === 'jvoice') { u.sub = 'idle'; toast('Juli’s own voice is ready'); }   // v4
+      else if (k === 'nowcast') { u.sub = 'idle'; toast('The nowcast model is ready'); if (NC) NC.refresh(); }   // v4
       else {
         u.sub = 'idle';
         const next = k === 'music' && S.musicPair && E.planner && !done('planner');   // v021: one tap = the music model AND the lyrics planner
@@ -581,10 +658,10 @@ function dlLine(u, pct) {
   return u.sub === 'downloading' && u.bps > 0 ? `${of} · ${Math.round(u.bps / 1e6)} MB/s${u.eta != null ? ` · ${about(u.eta)} left` : ''}` : of;
 }
 const dlLabel = (u, short) => (u.sub === 'downloading' ? 'Pause' : u.sub === 'pausing' ? 'Pausing…' : u.have > 0 ? (short ? 'Resume' : `Resume · ${fmtSize(Math.max(0, u.total - u.have))} left`) : (short ? 'Download' : `Download ${fmtSize(u.total)}`));
-function renderDl() { renderLessonDl(); if (S.phase === 'setup') return; renderPill(); if (S.tab === 'create') { renderNeed(); renderReader(); } if (S.tab === 'settings') renderModels(); if (CH) CH.renderDl(); }
+function renderDl() { renderLessonDl(); if (S.phase === 'setup') return; renderPill(); if (S.tab === 'create') { renderNeed(); renderReader(); } if (S.tab === 'settings') renderModels(); if (CH) CH.renderDl(); if (VOICEIN) VOICEIN.render(); }
 /** what a download is called in a sentence ("Pause the music model first.") */
-const dlNoun = (k) => (k === 'reader' || k === 'planner' || k === 'drafter' || k === 'brain4' || k === 'drafter4' ? MODELS[k].noun : k === 'brain' ? 'assistant' : `${MODELS[k].noun} model`);
-const theNoun = (k) => (k === 'brain' ? 'Juli' : 'the ' + dlNoun(k));   // 3.8: the assistant is called Juli
+const dlNoun = (k) => (k === 'reader' || k === 'lora' || k === 'lora2' || k === 'venc' || k === 'planner' || k === 'drafter' || k === 'brain4' || k === 'drafter4' ? MODELS[k].noun : k === 'brain' ? 'assistant' : `${MODELS[k].noun} model`);
+const theNoun = (k) => (k === 'brain' ? 'Juli' : k === 'jvoice' ? 'Juli’s voice' : 'the ' + dlNoun(k));   // 3.8: the assistant is called Juli
 
 // ------------------------------------------------------------------------------------------------ making a picture or a clip
 function formParams() {
@@ -671,6 +748,309 @@ function hqReroll(role) {
   else H.last = null;
   hqPaint(role);
 }
+// ---- v4 Phase 4: Create › Video › Restyle a clip. Pick a clip (the Library, or a video from the phone) and a look -> Klein 4B restyles
+// its first frame (an 'edit' job: checked here, never saved) -> Use this -> the clip re-rendered from it with the looks LoRA (a 'restyle'
+// job, ui/style_run.js) -> the Library, beside its source. The clip is read once, at pick time, into its frames (ui/clipprep.js). S.sty
+// (localStorage 'pf.app.sty') and its blobs (the Library store's 'inputs' slot 'style') survive a reload and the planned fresh pages.
+// v4 (Nov 2): the clip's own sound is read at pick time (ui/clipsound.js, the sound track only) and goes under the new clip; a video
+// longer than 5 s is restyled as its first 5 s, or (the person's choice, Experimental) whole, in parts: the other parts' windows are read
+// when "Restyle the whole video" is turned on (store 'inputs' slot 'style-parts'), and Use this queues one 'restylelong' job.
+const STY_NEEDS = ['image', 'reader', 'venc', 'lora2'];   // besides the video model: what a restyle uses, in the order Make downloads it
+{ const v = S.vform; if (v.followPick == null && v.follow === 'loose') v.followPick = 'loose'; delete v.follow; }   // v4 (Nov 3): a draft's 'follow' was the global default unless it said Loosely, which only a tap made
+/** the look a restyle would take now: the checked first frame's while it is under review, else the one picked */
+const styLookNow = () => (S.sty && S.sty.stage === 'review' && S.sty.look) || S.vform.look;
+const saveSty = () => ls.set('pf.app.sty', S.sty ? { stage: S.sty.stage || null, clip: S.sty.clip || null, attest: !!S.sty.attest, seed: S.sty.seed || null, look: S.sty.look || null, whole: !!S.sty.whole } : null);
+/** v4: the parts the picked clip would be restyled in whole ([] for 5 s or less), and whether the person chose that */
+const styParts = () => { const c = S.sty && S.sty.clip; return c && c.duration ? partsOf(c.duration) : []; };
+const styWhole = () => !!(S.sty && S.sty.whole && S.sty.clip && styParts().length > 1);
+const styEst = (c, frames) => estimate({ media: 'video', kind: 'v2v', width: c.width, height: c.height, frames });
+const styState = () => ({ clip: S.sty && S.sty.clip, preparing: !!S.styPrep, attest: !!(S.sty && S.sty.attest), look: S.vform.look, prompt: S.vform.prompt });
+const styZ = () => { const c = S.sty && S.sty.clip; return c ? { w: c.width, h: c.height, slow: false } : { w: 832, h: 480, slow: false }; };
+const styNeeds = () => STY_NEEDS.filter((k) => E[k] && !done(k));
+const styAttested = () => !!(S.sty && S.sty.clip && (S.sty.clip.from === 'library' || S.sty.attest));
+function styUrl(k) { const B = S.styB; if (!B || !B[k]) return null; B.urls = B.urls || {}; if (!B.urls[k]) B.urls[k] = URL.createObjectURL(B[k]); return B.urls[k]; }
+/** what the stage shows: the clip's first frame (in review: the restyled one), already the restyle's size */
+function styFirst() {
+  const c = S.sty && S.sty.clip; if (!c || !S.styB) return null;
+  const url = S.sty.stage === 'review' && S.styB.styled ? styUrl('styled') : styUrl('first');
+  return url ? { url, w: c.width, h: c.height } : null;
+}
+/** forget the restyled first frame (all: the clip too) */
+function styForget(all) {
+  const B = S.styB; if (!B) return;
+  for (const k of all ? ['first', 'styled', 'thumb'] : ['styled']) if (B.urls && B.urls[k]) { URL.revokeObjectURL(B.urls[k]); B.urls[k] = null; }
+  if (all) S.styB = null; else B.styled = null;
+}
+const styKeep = () => (S.styB ? store.putStyleInput({ pack: S.styB.pack, first: S.styB.first, thumb: S.styB.thumb || null, styled: S.styB.styled || null, sound: S.styB.sound || null }).catch(() => toast("Couldn't keep the clip on this phone; it stays for this visit")) : Promise.resolve());   // v4: + its sound
+async function styLoad() {
+  if (!S.sty || !S.sty.clip) { if (S.sty) { S.sty = null; saveSty(); } return; }
+  const r = await store.getStyleInput().catch(() => null);
+  if (!r || !r.pack || !r.first) { S.sty = null; saveSty(); return render(); }
+  S.styB = { pack: r.pack, first: r.first, thumb: r.thumb || null, styled: r.styled || null, sound: r.sound || null, urls: {}, partsN: 0 };
+  { const pp = await store.getStyleParts().catch(() => null); S.styB.partsN = pp && pp.t === S.sty.clip.t && Array.isArray(pp.parts) ? pp.parts.length : 0; }   // v4: the other parts, read before the reload
+  if (S.sty.whole && S.styB.partsN < styParts().length - 1) { if (S.sty.clip.from === 'library') styReadParts(); else S.sty.whole = false; }   // a phone video is not on the page any more: pick it again
+  const busy = Q && Q.list({ includeTerminal: false }).some((j) => j.params && j.params.ui && j.params.ui.sty);
+  if ((S.sty.stage === 'first' || S.sty.stage === 'clip') && !busy) S.sty.stage = S.styB.styled ? 'review' : null;   // its job is gone: back to the check
+  if (S.sty.stage === 'review' && !S.styB.styled) S.sty.stage = null;
+  saveSty(); render();
+}
+function styClear() {
+  S.styTok = (S.styTok || 0) + 1; if (S.styAbort) { S.styAbort.abort(); S.styAbort = null; } styForget(true); S.sty = null; S.styPrep = null; S.styPartsRead = null; S.styOrig = null; saveSty();
+  store.clearStyleInput().catch(() => {}); store.clearStyleParts().catch(() => {}); render();
+}
+/** a clip picked (the Library or the phone) -> its frames (its first seconds, at most STYLE_CAP_S, scaled to fit the SANA size nearest its shape:
+ *  ui/style_v2v.js styleSize, never a hard crop) */
+async function pickClip(blob, info) {
+  if (S.phase === 'working') return toast('Wait — something is being made');
+  const tok = (S.styTok = (S.styTok || 0) + 1);
+  if (S.styAbort) S.styAbort.abort(); const ac = (S.styAbort = new AbortController());   // a clip still being read stops for the new one
+  styForget(true); S.sty = { stage: null, clip: null, attest: false, whole: false }; S.styOrig = info.from === 'phone' ? blob : null; S.styPartsRead = null;
+  S.styPrep = { i: 0, n: 0 }; saveSty(); store.clearStyleInput().catch(() => {}); store.clearStyleParts().catch(() => {}); render(); toStage();
+  try {
+    const CP = await import('./ui/clipprep.js');
+    const pr = await CP.probeClip(blob); if (tok !== S.styTok) return;
+    const ml = maxLen(pr.duration), shape = styleSize(pr.width, pr.height);   // v4: the whole frame, scaled to fit (a small trim, or its edges extended)
+    const base = { from: info.from, libId: info.libId || null, duration: pr.duration, srcW: pr.width, srcH: pr.height, width: shape.width, height: shape.height, fit: shape.fit, maxLen: ml, t: Date.now() };
+    if (ml < 1) { S.styPrep = null; S.sty.clip = Object.assign(base, { frames: 0 }); saveSty(); toast('That clip is shorter than a second. Pick a longer one.'); return render(); }
+    const n = framesOf(ml); S.styPrep = { i: 0, n }; renderStyle();
+    const r = await CP.prepareClip(blob, { width: shape.width, height: shape.height, frames: n, signal: ac.signal, onProgress: (i) => { if (tok === S.styTok && S.styPrep) { S.styPrep.i = i; renderStyleProgress(); } } });
+    if (tok !== S.styTok) return;
+    const thumb = await makeThumb(r.first, 160).catch(() => null);
+    // v4: its own sound (the sound track only, never the picture), as long as the longest restyle of it can be: the whole video in parts
+    const plan = partsOf(pr.duration), need = (plan.length ? joinedFrames(plan) : n) / STYLE_FPS;
+    let sound = null, sw = 'none', why = null;
+    try { const CS = await import('./ui/clipsound.js'), sd = await CS.readSound(blob, { seconds: need, signal: ac.signal }); if (sd.pcm) { sound = CS.soundBlob(sd.pcm); sw = 'yes'; } else { sw = sd.none; why = sd.why || null; } }
+    catch (e) { if (isAbort(e)) throw e; sw = 'unreadable'; why = String((e && e.message) || e).slice(0, 120); }
+    if (tok !== S.styTok) return;
+    if (why) diag('restyle: the clip\'s sound', { sound: sw, why });
+    S.styB = { pack: r.pack, first: r.first, thumb, styled: null, sound, urls: {}, partsN: 0 };
+    S.sty = { stage: null, clip: Object.assign(base, { frames: n, via: r.via, sound: sw, parts: plan.length }), attest: false, whole: false }; S.styPrep = null; saveSty(); styKeep();
+    if (S.vform.len > ml) S.vform.len = ml;
+    if (info.prompt && (!S.vform.prompt.trim() || S.vform.prompt === S.styPrefill)) { S.vform.prompt = String(info.prompt).slice(0, 2000); S.styPrefill = S.vform.prompt; syncPrompt(); }
+    saveDraft(); render(); toStage();
+  } catch (e) {
+    if (tok !== S.styTok) return;
+    S.styPrep = null; S.sty = null; S.styOrig = null; saveSty(); render();
+    toast(e && e.code === 'BAD_VIDEO' ? msg(e) : "That video couldn't be opened on this phone. Try another.");
+  }
+}
+/** v4: "Restyle the whole video" turned on: the other parts' windows of the clip, read now (one frames pack a part; kept in the store,
+ *  not on the page). A phone video must still be on the page (it is never copied whole); a Library clip is read from the Library. */
+async function styReadParts() {
+  const c = S.sty && S.sty.clip, plan = styParts().slice(1);
+  if (!c || !plan.length || S.styPartsRead || (S.styB && S.styB.partsN === plan.length)) return;
+  const tok = S.styTok, src = S.styOrig || (c.from === 'library' && c.libId ? await store.getBlob(c.libId).catch(() => null) : null);
+  if (tok !== S.styTok) return;
+  if (!src) { S.sty.whole = false; saveSty(); render(); return toast('Pick the video again to restyle all of it.'); }
+  const ac = S.styAbort && !S.styAbort.signal.aborted ? S.styAbort : (S.styAbort = new AbortController());
+  S.styPartsRead = { done: 0, total: plan.reduce((a, p) => a + p.frames, 0) }; renderStyle();
+  try {
+    const CP = await import('./ui/clipprep.js'), packs = [];
+    await CP.prepareParts(src, { width: c.width, height: c.height, parts: plan, signal: ac.signal, onPart: (i, r) => { packs.push(r.pack); },
+      onProgress: (d, t) => { if (tok === S.styTok && S.styPartsRead) { S.styPartsRead.done = d; S.styPartsRead.total = t; renderWholeProgress(); } } });
+    if (tok !== S.styTok) return;
+    await store.putStyleParts({ parts: packs, t: c.t });
+    if (tok !== S.styTok) return;
+    S.styB.partsN = packs.length; S.styPartsRead = null; render();
+  } catch (e) {
+    if (tok !== S.styTok) return;
+    S.styPartsRead = null; S.sty.whole = false; saveSty(); render();
+    if (!isAbort(e)) toast(`The rest of the video couldn't be read here. Its first ${STYLE_CAP_S} s can still be restyled.`);
+  }
+}
+function openClipPicker() {
+  PK.clip = true; PK.slot = 0; for (const u of PK.urls) URL.revokeObjectURL(u); PK.urls = [];
+  const clips = S.lib.filter((m) => isClip(m) && !isMV(m) && m.vmode !== 'lipsync');
+  $('pk-title').textContent = 'Pick a clip';
+  $('pk-note').textContent = clips.length ? `From your Library. A clip longer than ${STYLE_CAP_S} s is restyled as its first ${STYLE_CAP_S} s (or whole, in parts: Experimental), the whole frame scaled to fit the video model’s size nearest its shape.` : '';
+  $('pk-grid').replaceChildren(...clips.map((m) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pk-tile'; b.dataset.id = m.id; b.setAttribute('aria-label', `Clip, ${lenText(m.frames)} seconds: ${m.prompt || ''}`);
+    if (m.thumb instanceof Blob) { const u = URL.createObjectURL(m.thumb); PK.urls.push(u); const img = document.createElement('img'); img.alt = ''; img.src = u; img.loading = 'lazy'; b.append(img); }
+    return b;
+  }));
+  $('pk-empty').textContent = 'No clips in the Library yet. Make one under Video, or use a video from your phone.'; $('pk-empty').hidden = clips.length > 0;
+  const w = $('picker'); w.classList.remove('out'); w.hidden = false;
+}
+/** the words a Library clip brings: its own prompt (a restyle: its description, without the look's words) */
+const clipWords = (m) => (m.vmode === 'v2v' ? m.description || '' : m.prompt || '');
+async function clipFromLibrary(id) {
+  const m = S.lib.find((x) => x.id === id), b = m && await store.getBlob(id).catch(() => null);
+  if (!b) return toast("Couldn't open that clip");
+  pickClip(b, { from: 'library', libId: id, prompt: clipWords(m) });
+}
+/** the Library viewer's Restyle: Create › Video › Restyle a clip with this clip */
+function restyleFrom(m, blob) { toVideoSrc('style'); pickClip(blob, { from: 'library', libId: m.id, prompt: clipWords(m) }); toast('Pick a look, then tap Make'); }
+/** Reuse on a restyled clip: its look and words, and its source clip when it is still in the Library */
+async function reuseStyle(m) {
+  toVideoSrc('style'); if (lookOf(m.look)) S.vform.look = m.look; S.vform.followPick = m.followBy === 'you' || (!m.followBy && m.follow === 'loose') ? followOf(m.follow) : null;   // the person's own pick comes back (before Nov 3 only a tap made Loosely); the look's own stays the look's S.vform.prompt = m.description || ''; S.styPrefill = S.vform.prompt; saveDraft(); syncPrompt(); render();
+  const x = (m.sources || [])[0], src = x && x.libId && S.lib.find((y) => y.id === x.libId), b = src && await store.getBlob(src.id).catch(() => null);
+  if (b) { await pickClip(b, { from: 'library', libId: src.id, prompt: null }); return toast('Look, clip and words are ready — tap Make'); }
+  toast('Look and words are ready — pick the clip again');
+}
+/** Make on Restyle a clip: what is missing first (the clip, its tick, a look, the words, then a download), then its first frame */
+function styleMake() {
+  const miss = styleMissing(styState());
+  if (miss) { toast(miss.why); if (miss.focus === 'prompt') return void $('prompt').focus(); return flag({ clip: $('vclip'), attest: $('sattest-box'), looks: $('g-look') }[miss.focus]); }
+  if (!ltxOk()) return void openLtx(() => make());
+  if (!styGet(styNeeds())) return;
+  if (!S.styB || !S.styB.first || !S.styB.pack) { toast('Pick the clip again.'); return flag($('vclip')); }
+  styPaint();
+}
+/** a download the restyle still needs: started (one at a time; the clip reader asks for the LTX-2 licence first) -> false */
+function styGet(need) {
+  if (!need.length) return true;
+  const k = need[0], u = S.dl[k];
+  if (['downloading', 'pausing'].includes(u.sub)) toast(`${cap(theNoun(k))} is downloading. Tap Make again when it’s done.`);
+  else { toast(`Getting ${theNoun(k)} first (${fmtSize(u.total)}, one time). Tap Make again when it’s done.`); startDownload(k); }
+  render(); return false;
+}
+/** Klein 4B restyles the clip's first frame at the clip's size (a new seed each time: Try again) */
+function styPaint() {
+  const s = S.sty; if (!s || !s.clip || !S.styB) return;
+  Object.assign(s, { seed: newSeed(), look: S.vform.look, stage: 'first' }); saveSty();
+  styForget(false); styKeep();
+  startJob(editParams({ look: s.look, clip: s.clip, seed: s.seed, attested: styAttested() }), S.styB.first);
+}
+/** the restyled first frame landed (Create's own job, or after a fresh page): the check, not the Library */
+function styFrameDone(r, params, mine = true) {
+  if (mine) { if (pop) pop.finish(); S.popped = Date.now(); clearTimeout(poppedT); poppedT = setTimeout(renderPill, POPPED_MS + 50); S.job = null; }
+  ls.set('pf.app.lastJob', null); store.clearInput().catch(() => {});
+  if (S.sty && S.sty.clip && S.styB && r && r.blob) {
+    styForget(false); S.styB.styled = r.blob;
+    Object.assign(S.sty, { stage: 'review', look: (params.sty && params.sty.look) || S.sty.look, seed: r.seed }); saveSty(); styKeep();
+  }
+  if (mine) { set({ phase: 'ready' }); syncWake(); toStage(); } else render();
+  return null;
+}
+/** Use this: the clip re-rendered from the checked first frame with the looks LoRA */
+function styUse() {
+  const s = S.sty, f = S.vform; if (!s || s.stage !== 'review' || S.phase === 'working') return;
+  if (!consented()) return openLesson();
+  if (!S.styB || !S.styB.styled || !S.styB.pack) { s.stage = null; saveSty(); render(); return toast('The first frame is gone: make it again.'); }
+  if (!f.prompt.trim()) { toast('Say what happens in the clip first.'); return void $('prompt').focus(); }
+  if (!ltxOk()) return void openLtx(() => styUse());
+  if (!styGet(styNeeds().filter((k) => k !== 'image'))) return;
+  const fixed = f.seedMode === 'fixed' && /^\d+$/.test(f.seed), seed = fixed ? Number(f.seed) % 2147483648 : newSeed();
+  const srcs = [{ from: s.clip.from, libId: s.clip.libId || null, thumb: S.styB.thumb || null }], snd = S.styB.sound ? [S.styB.sound] : [];
+  if (styWhole()) return styUseWhole(seed, srcs, snd);   // v4: the whole video, in parts
+  const p = clipParams({ look: s.look || f.look, clip: s.clip, len: f.len, seed, prompt: f.prompt, attested: styAttested(), sound: !!snd.length, follow: f.followPick });
+  s.stage = 'clip'; saveSty(); $('sty-review').hidden = true;
+  startJob(p, [S.styB.pack, S.styB.styled, ...snd], srcs);   // v4: + its sound
+}
+/** v4: Use this on the whole video: the notice first (it takes a while: the estimate per part times the parts), then ONE 'restylelong'
+ *  job: its parts are 'restyle' jobs it queues one after another, each starting on the last frame of the one before */
+async function styUseWhole(seed, srcs, snd) {
+  const s = S.sty, c = s.clip, f = S.vform, plan = styParts();
+  if (S.styPartsRead) return toast('The rest of the video is still being read. One moment.');
+  const pp = await store.getStyleParts().catch(() => null);
+  if (!pp || pp.t !== c.t || !Array.isArray(pp.parts) || pp.parts.length !== plan.length - 1 || !pp.parts.every(Boolean)) { styReadParts(); return toast('Reading the rest of the video first. Tap Use this again when it is read.'); }
+  const est = (fr) => styEst(c, fr), eta = wholeSeconds(plan, est), N = wholeNotice(plan, eta, est(plan[0].frames));
+  openSheet(N.title, N.text, N.ok, () => {
+    closeSheet();
+    if (!S.sty || S.sty.stage !== 'review' || S.phase === 'working' || !S.styB || !S.styB.styled) return;
+    const p = longParams({ look: s.look || f.look, clip: c, parts: plan, seed, prompt: f.prompt, attested: styAttested(), sound: !!snd.length, follow: f.followPick });
+    s.stage = 'clip'; saveSty(); $('sty-review').hidden = true;
+    startJob(p, [S.styB.pack, ...pp.parts, S.styB.styled, ...snd], srcs);
+  }, null, 'cta');
+}
+/** a restyle's job stopped or failed: its first frame -> nothing to check; its clip -> the check again */
+function styJobEnded(params) {
+  const s = S.sty; if (!s || !params || !params.sty) return;
+  s.stage = params.sty.role === 'clip' && S.styB && S.styB.styled ? 'review' : null; saveSty();
+}
+/** a restyled clip landed: the clip stays picked (another look is one Make away); its first frame goes */
+function styClipDone() { if (!S.sty) return; S.sty.stage = null; styForget(false); saveSty(); styKeep(); }
+/** Create › Video › Restyle a clip: the clip slot, its tick, the looks, what still downloads */
+function renderStyle() {
+  const show = S.mode === 'video' && vsrc() === 'style', box = $('vstyle'); box.hidden = !show; if (!show) return;
+  const s = S.sty || {}, c = s.clip, pr = S.styPrep, el = $('vclip'), whole = styWhole();
+  const key = `${c ? c.t : ''}|${pr ? 'prep' : ''}|${S.styB && S.styB.first ? 1 : 0}|${whole ? 'w' : ''}`;
+  if (el.dataset.key !== key) {
+    el.dataset.key = key; el.textContent = ''; el.classList.toggle('filled', !!c);
+    const th = mk('div', 'vs-thumb' + (c && S.styB ? '' : ' none'));
+    if (c && S.styB && styUrl('first')) { const img = document.createElement('img'); img.alt = ''; img.src = styUrl('first'); th.append(img); } else th.innerHTML = '<svg class="ic"><use href="#i-film"/></svg>';
+    const tx = mk('div', 'vs-txt'); tx.append(mk('p', 'vs-name', 'Clip'));
+    if (pr) { tx.append(mk('p', 'footnote dim vs-meta', 'Reading the clip…')); const bar = mk('div', 'vs-prep'); bar.append(document.createElement('i')); tx.append(bar); }
+    else if (c) {
+      const crop = !c.fit && Math.abs(c.srcW / c.srcH - c.width / c.height) > 0.01;   // a clip read before v4's fit
+      const snd = c.sound === 'yes' ? ' · with its sound' : c.sound === 'unreadable' ? ' · its sound can’t be read here' : c.sound === 'none' ? ' · no sound' : '';   // v4: its own sound goes under the new clip
+      const ps = styParts(), at = crop ? `, the middle cropped to ${c.width} × ${c.height}` : ` at ${c.width} × ${c.height}${c.fit ? ` (${fitText(c.fit)})` : ''}`, secs = ps.reduce((a, x) => a + x.seconds, 0);   // v4: the size and how the frame went in
+      tx.append(mk('p', 'footnote dim vs-meta', `${c.from === 'library' ? 'From your Library' : 'A video from your phone'} · ${(Math.round(c.duration * 10) / 10).toFixed(1)} s · ${c.srcW} × ${c.srcH}${snd}`),
+        mk('p', 'footnote dim', !(c.maxLen >= 1) ? 'Shorter than a second: pick a longer clip.'
+          : whole ? `Restyles ${secs + 0.5 >= c.duration ? `all ${secs} s` : `its first ${secs} s`} in ${ps.length} parts${at}.`
+          : `Restyles its first ${c.maxLen} s${at}.${c.duration >= STYLE_CAP_S + 0.5 ? ` A longer video is restyled as its first ${STYLE_CAP_S} s.` : ''}`));
+    } else {
+      tx.append(mk('p', 'footnote dim', `A finished clip from your Library, or a video from your phone, with its sound. A longer video is restyled as its first ${STYLE_CAP_S} s.`));
+      const bt = mk('div', 'vs-btns');
+      bt.innerHTML = '<button class="btn sm" type="button" data-act="clib"><svg class="ic"><use href="#i-grid"/></svg><span>Library</span></button>'
+        + '<button class="btn sm" type="button" data-act="cphone"><svg class="ic"><use href="#i-film"/></svg><span>Video</span></button>';
+      bt.children[0].setAttribute('aria-label', 'A clip from the Library'); bt.children[1].setAttribute('aria-label', "A video from your phone");
+      tx.append(bt);
+    }
+    el.append(th, tx);
+    if (c || pr) { const xb = document.createElement('button'); xb.type = 'button'; xb.className = 'icon-btn vs-x'; xb.dataset.act = 'cx'; xb.setAttribute('aria-label', pr ? 'Stop reading the clip' : 'Remove the clip'); xb.innerHTML = '<svg class="ic"><use href="#i-x"/></svg>'; el.append(xb); }
+  }
+  renderStyleProgress();
+  // v4: a whole-video restyle that stopped stays here until it carries on or is stopped (the error card goes when Create changes mode)
+  { const k = S.phase !== 'working' && S.phase !== 'error' ? longKept() : null, kb = $('sty-kept'); kb.hidden = !k;
+    if (k) { const t = longWords(k); $('sty-kept-text').textContent = `Your whole-video restyle: ${t.title.charAt(0).toLowerCase()}${t.title.slice(1)} ${t.note}`; $('sty-kept-go').textContent = t.go; kb.dataset.job = k.id; } }
+  // v4: the whole video, in parts (the person's choice; offered only for a clip longer than 5 s): its words, the estimate, its reading
+  { const ps = styParts(), row = $('sty-whole-row'), on = !!(c && !pr && ps.length > 1); row.hidden = !on;
+    if (on) {
+      const t = wholeText(ps, wholeSeconds(ps, (fr) => styEst(c, fr)), c.duration);
+      $('sty-whole-name').textContent = t.name; $('sty-whole').checked = whole; $('sty-whole').disabled = S.phase === 'working';
+      $('sty-whole').setAttribute('aria-label', t.line); $('sty-whole-note').textContent = t.note; renderWholeProgress();
+    } }
+  // the tick: a video from the phone (rights.ATTEST verbatim, unticked for every new video)
+  const at = $('sattest-box'), phone = !!(c && c.from === 'phone' && !pr); at.hidden = !phone;
+  if (phone) {
+    if (!$('sattest-text').textContent) { $('sattest-text').textContent = rights.ATTEST; const ul = $('sattest-means'); for (const [b, t] of rights.MEANS) { const li = mk('li'); li.append(mk('b', null, b), ' ' + nb(t)); ul.append(li); } $('sattest-asof').textContent = rights.AS_OF; }
+    $('sattest').checked = !!s.attest;
+  }
+  // the looks: built once; the one picked is checked
+  const g = $('looks');
+  if (!g.children.length) g.append(...LOOKS.map((L0) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'look'; b.dataset.v = L0.id; b.setAttribute('role', 'radio');
+    const img = document.createElement('img'); img.alt = ''; img.src = lookThumb(L0.id); img.loading = 'lazy'; img.decoding = 'async'; img.width = 160; img.height = 160;
+    b.append(img, mk('span', 'ln', L0.name)); if (L0.beta) b.append(mk('span', 'lb', 'beta'));
+    b.setAttribute('aria-label', L0.beta ? `${L0.name}, beta` : L0.name); return b;
+  }));
+  for (const b of g.children) b.setAttribute('aria-checked', String(b.dataset.v === S.vform.look));
+  // what a restyle still downloads (Make gets them one at a time)
+  const need = styNeeds(), nn = $('sty-need'); nn.hidden = !need.length;
+  if (need.length) {
+    const dl = need.find((k) => ['downloading', 'pausing'].includes(S.dl[k].sub));
+    $('sty-need-text').textContent = dl ? `Getting ${theNoun(dl)} · ${dlLine(S.dl[dl], true)}`
+      : `Restyling also uses ${need.map((k) => `${theNoun(k)} (${fmtSize(S.dl[k].total || MODELS[k].total)})`).join(', ')}. Make downloads ${need.length > 1 ? 'them one at a time' : 'it'}, once${need.includes('venc') ? '; the clip reader asks you to accept its licence first' : ''}.`;
+  }
+}
+/** v4: the other parts being read (the switch's note), or what they say when read */
+function renderWholeProgress() {
+  const r = S.styPartsRead, bar = $('sty-whole-bar'), el = $('sty-whole-read'); if (!bar || !el) return;
+  bar.hidden = !r; el.hidden = !r; if (!r) return;
+  bar.firstElementChild.style.transform = `scaleX(${r.total ? (r.done / r.total).toFixed(3) : 0})`;
+  el.textContent = `Reading the rest of the video · frame ${r.done} of ${r.total} · ${about(Math.max(1, (r.total - r.done) * PREP_SECONDS_PER_FRAME))} left`;
+}
+function renderStyleProgress() {
+  const pr = S.styPrep, el = $('vclip'), i = el && el.querySelector('.vs-prep i'), m = el && el.querySelector('.vs-meta'); if (!pr || !i) return;
+  i.style.transform = `scaleX(${pr.n ? (pr.i / pr.n).toFixed(3) : 0})`;
+  if (m) m.textContent = pr.n ? `Reading the clip · frame ${pr.i} of ${pr.n} · ${about(Math.max(1, (pr.n - pr.i) * PREP_SECONDS_PER_FRAME))} left` : 'Reading the clip…';
+}
+/** the restyled first frame, checked before the clip: Use this / Try again / Start over */
+function renderStyReview() {
+  const s = S.sty, box = $('sty-review'), c = s && s.clip;
+  const show = !!(S.tab === 'create' && S.mode === 'video' && vsrc() === 'style' && s && s.stage === 'review' && c && S.styB && S.styB.styled && S.phase !== 'working');
+  box.hidden = !show; if (!show) return;
+  const L0 = lookOf(s.look), u1 = styUrl('first'), u2 = styUrl('styled');
+  if ($('sty-src').getAttribute('src') !== u1) $('sty-src').src = u1;
+  if ($('sty-new').getAttribute('src') !== u2) $('sty-new').src = u2;
+  $('sty-cap').textContent = `${L0 ? L0.name : 'The new look'}${L0 && L0.beta ? ' (beta)' : ''} · Klein 4B`;
+  const n = lenFor(S.vform.len, c.maxLen), whole = styWhole(), ps = styParts(), again = S.vform.look && S.vform.look !== s.look ? ' You picked another look since: Try again makes its first frame.' : '';
+  $('sty-tip').textContent = whole ? 'Every part takes this look and keeps the video’s motion. Each part starts on the last frame of the part before, so this is the only frame you check.'
+    : 'The whole clip takes this look and keeps the clip’s motion. Anything Klein added stays in the clip too.';   // v4: + the whole video
+  $('sty-est').textContent = whole ? `${wholeText(ps, wholeSeconds(ps, (fr) => styEst(c, fr)), c.duration).line}.${again}`
+    : `The clip: ${aboutLong(estimate({ media: 'video', kind: 'v2v', width: c.width, height: c.height, frames: framesOf(n) }))} on this phone for its first ${n} s.${again}`;
+}
 function videoParams() {
   const f = S.vform, z = vsize(f.size), fixed = f.seedMode === 'fixed' && /^\d+$/.test(f.seed), src = vsrc();
   const p = { media: 'video', kind: SRC[src].kind, prompt: f.prompt.trim(), width: z.w, height: z.h, frames: FRAMES[f.len] || 81, seed: fixed ? Number(f.seed) % 2147483648 : newSeed() };
@@ -700,6 +1080,7 @@ function make() {
     box.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
     box.classList.add('need'); clearTimeout(box._t); box._t = setTimeout(() => box.classList.remove('need'), 2400); return;
   }
+  if (vid && vsrc() === 'style') return styleMake();   // v4 Phase 4: Restyle a clip (its own checks, then its first frame)
   const pic = vid && vsrc() !== 'words';
   if (pic) {
     const miss = activeSlots().findIndex((x) => !x);
@@ -724,12 +1105,13 @@ async function startJob(params, input, srcs) {
   if (k === 'video' && !ltxOk()) return void openLtx(() => startJob(params, input, srcs));   // the Gemma tick (and the LTX licence) before a video job
   if (params.kind === 'i2i' && (!input || !params.attested)) return;
   if (pic && (!picOK() || (!params.resume && (!Array.isArray(input) || input.length < (params.kind === 'flf' ? 2 : 1) || !input.every(Boolean) || !params.attested)))) return;
+  if (params.kind === 'v2v' && !params.resume && (!styleOK() || !Array.isArray(input) || input.length < (params.long ? params.parts.length + 1 : 2) || !input.every(Boolean) || !params.attested)) return;   // v4: the clip's frames (each part's) + its styled first frame (+ its sound)
   if (!Q) return toast('p0pc0rn is still starting. Try again in a moment.');
   if (Q.readOnly) return toast('p0pc0rn is open in another tab. Make it there, or close that tab first.');
   wake.on();   // synchronously inside the tap (iOS)
-  dropResult(); if (S.mode !== k && !params.hq) { S.mode = k; ls.set('pf.app.mode', k); }   // v026.6: a High / Highest frame stays on the Video form
+  dropResult(); if (S.mode !== k && !params.hq && !params.sty) { S.mode = k; ls.set('pf.app.mode', k); }   // v026.6: a High / Highest frame stays on the Video form (v4: so does a restyle's first frame)
   const token = 'create:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  S.job = { id: null, token, origin: 'create', kind: queueKind(params), mk: k, media: k, params, input, srcs: pic ? srcs || null : null, sub: 'running', armed: false, waiting: true,
+  S.job = { id: null, token, origin: 'create', kind: queueKind(params), mk: k, media: k, params, input, srcs: pic || params.kind === 'v2v' ? srcs || null : null, sub: 'running', armed: false, waiting: true,
     p: { phase: 'load', step: 0, steps: k === 'video' ? 4 : params.steps, etaSeconds: null }, frac: 0, t0: Date.now(), at: Date.now() };
   Object.assign(S, { error: null, hot: false, gpuReset: false, killed: null, vkilled: null, ckHidden: false, popped: 0, pending: false });
   set({ phase: 'working' });   // synchronous, before any await
@@ -739,15 +1121,16 @@ async function startJob(params, input, srcs) {
     if (pic && !params.resume) await store.putVideoInputs(input.map((b, i) => Object.assign({ blob: b }, (srcs && srcs[i]) || { from: 'phone', libId: null, thumb: null }))).catch(() => {});   // the Library's thumbnails
     if (params.kind === 'i2i') await store.putInput(input).catch(() => {});
     const qp = await queueParams(params, input);
+    if (CONNECT_ON && params.renderOn !== 'phone') await connectP().then((c) => c.route(queueKind(params), qp, params)).catch(() => false);   // Connection (off in public builds)
     if (!S.job || S.job.token !== token) return;
     if (S.job.cancelWanted) { S.job = null; set({ phase: 'ready' }); return syncWake(); }   // cancelled before it reached the queue
     const j = await Q.add(queueKind(params), qp, { tag: token, title: (params.prompt || '').slice(0, 60) });
-    CJ.set(j.id, { params, input, srcs: pic ? srcs || null : null });
+    CJ.set(j.id, { params, input, srcs: pic || params.kind === 'v2v' ? srcs || null : null });
     if (S.job && S.job.token === token) { S.job.id = j.id; if (S.job.cancelWanted) Q.cancel(j.id); }
   } catch (x) { if (S.job && S.job.token === token) jobFailed(x, params, input); }
 }
 /** a Create job's queue kind (the runner that makes it, assistant/runners.js; 'resume' = the unfinished picture clip, app-side) */
-const queueKind = (p) => (p.media === 'video' ? (p.resume && isPic(p.kind) ? 'resume' : p.kind === 'i2v' ? 'animate' : p.kind === 'flf' ? 'between' : 'clip') : p.kind === 'i2i' ? 'edit' : 'picture');
+const queueKind = (p) => (p.media === 'video' ? (p.resume && (isPic(p.kind) || p.kind === 'v2v') ? 'resume' : p.kind === 'v2v' ? (p.long ? 'restylelong' : 'restyle') : p.kind === 'i2v' ? 'animate' : p.kind === 'flf' ? 'between' : 'clip') : p.kind === 'i2i' ? 'edit' : 'picture');
 /** the Create form's params -> the runner's params. Pictures go into the queue's own store first (blob keys), so a page kill keeps them. */
 async function queueParams(p, input) {
   const ui = Object.assign({}, p, { sources: p.sources || null });
@@ -757,7 +1140,17 @@ async function queueParams(p, input) {
     if (p.kind === 'i2i') return Object.assign(base, { steps: p.steps, inputKey: await Q.putBlob(input, { role: 'create-photo' }), attested: !!p.attested, reference: p.reference || 'half' }, q9);
     return Object.assign(base, { steps: p.steps }, q9);
   }
-  if (p.resume && isPic(p.kind)) return Object.assign(base, { frames: p.frames, mode: 'picture', attested: true });
+  if (p.resume && (isPic(p.kind) || p.kind === 'v2v')) return Object.assign(base, { frames: p.frames, mode: 'picture', attested: true });
+  if (p.kind === 'v2v' && p.long) {   // v4: the whole video in parts (ui/style_run.js restyleLongRunner): every part's frames pack, the checked first frame, the sound
+    const n = p.parts.length, packKeys = [];
+    for (let i = 0; i < n; i++) packKeys.push(await Q.putBlob(input[i], { role: 'create-clip' }));
+    return Object.assign(base, { frames: p.frames, seconds: lenOf(p.frames), parts: p.parts, packKeys, firstKey: await Q.putBlob(input[n], { role: 'create-picture' }),
+      soundKey: p.sound && input[n + 1] ? await Q.putBlob(input[n + 1], { role: 'create-sound' }) : null, attested: !!p.attested, follow: p.follow || null, startStep: p.startStep == null ? null : p.startStep, lowswap: p.lowswap || null,
+      look: p.look || null, description: p.description || '' });
+  }
+  if (p.kind === 'v2v') return Object.assign(base, { frames: p.frames, seconds: lenOf(p.frames), sourceKey: await Q.putBlob(input[0], { role: 'create-clip' }), firstKey: await Q.putBlob(input[1], { role: 'create-picture' }),
+    soundKey: p.sound && input[2] ? await Q.putBlob(input[2], { role: 'create-sound' }) : null,
+    attested: !!p.attested, follow: p.follow || null, startStep: p.startStep == null ? null : p.startStep, lowswap: p.lowswap || null, look: p.look || null });   // v4: ui/style_run.js (the frames pack + the styled first frame + the clip's own sound)
   if (p.kind === 'i2v') return Object.assign(base, { frames: p.frames, seconds: lenOf(p.frames), imageKey: await Q.putBlob(input[0], { role: 'create-picture' }), attested: !!p.attested });
   if (p.kind === 'flf') return Object.assign(base, { frames: p.frames, seconds: lenOf(p.frames), firstKey: await Q.putBlob(input[0], { role: 'create-picture' }), lastKey: await Q.putBlob(input[1], { role: 'create-picture' }), attested: !!p.attested });
   return Object.assign(base, { frames: p.frames });
@@ -766,6 +1159,7 @@ function onProgress(p) {
   const j = S.job; if (!j || !p) return;
   const changed = j.waiting || p.phase !== j.p.phase || p.step !== j.p.step || (p.phase === 'decode' && String(tileOf(p.message)) !== String(tileOf(j.p.message)));
   j.waiting = false; j.p = p; j.at = Date.now(); j.frac = Math.max(j.frac, p.frac || 0);   // the bar never moves back
+  if (p.part) j.part = p.part;   // v4: the whole video: which part
   if (changed) { S.gpuReset = false; renderWork(true); }
   renderProgress();
 }
@@ -780,11 +1174,15 @@ function jobDone(r, params, input) {
   const k = params.media === 'video' ? 'video' : 'image', srcs = S.job && S.job.srcs;
   if (S.job && S.job.input) input = S.job.input;   // a resumed picture clip got its pictures back from the store
   if (k === 'video' && !(r && r.blob)) return jobFailed(Object.assign(new Error('the clip came back empty'), { code: 'EMPTY_CLIP' }), params, input);
-  if (!r.resumedFromStep) learn(params, r.seconds);
+  if (params.long && Array.isArray(r.partTimes)) { for (const t of r.partTimes) if (!t.resumedFromStep && t.seconds > 0) learn({ media: 'video', kind: 'v2v', width: params.width, height: params.height, frames: t.frames }, t.seconds); }   // v4: each part teaches its own time
+  else if (!r.resumedFromStep) learn(params, r.seconds);
+  if (params.sty && k === 'image') return styFrameDone(r, params);   // v4: a restyle's first frame is checked on Create, not saved
   // keep only what the UI needs; the engine result also carries GPU details
   const res = { id: `${Date.now().toString(36)}-${r.seed}`, media: k, blob: r.blob, url: r.url || URL.createObjectURL(r.blob), width: r.width, height: r.height,
     seed: r.seed, prompt: params.prompt, seconds: r.seconds, kind: params.kind, createdAt: Date.now(), params, input };
-  if (k === 'video') Object.assign(res, { frames: r.frames || params.frames, fps: r.fps || 16, vmode: params.kind || 't2v', sources: isPic(params.kind) ? srcs || [] : null });
+  if (r.madeOn) res.madeOn = r.madeOn;   // Connection (off in public builds)
+  if (k === 'video') Object.assign(res, { frames: r.frames || params.frames, fps: r.fps || 16, vmode: params.kind || 't2v', sources: isPic(params.kind) || params.kind === 'v2v' ? srcs || [] : null });
+  if (k === 'video' && params.kind === 'v2v') { Object.assign(res, { look: params.look || null, follow: params.follow || null, followBy: params.followBy || null, description: params.description || null, parts: params.long ? params.parts.length : null }); styClipDone(); soundNote(params, r); }   // v4: a restyle, beside its source (+ the whole video's parts, its sound)
   else Object.assign(res, { steps: r.steps, reference: params.kind === 'i2i' ? params.reference : null });
   if (params.quality === '9b') res.model = MODELS.k9b.id;   // v026.6: the Library says which model made it
   if (params.hq && k === 'video') { res.hq = params.hq.mode; S.hq = null; saveHq(); }   // a High / Highest clip: its frames were 9B
@@ -797,10 +1195,13 @@ function jobDone(r, params, input) {
   if (params.hq && k === 'image') hqFrameDone(params, res);   // v026.6
   return res;
 }
+/** v4: a restyle of a clip with sound that came back silent (no sound encoder on this phone): say so once */
+function soundNote(params, r) { if (params && params.sound && r && r.sound === 'failed') { diag('restyle: no sound added', { why: r.soundWhy || null }); toast('The new clip has no sound: it couldn’t be added on this phone', { ms: 5000 }); } }
 function jobFailed(e, params, input) {
   const k = params.media === 'video' ? 'video' : 'image', clip = k === 'video', stopping = !!(S.job && S.job.sub === 'cancelling'), pic = isPic(params.kind);
   const srcs = S.job && S.job.srcs; if (S.job && S.job.input) input = S.job.input;
   S.job = null; if (clip) refreshCk();
+  if (params.sty) styJobEnded(params);   // v4: a restyle's first frame or clip: back to where it was (the clip stays picked)
   if (isAbort(e) || stopping) { ls.set(clip ? 'pf.app.lastVideo' : 'pf.app.lastJob', null); set({ phase: 'ready' }); return syncWake(); }   // cancel is silent; the prompt stays
   const retry = ['Try again', () => startJob(params, input, srcs)];
   const X = (title, note = '', actions = [], extra = {}) => { set({ phase: 'error', error: Object.assign({ title, note, actions, detail: msg(e) }, extra) }); syncWake(); toStage(); };
@@ -812,7 +1213,9 @@ function jobFailed(e, params, input) {
     case 'EMPTY_PROMPT': return X(clip ? 'Describe the clip first.' : 'Describe the picture first.');
     case 'BAD_SIZE': return X(clip ? "That size or length isn't available — pick another." : "That size isn't available — pick a shape.");
     case 'BAD_IMAGE': return X(pic ? "That picture couldn't be opened. Try another, or a screenshot of it." : "That photo couldn't be opened. Try another, or a screenshot of it.");
-    case 'NOT_ATTESTED': { const i = S.vslots.findIndex((x) => x && x.from === 'phone' && !x.attest); X('Tick the box about your photo first.', 'Each photo from your phone needs its own tick.'); return flag($(`vattest-box-${Math.max(0, i)}`)); }
+    case 'BAD_VIDEO': return X("That clip couldn't be read.", 'Pick it again, or another clip.');   // v4: Restyle a clip
+    case 'NOT_ATTESTED': if (params.sty) { X('Tick the box about your video first.', 'A video from your phone needs its own tick.'); return flag($('sattest-box')); }   // v4
+    { const i = S.vslots.findIndex((x) => x && x.from === 'phone' && !x.attest); X('Tick the box about your photo first.', 'Each photo from your phone needs its own tick.'); return flag($(`vattest-box-${Math.max(0, i)}`)); }
     case 'NO_CHECKPOINT': return X('That unfinished clip is gone.', 'Make it again from the pictures.');
     case 'GPU_LOST': return X("The phone reset its graphics chip. Nothing's broken.", clip ? 'Try again picks up after the last finished step.' : '', [retry]);   // same seed: resumes from the checkpoint
     case 'KILLED':   // v019: the queue gave up after the page stopped three times during this job (memory or heat)
@@ -843,7 +1246,11 @@ async function recheckModel(k) {
   S.mode = k; set({ phase: 'ready', error: null }); toStage();   // a missing model shows its download card on Create
 }
 // ------------------------------------------------------------------------------------------------ v019: the queue + the assistant
-const isStageKind = (kind) => (RENDER_KINDS.has(kind) && kind !== 'musicvideo' && !CAST_KINDS.has(kind)) || kind === 'resume';   // jobs that put popcorn on the stage
+const isStageKind = (kind) => (RENDER_KINDS.has(kind) && kind !== 'musicvideo' && !CAST_KINDS.has(kind)) || kind === 'resume' || kind === 'restylelong';   // jobs that put popcorn on the stage (v4: + the whole video in parts: its parts show as it)
+/** v4: a part of a whole video restyled in parts (a 'restyle' job under a 'restylelong' coordinator) -> the coordinator, else null */
+const longParent = (j) => { const p = j && j.kind === 'restyle' && j.parent && Q ? Q.get(j.parent) : null; return p && p.kind === 'restylelong' ? p : null; };
+/** v4: a whole-video restyle that stopped and is kept so it can carry on from its part (the newest) */
+const longKept = () => (Q ? Q.list().filter((j) => j.kind === 'restylelong' && j.status === 'failed' && isCreateJob(j)).sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0))[0] || null : null);
 const mediaOfKind = (kind) => (kind === 'song' || kind === 'say' ? 'audio' : kind === 'picture' || kind === 'edit' ? 'image' : 'video');
 const isCreateJob = (j) => !!j && typeof j.tag === 'string' && j.tag.startsWith('create:');
 const TERMINAL = new Set(['done', 'failed', 'cancelled']);
@@ -1024,8 +1431,9 @@ addEventListener('resize', () => {   // the page came back short (e.g. after lea
 
 function diagText() {
   const rows = ls.get(DIAG_KEY, []) || [];
-  const head = `p0pc0rn ${APP_VERSION} · ${navigator.userAgent}${navigator.deviceMemory ? ` · deviceMemory ${navigator.deviceMemory} GB` : ''}`;
-  return [head, vpLine()].concat(rows.map((r) => { const { t, step, mem, ...rest } = r; const m = mem || {}; return `${t} ${step}${Object.keys(rest).length ? ' ' + JSON.stringify(rest) : ''} | gpu ${m.gpuMB ?? '?'} MB (peak ${m.gpuPeakMB ?? '?'})${m.jsMB != null ? ` js ${m.jsMB} MB` : ''}`; })).join('\n');
+  let sched = []; try { sched = APPS && APPS.schedLines ? APPS.schedLines(40) : []; } catch (e) { sched = []; }   // v4: the apps scheduler's last steps
+  const head = `p0pc0rn ${APP_VERSION} · ${navigator.userAgent}${navigator.deviceMemory ? ` · deviceMemory ${navigator.deviceMemory} GB` : ''}${S.caps && S.caps.gpu ? ` · graphics ${S.caps.gpu}` : ''}`;   // v4: + the graphics chip (vendor, architecture, description)
+  return [head, vpLine()].concat(sched, rows.map((r) => { const { t, step, mem, ...rest } = r; const m = mem || {}; return `${t} ${step}${Object.keys(rest).length ? ' ' + JSON.stringify(rest) : ''} | gpu ${m.gpuMB ?? '?'} MB (peak ${m.gpuPeakMB ?? '?'})${m.jsMB != null ? ` js ${m.jsMB} MB` : ''}`; })).join('\n');
 }
 addEventListener('error', (e) => diag('page error', { message: String((e && e.message) || e).slice(0, 300) }));
 addEventListener('p0pc0rn:manifest', (e) => { const d = (e && e.detail) || {}; diag('pack list refused', { pack: d.pack || null, kept: !!d.kept }); });   // v027.3 (engine/core/pin.js)
@@ -1052,8 +1460,12 @@ async function initAssistant() {
     if (((ctx.params && ctx.params.ui) || {}).kind === 'flf') { const k = flfKeep(r.frames), t = await keepHead(r.blob, k, r.fps || 16); return { video: t.blob, frames: k, rendered: r.frames, fileFrames: t.frames, fps: r.fps, width: r.width, height: r.height, seed: r.seed, seconds: r.seconds, resumedFromStep: r.resumedFromStep || 0 }; }
     return { video: r.blob, frames: r.frames, fps: r.fps, width: r.width, height: r.height, seed: r.seed, seconds: r.seconds, resumedFromStep: r.resumedFromStep || 0 };
   } };
+  RUN.restyle = restyleRunner({ model: MODELS.video.id });   // v4 Phase 4: Create › Video › Restyle a clip (ui/style_run.js; the looks LoRA comes from videoAdapter)
+  RUN.restylelong = restyleLongRunner();   // v4: the whole video in parts (no model: it queues a 'restyle' job a part, then joins them and adds the sound)
   // the Gemma tick: every video job waits for the licence sheet while the LTX licence or the tick is missing (ltxGate)
-  for (const k of ['clip', 'animate', 'between', 'resume']) { const r = RUN[k]; if (r && r.run) RUN[k] = Object.assign({}, r, { run: async (ctx) => { if (!ltxOk()) await ltxGate(ctx.signal); return r.run(ctx); } }); }
+  for (const k of ['clip', 'animate', 'between', 'resume', 'restyle']) { const r = RUN[k]; if (r && r.run) RUN[k] = Object.assign({}, r, { run: async (ctx) => { if (!ltxOk()) await ltxGate(ctx.signal); return r.run(ctx); } }); }
+  // Connection (off in public builds)
+  if (CONNECT_ON) for (const k of ['picture', 'edit', 'clip', 'animate', 'between', 'restyle']) { const r = RUN[k]; if (r && r.run) RUN[k] = Object.assign({}, r, { model: (j) => (j && j.params && j.params.remote ? null : r.model(j)), run: async (ctx) => (ctx.params && ctx.params.remote ? (await connectP()).run(ctx) : r.run(ctx)) }); }
   // p0pc0rn Cast: 'say' (a Cast member's voice), 'lipsync' + 'talk' (Make them talk, EXPERIMENTAL)
   RUN.say = sayRunner({ cast: CAST }); RUN.lipsync = lipsyncRunner();
   RUN.talk = talkRunner({ cast: CAST, say: (sid, m) => (AG ? AG.say(sid, m) : null), sizes: { tall: CLIP_SIZE.tall, wide: CLIP_SIZE.wide } });
@@ -1061,6 +1473,7 @@ async function initAssistant() {
   APPS = createApps(appsApi());
   RUN.makeapp = APPS.runner(() => brainFor('app'), { ctxOf: (id) => (MODELS.brain4 && id === MODELS.brain4.id ? BRAIN4_CTX : 0), small: MODELS.brain.id });   // 3.8 (v040): the Bigger brain makes apps when it can
   RUN.appask = APPS.askRunner(MODELS.brain.id);   // an app's own questions stay on Juli
+  RUN.appref = APPS.refRunner(MODELS.brain4 ? MODELS.brain4.id : null, { research: () => (AS.research ? RS : null) });   // v4: Token Watch's name references (the Bigger brain only, never Juli's own model)
   RUN.appedit = APPS.editRunner({ big: () => brainFor('app'), small: MODELS.brain.id, ctxOf: (id) => (MODELS.brain4 && id === MODELS.brain4.id ? BRAIN4_CTX : 0) });   // H39: a change by chat: the Bigger brain plans and reviews when it can, Juli does the work
   // 3.9 polish (Josh: "the user can choose the opponent after they beat Juli e2B 10 times in a row"): a game's mover is Juli's own
   // model, always; the Bigger brain only when the game asks for it (big: the opponent the person earned and chose) and it is
@@ -1071,14 +1484,18 @@ async function initAssistant() {
     isBig: (id) => !!MODELS.brain4 && id === MODELS.brain4.id, big: () => brain4Usable() }), () => Q);   // a move an earlier page asked needs none (script 16)
   RUN.bench = benchRunner({ MODELS, RUN });
   RUN.appiconplan = iconPlanRunner(MODELS.brain.id); RUN.appicon = iconRenderRunner(MODELS.image.id, RUN.picture);   // 3.9: Juli's idea for an app icon (her own model), then ONE FLUX.2 [klein] 4B shot
+  HDR = createHdr(hdrApi()); RUN.hdr = Object.assign({}, HDR.runner, { run: async (ctx) => { if (VOICEIN) await VOICEIN.release('hdr'); return HDR.runner.run(ctx); } });
+  RUN.nowcast = { model: () => MODELS.nowcast.id, needsConsent: false, fallback: (j, m) => (m === MODELS.nowcast.id && ncInt8() ? 'dgmr-nowcast-int8' : null),   // v4: the Nowcast's job (nowcast/nowcast_app.js)
+    run: async (ctx) => { if (VOICEIN) await VOICEIN.release('nowcast'); return (await ncGlue()).runner.run(ctx); } };   // v4: Make HDR (no model: between renders, in this queue); voice input lets go first
   // v019 has no sound effects yet: the assistant is never offered add_sound, and the foley cookbook is left out of its notes
   const fi = MAIN_TOOLS.indexOf('add_sound'); if (fi >= 0) MAIN_TOOLS.splice(fi, 1);
   // v023: no music video from chat (Josh: the landed song's bubble offers Animate); the v019 runners stay for old queue jobs
   const mi = MAIN_TOOLS.indexOf('make_music_video'); if (mi >= 0) MAIN_TOOLS.splice(mi, 1);
   Q = await createQueue({ runners: RUN, host: new EngineHost({ create: hostCreate, onEvent: (ev) => { HOSTLOG = HOSTLOG.concat(Object.assign({ t: Date.now() }, ev)).slice(-20); if (ev.type === 'unload') { LAST_UNLOADED = ev.model; UNLOADED_AT = Date.now(); } diag(`model ${ev.type}`, { model: ev.model }); } }), consent: consented, autoStart: false,
     planned: (j) => !!(PLANNED_IN && (PLANNED_IN.ids || []).includes(j.id)),   // v024.2: a planned fresh page is not a kill
-    holdMs: (id) => (id === MODELS.brain.id || (MODELS.brain4 && id === MODELS.brain4.id) ? 5000 : 0) });   // 3.8: Juli stays loaded 5 s for a follow-up job (iOS 27, see queue.js runJob)
-  wireQueue(); wireMv();
+    holdMs: (id) => (id === MODELS.brain.id && VOICEIN && VOICEIN.active() ? 45000 : id === MODELS.brain.id || (MODELS.brain4 && id === MODELS.brain4.id) ? 5000
+      : KEY_OF[id] === 'nowcast' && NC && NC.shown ? 120000 : 0) });   // v4: the Nowcast's model stays while its screen is open (2 min idle; it goes when the screen closes)   // v4: 45 s in a voice conversation (the next thing you say comes soon)   // 3.8: Juli stays loaded 5 s for a follow-up job (iOS 27, see queue.js runJob)
+  wireQueue(); wireMv(); HDR.wire();
   { const hold0 = Q.holdMs; Q.holdMs = (id) => Math.max(APPS && APPS.holdFor ? APPS.holdFor(id) : 0, hold0 ? hold0(id) : 0); }   // 3.9: the game hold (makeapp/host.js holdFor)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && Q) Q.endHold(); });   // 3.8: no model held in a hidden page
   addEventListener('pagehide', () => { if (Q) Q.endHold(); });
@@ -1097,9 +1514,12 @@ async function initAssistant() {
     plugStarter();
     AG = await createAgent({ queue: Q, research: AS.research ? RS : null, cookbooks: loadCookbooks({ index, files }), hooks: { consent: consented, isInstalled: installed, review: AS.review, hfLogin: false,
       castNames: () => CAST.names(), castJob: (job, tool, args, text) => castJob(job, tool, args, text),   // p0pc0rn Cast: the likeness gate + photo references
-      brainModel: () => (brain4Usable() ? MODELS.brain4.id : null) } });   // 3.8 (v040): the Bigger brain plans and writes (agent.js BRAIN)
+      castDisplay: async () => (await CAST.list()).map((p) => p.name),   // v4: Juli is told who is in the Cast (agent.castNote)
+      brainModel: () => (brain4Usable() ? MODELS.brain4.id : null),
+      homeZip: () => HOME_ZIP.get(), setHomeZip: (z) => HOME_ZIP.set(z), position: () => positionIfAllowed() } });   // v4 (weather): the home ZIP, and the phone's location only if already allowed   // 3.8 (v040): the Bigger brain plans and writes (agent.js BRAIN)
     RUN.attach(AG);
-    AG.hooks.skills = (kind) => (APPS && APPS.state.skills ? APPS.state.skills.skillsFor(kind) : []);   // H39: the skills that are on (Apps › Skills): a 'for: chat' one that fits goes into Juli's plan
+    AG.hooks.skills = (kind) => (APPS && APPS.state.skills ? APPS.state.skills.skillsFor(kind) : []);
+    AG.hooks.nowcastTurn = async (sid, m, o) => (E.nowcast && done('nowcast') ? (await ncGlue()).juliTurn(sid, m, o) : null);   // v4: "will it rain in the next hour" -> the Nowcast (Experimental), when its model is here   // H39: the skills that are on (Apps › Skills): a 'for: chat' one that fits goes into Juli's plan
     const chat = RUN.chat;   // a turn woken only to say "here's your song" (or that a job stopped) needs no model: no reload of the assistant
     // p0pc0rn Cast: "make <name> say <line>" is answered in code (no assistant model): the 'say' chat job queues the voice and posts the audio
     const SAYTURN = sayTurn({ cast: CAST, agent: AG, queue: Q, installed }), sayChat = (j) => !!j && j.kind === 'chat' && !!j.params && j.params.purpose === 'say';
@@ -1114,20 +1534,37 @@ async function initAssistant() {
     RUN.chat = { model: () => null, needsConsent: false, run: async () => { throw Object.assign(new Error("Juli couldn't start: " + S.agentError), { code: 'NO_ASSISTANT' }); } };
   }
   CH = createChat(chatApi());
+  VOICEIN = initVoiceIn({ engine: () => E.stt, ready: () => done('stt'), here: voiceHere, consented, openLesson, toast, diag, send: () => CH && CH.send(), input: () => $('as-in'),
+    canSend: () => !!AG && consented(), busyWhy: voiceBusy, beforeLoad: voiceRoom, listening: abortWarm, onChange: setVoiceLayout, paused: () => VOICE_PAUSED,   // v4: + listening: the mic opening stops a voice warm-up
+    undoSend: () => { const sid = CH && CH.sid, j = Q && sid ? Q.list({ includeTerminal: false }).filter((x) => x.kind === 'chat' && x.session === sid).pop() : null; if (j) Q.cancel(j.id).catch(() => {}); return !!j; } });   // v4: voice input (ui/voicein.js)
+  setVoiceLayout();
   APPS.init().catch((e) => diag('apps: init failed', { message: String((e && e.message) || e).slice(0, 200) }));
   MEM = startMemory(memApi());   // 3.9: About me + Routines (Settings › Juli) and their heartbeat
   try { BENCH = createBench(benchApi()); } catch (e) { diag('bench: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }
   try { ICON = createAppIcon(iconApi()); globalThis.P0APPICON = ICON; ICON.init(); } catch (e) { diag('app icon: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }   // 3.9
   try { MUSIC = createMusic(musicApi()); } catch (e) { diag('music: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }   // 3.9
   try { CLIPT = createClipThumbs({ Q: () => Q, lib: () => S.lib, visible: () => S.tab === 'library', viewerOpen: () => !$('viewer').hidden, songCover, diag }); } catch (e) { diag('clip posters: init failed', { message: String((e && e.message) || e).slice(0, 200) }); }   // 3.9
+  if (CONNECT_ON) connectP().catch((e) => diag('connect: init failed', { message: String((e && e.message) || e).slice(0, 200) }));   // Connection (off in public builds)
+}
+/** Connection (off in public builds) */
+function connectApi() {
+  return { Q: () => Q, consented, openLesson: () => openLesson(), done: (k) => done(k), models: MODELS, dl: (k) => S.dl[k] || null, startDownload: (k) => startDownload(k),
+    ltxOk: () => ltxOk(), openLtx: (cb) => openLtx(cb), toast: (t, o) => toast(t, o), diag, sheet: (id, title) => mvSheet(id, title), go: (t) => go(t), render: () => render() };
 }
 /** 3.8: what the Apps tab may use from the app (makeapp/host.js): the queue, the chat (an app's notice), sheets and toasts */
 function appsApi() {
   return { Q: () => Q, toast, sheet: mvSheet, installed: (k) => done(k), consented, openLesson: () => openLesson(), diag,
+    safe: () => SAFE,   // v4: safe mode (?safe=1): no app checks on its own
     homeButton: (a, open) => SHELL.homeButton(a, open),   // 3.9: My apps' "Add to Home" (ui/shell.js)
     settle: () => settle(), endHold: () => { if (Q) Q.endHold(); },   // 3.8 (iOS 27): a few seconds after a model leaves; Juli held for a follow-up lets go
     busy: () => S.phase === 'working' || !!(Q && Q.active && RENDER_KINDS.has(Q.active.job.kind)),
     modelBusy: () => S.phase === 'working' || !!(Q && (Q.holding || (Q.active && Q.modelOf(Q.active.job)) || (Q.next() && Q.modelOf(Q.next())))),   // a model is (about to be) in memory, Juli answering an app included (3.8: or held for a follow-up)
+    // v4 (Token Watch's name references): the Bigger brain for an app's own switch: downloaded, can run here, size, this phone's speed
+    bigState: () => { const b = ls.get('pf.app.bench', null), v = b && b.tests && b.tests.e4bchat;
+      return { downloaded: !!MODELS.brain4 && done('brain4'), usable: brain4Here() && !brain4Blocked(), why: !e4bHere() ? 'this browser can’t run its second process' : brain4Blocked() ? 'it ran out of memory here last time' : '',
+        sizeGB: MODELS.brain4 ? Math.round(MODELS.brain4.total / 1e8) / 10 : 0, tokPerS: v && +v.tokPerS > 0 ? +v.tokPerS : 0 }; },
+    downloadBig: () => { const m = e4bDl(); if (!m.running && !m.ready && !m.pausing) e4bTap(); },   // the existing flow: NVIDIA's licence screen first (the person accepts it), then the download
+    loadedModel: () => { const id = Q && (Q.active ? Q.modelOf(Q.active.job) : Q.host ? Q.host.currentId : null); return !id ? null : id === MODELS.brain.id ? 'e2b' : MODELS.brain4 && id === MODELS.brain4.id ? 'big' : 'other'; },   // v4 (scheduler)
     confirm: (title, text, ok, fn) => openSheet(title, text, ok, fn),
     about: (budget) => (MEM ? MEM.about(budget) : ''),   // 3.9: About me for the make and change prompts (the framed block; '' when none)
     async notice(app, n) {   // an app's notice in Juli's chat: kept out of the model's history (it is never an instruction to Juli)
@@ -1150,6 +1587,11 @@ function memApi() {
 function musicApi() {
   return { lib: () => S.lib, getBlob: (id) => store.getBlob(id), toast, sheet: mvSheet, confirm: (title, text, ok, fn) => openSheet(title, text, ok, fn), diag };
 }
+/** v4: what Make HDR (ui/hdr.js) may use: the queue, the Library (its files, a new item beside the original), sheets, toasts, the agreement */
+function hdrApi() {
+  return { Q: () => Q, getBlob: (id) => store.getBlob(id), lib: () => S.lib, toast, sheet: mvSheet, el: mvEl, btn: mvBtn, consented, openLesson: () => openLesson(),
+    settle: () => settle(), busy: () => appsApi().modelBusy(), saveToLibrary, loadLib, openViewer: (id) => openViewer(id, false), diag };
+}
 /** 3.9 (Settings › Benchmark › Full's feature checks, ui/bench_features.js): what the checks read: Juli, her chat, About me + Routines,
  *  Music, the screen shown, the page's graphics memory (read only: the diagnostics' peak stays), the helper process's heartbeat (iOS 27),
  *  and how this page opened (the app's own planned fresh page, or the page before ended: where), for a run the page's reload cut */
@@ -1171,6 +1613,8 @@ function iconApi() {
 }
 function benchApi() {
   return { ...bench39(), ls, toast, sheet: mvSheet, Q: () => Q, done, MODELS, consented, ltxOk, wake, learn, version: APP_VERSION, apps: () => APPS,
+    videoEnv: () => ({ video: done('video'), reader: !!E.reader && done('reader'), ltx: ltxOk(), loraHere: !!E.lora, lora: !!E.lora && done('lora'),   // v4: Settings › Benchmark › Video
+      image: done('image'), vencHere: !!E.venc, venc: !!E.venc && done('venc'), styleHere: !!E.lora2, style: !!E.lora2 && done('lora2') }),   // v4 Phase 3: + style video to video
     e4bHere: () => (typeof E4B_HERE === 'function' ? !!E4B_HERE() && !(typeof E4B_BLOCKED === 'function' && E4B_BLOCKED()) : false), e4bWhy: () => (typeof E4B_WHY === 'function' ? E4B_WHY() : null),   // 3.8 v040: the Bigger brain
     planned: (id) => !!(PLANNED_IN && (PLANNED_IN.ids || []).includes(id)),
     device: () => { const ua = navigator.userAgent; return `${/iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : 'Desktop'} · ${[...new Set((($('s-gpu') && $('s-gpu').textContent) || 'GPU').split(/\s+/))].join(' ')}${navigator.deviceMemory ? ` · ${navigator.deviceMemory} GB` : ''}`; } };
@@ -1226,7 +1670,7 @@ function startQueue() {
   if (!Q) return;
   const rec = (Q.recovered || []).map((id) => Q.get(id)).filter(Boolean);
   for (const j of rec) if (j.status === 'failed' && j.parent) Q.wakeParent(j).catch(() => {});      // gave up (3 kills): its chat turn still answers
-  for (const j of rec) if (j.status === 'failed' && isCreateJob(j)) Q.remove(j.id).catch(() => {});  // Create shows the engine's own banner for it
+  for (const j of rec) if (j.status === 'failed' && isCreateJob(j) && j.kind !== 'restylelong') Q.remove(j.id).catch(() => {});  // Create shows the engine's own banner for it (v4: a whole-video restyle is kept: it carries on)
   const back = rec.filter((j) => j.status === 'queued' && !(PLANNED_IN && (PLANNED_IN.ids || []).includes(j.id)));
   let died = ls.get(INFLIGHT, null);   // kept until the person decides (Try again / Discard), so a reopen asks again
   // v024.2: a planned fresh page is not a death: its jobs are already back in the queue (no kill); nothing to ask
@@ -1261,7 +1705,7 @@ function startQueue() {
   // The queue stays paused and a card asks: Try again / Discard. ?safe=1 opens paused with nothing resumed.
   if (pending.length || SAFE) Q.pause();
   if (pending.length) setTimeout(() => safeOpen(pending, died), 300);
-  else if (SAFE) toast('Safe mode: nothing runs until you resume the queue', { ms: 6000 });
+  else if (SAFE) toast('Safe mode: nothing runs until you resume the queue, and apps don’t check on their own', { ms: 6000 });   // v4: + apps (makeapp/host.js)
   for (const j of rec) if (j.status === 'failed' && j.kind === 'chat') Q.emit('failed', j);   // its turn says why, in plain words
   const requeued = rec.filter((j) => j.status === 'queued');   // v024.2: incl. the planned fresh page's (no 'Try again' banner for them either)
   if (requeued.length) {
@@ -1271,7 +1715,10 @@ function startQueue() {
   }
   const old = Date.now() - 3 * 864e5;   // finished families older than 3 days: the Library and the chat keep what matters
   const mvOld = Date.now() - 30 * 864e5;   // v023: a music video keeps its frames and takes 30 days (its storyboard can still reroll a shot)
-  for (const j of Q.list()) if (j.root === j.id && TERMINAL.has(j.status) && (isCreateJob(j) || (j.endedAt || 0) < (j.kind === 'mvflf' ? mvOld : old)) && !Q.descendants(j.id).some((d) => !TERMINAL.has(d.status))) Q.remove(j.id).catch(() => {});
+  const keptLong = (j) => j.kind === 'restylelong' && j.status === 'failed' && (j.endedAt || 0) > old;   // v4: a whole-video restyle that stopped: 3 days to carry on
+  for (const j of Q.list()) if (j.root === j.id && TERMINAL.has(j.status) && !keptLong(j) && (isCreateJob(j) || (j.endedAt || 0) < (j.kind === 'mvflf' ? mvOld : old)) && !Q.descendants(j.id).some((d) => !TERMINAL.has(d.status))) Q.remove(j.id).catch(() => {});
+  for (const j of Q.list()) if (j.kind === 'restylelong' && j.status === 'waiting' && Q.children(j.id).length && Q.children(j.id).every((c) => TERMINAL.has(c.status))) Q.maybeWake(j).catch(() => {});   // its part ended while the page was away
+  { const k = longKept(); if (k && !pending.length) setTimeout(() => { if (S.phase === 'ready' && !S.job) longFailed(k, null, false); }, 400); }   // v4: Create says it stopped, with Carry on
   if (S.brainNote) { toast(S.brainNote, { ms: 6000 }); S.brainNote = null; }
   Q.pump(); render(); if (CH) CH.render();
 }
@@ -1283,15 +1730,22 @@ const juliSplitAgain = () => { if (!(E.brain && E.brain.opts && E.brain.opts.spl
 async function hostCreate(id) {
   const k = KEY_OF[id];
   if (!k) throw Object.assign(new Error('no engine for ' + id), { code: 'UNSUPPORTED' });
+  if (VOICEIN && (k !== 'brain' || !voiceBeside())) await VOICEIN.release('load ' + k);   // v4: the recogniser stays only beside Juli (WebKit: her voice layout)
   // v024.2: a fresh page before a model loads, if this page destroyed a lot (WebKit). Not between two assistant turns (the assistant
   // unloads whenever the queue is idle; a reload per turn would flash every reply): only after another model, e.g. a song
-  if (k !== 'brain' || (LAST_UNLOADED && LAST_UNLOADED !== MODELS.brain.id) || juliSplitAgain()) await freshPage('load ' + k, activeJobId());   // 3.9: + Juli's split again
+  const ncOwn = k === 'nowcast' && (!LAST_UNLOADED || KEY_OF[LAST_UNLOADED] === 'nowcast');   // v4: the nowcast after itself: never a fresh page for that
+  if (!ncOwn && (k !== 'brain' || (LAST_UNLOADED && LAST_UNLOADED !== MODELS.brain.id) || juliSplitAgain())) await freshPage('load ' + k, activeJobId());   // 3.9: + Juli's split again
   else { const w = await settle(); if (w) diag('waited before loading Juli', { ms: w }); }   // 3.8 (iOS 27): Juli again right after she left
   if (k === 'k9b') {   // v026.6: FLUX.2 [klein] 9B, its own module (engine/k9b), staged: text -> encode -> denoise -> decode
     if (!E.k9b) throw Object.assign(new Error("the Klein 9B engine couldn't start"), { code: 'UNSUPPORTED' });
     const e = E.k9b.lazy ? await E.k9b.ensure() : E.k9b;   // v026.7: loaded only now
     if (E.k9b.lazy) { await refreshStatus('k9b'); render(); }
     return k9bAdapter(e);
+  }
+  if (k === 'nowcast') {   // v4: the Nowcast's engine (nowcast/engine.js), loaded only now; unload() gives every GPU buffer back
+    if (!E.nowcast) throw Object.assign(new Error("the nowcast engine couldn't start"), { code: 'UNSUPPORTED' });
+    const e = E.nowcast.lazy ? await E.nowcast.ensure() : E.nowcast;
+    await e.load({ precision: id === 'dgmr-nowcast-int8' ? 'int8' : undefined }); return e;
   }
   if (k === 'voice' || k === 'lipsync') {   // p0pc0rn Cast: their own modules (not PF), loaded only now (v026.7)
     if (!E[k]) throw Object.assign(new Error(`the ${MODELS[k].name} engine couldn't start`), { code: 'UNSUPPORTED' });
@@ -1329,11 +1783,14 @@ async function destroyDevice(e) {
 }
 /** the runners' picture-clip call ({seconds, size}) -> the engine's (ENGINE_API.md section 8: {width, height, frames, attested}); the runner checked the attestation */
 const picOpts = (o, x) => Object.assign({ prompt: o.prompt, width: (o.size && o.size.width) || o.width, height: (o.size && o.size.height) || o.height,
-  frames: o.frames || TFRAMES[o.seconds] || (Math.round((o.seconds || 5) * 16) + 1), seed: o.seed, attested: true, onProgress: o.onProgress, signal: o.signal, _keepFrames: !!o._keepFrames }, x);   // v026.3: + the frames kept for the handoff
+  frames: o.frames || TFRAMES[o.seconds] || (Math.round((o.seconds || 5) * 16) + 1), seed: o.seed, attested: true, onProgress: o.onProgress, signal: o.signal, _keepFrames: !!o._keepFrames, _noDecode: !!o._noDecode }, x);   // v026.3: + the frames kept for the handoff; v4: + steps only (the Video benchmark)
 const videoAdapter = (e) => ({ id: MODELS.video.id,
   textToVideo: async (o) => { await beforeRender('clip'); return e.textToVideo(o); },   // v026.2: each clip in a fresh page on WebKit
-  imageToVideo: async (o) => { await beforeRender('clip'); return e.imageToVideo(picOpts(o, { image: o.image })); },
-  framesToVideo: async (o) => { await beforeRender('clip'); return e.framesToVideo(picOpts(o, { first: o.first, last: o.last })); },
+  // v4: picture clips run with the video LoRA when it is on this phone and switched on; a caller that says `lora` (the Video benchmark) decides
+  imageToVideo: async (o) => { await beforeRender('clip'); return e.imageToVideo(picOpts(o, { image: o.image, lora: 'lora' in o ? o.lora : loraUse() })); },
+  framesToVideo: async (o) => { await beforeRender('clip'); return e.framesToVideo(picOpts(o, { first: o.first, last: o.last, lora: 'lora' in o ? o.lora : loraUse() })); },
+  // v4 Phase 3: style video to video ({source: {frames, read(i)}, first (the styled frame 0), prompt, ...}): the looks LoRA unless the caller says
+  videoToVideo: async (o) => { await beforeRender('clip'); return e.videoToVideo(picOpts(o, { source: o.source, first: o.first, follow: o.follow || null, startStep: o.startStep == null ? null : o.startStep, lowswap: o.lowswap || null, lora: 'lora' in o ? o.lora : styleLoraUse() })); },
   resumeVideo: async (o) => { await beforeRender('clip'); return e.resumeVideo(o); },
   cancel: () => e.cancel(), unload: () => destroyDevice(e) });
 /** ACE-Step's time signature as the official code writes it (4/4 -> '4', 3/4 -> '3', 6/8 -> '6') */
@@ -1372,7 +1829,82 @@ const fasterOn = () => {
   return !off || (SPLIT_HERE && splitOn() && !off.split);
 };
 /** 3.8: the engine options of Juli (E2B) and of the Bigger brain (E4B: split on WebKit or not at all; its drafter; 128-token read-in) */
-const brainOpts = () => ({ drafter: fasterOn(), modelOpts: BRAIN_OPTS, split: splitOn(), splitFallback: true, oneProcessOpts: WEBKIT ? { chunk: 128 } : null, reloadSettleMs: WEBKIT ? SETTLE_MS : 0 });
+const brainOpts = () => ({ drafter: fasterOn(), modelOpts: BRAIN_OPTS, split: splitOn(), splitFallback: true, oneProcessOpts: WEBKIT ? { chunk: 128 } : null, reloadSettleMs: WEBKIT ? SETTLE_MS : 0,
+  ...(voiceLayout() ? { splitAt: VOICE_SPLIT, splitMirror: fasterOn() ? [13, 14] : null } : {}) });
+// v4 (voice input): with voice input on this phone and switched on, Juli takes Troll-E's layout on iOS 27: all 35 of her layers in the second
+// process (the page keeps her embedding, head and drafter, the KV of 13 and 14 mirrored back for it; the same words), which leaves room in
+// the page for the recogniser (about 0.65 GB). A desktop or Android browser has the room; WebKit without the split has not (voiceHere: no
+// voice input there yet). The layout applies from Juli's next load (setVoiceLayout: the queue unloads her when it is idle).
+const voiceHere = () => !WEBKIT || splitOn();
+const voiceLayout = () => SPLIT_HERE && splitOn() && !!MODELS.stt && done('stt') && voiceSettings().on && !VOICE_PAUSED;
+// Josh's phone (Nov 2, the Voice in bench): every layout kept all three alive; Juli 0-28 in the helper unless the bench says otherwise
+// (0-34 left the helper too full and iOS ended it). Load order made no difference. v4: the Voice in bench's last finished run on this
+// phone picks the layout (voicebench_plan.js pickLayout: never one where the page ended, which stops the app; then the fewest helper ends,
+// each now a fresh engine; then the quickest first word)
+const VOICE_SPLIT = benchSplit() || 29;
+function benchSplit() { try { const st = JSON.parse(localStorage.getItem(BENCH_KEY) || 'null'); if (!st || !st.done) return 0; const p = pickLayout(st); return p && [21, 25, 29].includes(p.at) ? p.at : 0; } catch (e) { return 0; } }
+const voiceBeside = () => !WEBKIT || voiceLayout();   // where the recogniser may stay loaded while Juli loads (a desktop browser has the room)
+function setVoiceLayout() { if (E.brain && E.brain.opts) Object.assign(E.brain.opts, voiceLayout() ? { splitAt: VOICE_SPLIT, splitMirror: fasterOn() ? [13, 14] : null } : { splitAt: undefined, splitMirror: null }); }
+/** v4: Juli's second process failed while voice mode was on (WebKit). The first time: a FRESH engine for the queue's retry, with the same
+ *  0-28 layout (a reload of the same engine hit NOT_LOADED and file-handle conflicts in Troll-E); the second: voice paused for this page
+ *  (the recogniser and her voice let go, a short note), and Juli goes on as she does without voice input */
+function juliSplitFailed(e, d) {
+  if (!WEBKIT || !voiceLayout()) return;
+  VOICE_FAILS++; diag('voice mode: second process failed', { code: d && d.code, n: VOICE_FAILS });
+  if (VOICE_FAILS >= 2) { pauseVoice('her second process ended twice'); return; }
+  freshJuli(e);
+}
+/** the next job makes a new engine for Juli (this one unloaded itself when its second process failed) */
+function freshJuli(e) {
+  if (E.brain === e) { E.brain = null; E.drafter = null; }
+  if (Q && Q.host && Q.host.currentId === MODELS.brain.id) Q.host.current = null;
+}
+function pauseVoice(why) {
+  if (VOICE_PAUSED) return;
+  VOICE_PAUSED = { why, t: Date.now() }; diag('voice mode paused', { why });
+  if (VOICEIN) { VOICEIN.release('voice paused'); VOICEIN.render(); }
+  if (E.brain && E.brain.opts) setVoiceLayout(); freshJuli(E.brain);   // her next load: the chat's own layout, a fresh engine
+  const sid = CH && CH.sid;
+  if (AG && sid) AG.say(sid, { kind: 'status', text: 'Voice paused: the phone needs the memory, so I’ll answer in text for now. Reopen p0pc0rn to talk again.', history: false }).catch(() => {});
+}
+/** Juli is in the page in the chat layout (loaded before voice input was on, or one process): voice input waits for her */
+const juliWide = () => WEBKIT && !!Q && !!Q.host && Q.host.currentId === MODELS.brain.id && !(S.brainLoad && S.brainLoad.split && S.brainLoad.split.at >= VOICE_SPLIT);
+/** what voice input waits for ('' = nothing): another model's job, or Juli's answer in the chat layout */
+const voiceBusy = () => {
+  if (tuning()) return 'the speed tune';   // v4: the kernel tune and Make HDR use the graphics chip with no model: no recogniser beside them
+  if (!Q || !Q.active) return '';
+  const m = Q.modelOf(Q.active.job);
+  if (!m) return `the ${NOUN[Q.active.job.kind] || 'job'}`;
+  if (KEY_OF[m] !== 'brain') return `${theNoun(KEY_OF[m] || 'image')}’s job`;
+  return juliWide() ? 'Juli’s answer' : '';
+};
+/** before the recogniser loads: Juli held in the chat layout leaves first (the queue lets her go), then WebKit gets the memory back (settle) */
+// v4 (Josh's phone, Nov 2: the first spoken turn read in 1,137 tokens, 6.1 s to her first word; a first lookup's planner 351): in a gap
+// (a chat turn just ended, Juli loaded in voice mode's layout and idle, the mic not listening), the voice prompt's and the lookup
+// planner's fixed starts are read in and kept (engine keepPrefix + prefixOnly; agent.js voiceWarmMessages), so the next spoken turn and
+// its lookup are hits. Not while the person talks: on the desk a warm-up beside the listening recogniser took its real-time factor from
+// 0.33 to 1.31. The mic opening stops it (a turn then reads in what it needs); a turn that comes while it runs waits for it
+let WARM = null, WARMED = null, WARM_AC = null;
+function warmVoice() {
+  try {
+    const e = E.brain, L = S.brainLoad;
+    if (!AG || !AG.voiceWarmMessages || !e || !e._loaded || e.job || WARM || (Q && Q.active) || VOICE_PAUSED || !VOICEIN || !voiceLayout() || !L) return;
+    if (VOICEIN.listening && VOICEIN.listening()) return;
+    if (WEBKIT && !(L.split && L.split.at === VOICE_SPLIT)) return;   // her voice layout only (another is loaded again for a spoken turn)
+    if (WARMED === L) return;
+    const ac = new AbortController(), t0 = performance.now(), got = []; WARM_AC = ac;
+    WARM = (async () => {
+      for (const m of AG.voiceWarmMessages()) { const r = await e.chat(m, { keepPrefix: true, prefixOnly: true, maxTokens: 1, signal: ac.signal }); got.push(r.snapshot ? (r.snapshot.hit ? 'hit' : r.snapshot.readIn) : null); }
+      WARMED = L; diag('voice warm-up', { readIn: got, ms: Math.round(performance.now() - t0) });
+    })().catch((x) => { if (!(x && x.name === 'AbortError')) diag('voice warm-up failed', { message: msg(x).slice(0, 160) }); }).finally(() => { WARM = null; WARM_AC = null; });
+  } catch (x) { /* never in the way */ }
+}
+function abortWarm() { try { if (WARM_AC) WARM_AC.abort(); } catch (x) { /* */ } }
+async function voiceRoom() {
+  if (!juliWide() || (Q && Q.active)) return;
+  Q.endHold(); for (let i = 0; i < 100 && Q.host && Q.host.currentId; i++) await new Promise((r) => setTimeout(r, 100));
+  const w = await settle(); if (w) diag('voice input waited for memory', { ms: w });
+}
 // the Bigger brain on WebKit: split at 24 (3.9; 3.8: 23): layers 0-23 in the second process, the KV of 22 and 23 mirrored back, so its drafter fits beside the head;
 // 64-token read-in chunks (Josh's iPhone, 10-24: split at 22 + drafter ended the page at 1,709 MB)
 const brain4Opts = () => ({ drafter: true, modelOpts: { chunk: WEBKIT ? 64 : 128 }, split: WEBKIT ? 'required' : false, reloadSettleMs: WEBKIT ? SETTLE_MS : 0 });
@@ -1465,7 +1997,7 @@ const brainAdapter = (e, key = 'brain') => ({ id: MODELS[key].id, chat: (m, o) =
  *  (what the phone measured: 17.8 tok/s); the person's turn streams its words into the chat. */
 async function brainChat(e, messages, o = {}, key = 'brain') {   // 3.8: key = which model (its own load on the card)
   const images = [];
-  const msgs = messages.map((m) => (Array.isArray(m.content) ? Object.assign({}, m, { content: m.content.map((p) => (p && p.type === 'image' ? (images.push(p.image), { type: 'image' }) : p)) }) : m));
+  let msgs = messages.map((m) => (Array.isArray(m.content) ? Object.assign({}, m, { content: m.content.map((p) => (p && p.type === 'image' ? (images.push(p.image), { type: 'image' }) : p)) }) : m));
   const opts = { tools: o.tools, maxTokens: o.maxTokens || 256, signal: o.signal };
   const purpose = o.prefix ? String(o.prefix).replace(/^<\|tool_call>call:/, '').replace(/[{\[].*$/s, '').slice(0, 24) : (Array.isArray(o.tools) && o.tools.length ? `plan (${o.tools.length} tools)` : String((messages[0] && messages[0].content) || '').slice(0, 24));
   diag('assistant call', { purpose });
@@ -1474,15 +2006,33 @@ async function brainChat(e, messages, o = {}, key = 'brain') {   // 3.8: key = w
   if (images.length) opts.images = images;
   const j = Q && Q.active && Q.active.job, plan = o.stream != null ? !!o.stream : !o.prefix && Array.isArray(o.tools) && o.tools.some((t) => t && t.function && t.function.name === 'make_picture');   // 3.8: o.stream says so
   let acc = '';
-  if (plan && j && j.session && CH) opts.onToken = (piece) => { acc += piece; CH.stream(j, acc); };
+  const vturn = !!(plan && key === 'brain' && j && j.kind === 'chat' && j.params && j.params.voice);   // a spoken turn: its answer starts with a mood tag (agent.js VOICE_NOTE), always stripped
+  const voiced = vturn && !!VOICEIN && VOICEIN.speaks() && (!WEBKIT || !!(S.brainLoad && S.brainLoad.split));   // ... and spoken (never with Juli in one process on WebKit)   // v4: a spoken message gets a spoken answer
+  if (o.keepPrefix) opts.keepPrefix = o.keepPrefix;   // v4: the prompt's fixed start is kept for the next answer (llm.js, the prefix snapshot; agent.js asks for it on spoken turns)
+  if (j && j.kind === 'chat' && key === 'brain') {   // the voice turn this answer belongs to (a typed turn ends it)
+    if (!(j.params && j.params.voice)) { if (VOICE_TURN && VOICE_TURN.sid === j.session) VOICE_TURN = null; }
+    else if (!VOICE_TURN || VOICE_TURN.job !== j.id) VOICE_TURN = { sid: j.session, job: j.id, spoke: false, begun: false };
+  }
+  if (voiced) { if (!VOICE_TURN.begun) { VOICE_TURN.begun = true; VOICEIN.replyBegin(); } else VOICEIN.replyNext(); }
+  const spoken = (t) => sayZip(String(t || '').split('<|tool_call>')[0].replace(/<\|[^>]*>/g, ''));   // v4: + a ZIP code digit by digit
+  const dn = o.dropNoLive ? (t, final) => { const x = dropNoLive(t, { final }); return x.hold ? '' : x.text || (final ? t : ''); } : (t) => t;   // v4: the forecast was in her note (agent.js)
+  if (plan && j && j.session && CH) opts.onToken = (piece) => {
+    acc += piece; if (!vturn) return CH.stream(j, dn(acc));
+    let w = wordsSoFar(acc); if (w != null) w = fixCaps(dn(w));   // the mood tag is never shown; v4: + capitals (Josh's phone, Nov 2: replies in lower case)
+    CH.stream(j, w == null ? '' : w);
+    if (voiced && w != null) { const s = spoken(w); if (s.trim()) VOICE_TURN.spoke = true; VOICEIN.replyFeed(s); }
+  };
+  if (key === 'brain' && WARM) { try { await WARM; } catch (x) { /* */ } }   // v4: a voice warm-up still reading in: this answer goes after it
   let r;
   try {
     try { r = await e.chat(msgs, opts); }
     catch (x) { if (!(x && x.code === 'TOO_LONG' && opts.maxTokens > 400)) throw x; opts.maxTokens = 400; acc = ''; r = await e.chat(msgs, opts); }   // a long conversation: a shorter answer fits
   } catch (x) { diag('assistant failed', { purpose, code: (x && x.code) || null, message: String((x && x.message) || x).slice(0, 300) }); throw x; }
-  diag('assistant done', { purpose, s: r.timings ? +((r.timings.prefill || 0) + (r.timings.decode || 0)).toFixed(1) : null, promptTokens: r.promptTokens, tokens: r.tokens, enginePeakMB: r.peakMB });
-  if (plan && j && CH) CH.stream(j, acc, true);
-  S[key === 'brain4' ? 'brain4Last' : 'brainLast'] = { tokPerS: r.tokPerS, prefillTokPerS: r.prefillTokPerS, ttft: r.timings && r.timings.firstToken, tokens: r.tokens, promptTokens: r.promptTokens, peakMB: r.peakMB };
+  diag('assistant done', Object.assign({ purpose, s: r.timings ? +((r.timings.prefill || 0) + (r.timings.decode || 0)).toFixed(1) : null, promptTokens: r.promptTokens, tokens: r.tokens, enginePeakMB: r.peakMB }, r.snapshot ? { snapshot: r.snapshot } : {}));
+  if (!vturn && o.dropNoLive) r.text = dn(r.text || '', true);
+  if (vturn) { const t = splitMood(r.text || ''); t.text = fixCaps(dn(t.text, true)); r.text = fixCaps(dn((r.text || '').replace(/^\s*\[[^\]]{1,40}\]\s*:?\s*/, ''), true)); if (voiced) { if (spoken(t.text).trim()) VOICE_TURN.spoke = true; VOICEIN.replyEnd(spoken(t.text)); } if (t.moods.length) diag('voice mode reply', { moods: t.moods.join(' and '), spoken: voiced }); }
+  if (plan && j && CH) CH.stream(j, vturn || o.dropNoLive ? (r.text || '') : acc, true);
+  S[key === 'brain4' ? 'brain4Last' : 'brainLast'] = { tokPerS: r.tokPerS, prefillTokPerS: r.prefillTokPerS, ttft: r.timings && r.timings.firstToken, tokens: r.tokens, promptTokens: r.promptTokens, peakMB: r.peakMB, snapshot: r.snapshot || null };
   const L = key === 'brain4' ? S.brain4Load : S.brainLoad;
   return { raw: r.text || '', text: r.text || '', usage: { promptTokens: r.promptTokens, completionTokens: r.tokens }, stopReason: r.stopped, timings: r.timings, tokPerS: r.tokPerS,
     tokens: r.tokens, promptTokens: r.promptTokens, peakMB: r.peakMB,
@@ -1497,12 +2047,18 @@ function wireQueue() {
 
   Q.on('change', (j) => {
     syncStage(j); qChanged(j);
+    if ((j.kind === 'chat' || (j.kind === 'nowcast' && j.params && j.params.sid)) && j.status === 'running' && j.session) {   // v4: the voice turn starts with its job (+ the Nowcast's answer) (a reply made in code, such as "Save 10001 as your home ZIP?", is spoken too)
+      if (j.params && j.params.voice) { if (!VOICE_TURN || VOICE_TURN.job !== j.id) VOICE_TURN = { sid: j.session, job: j.id, spoke: false, begun: false }; }
+      else if (VOICE_TURN && VOICE_TURN.sid === j.session) VOICE_TURN = null;
+    }
+    if (j.kind === 'chat' && /^(?:done|failed|cancelled)$/.test(j.status)) setTimeout(warmVoice, 400);   // v4: a gap: the voice warm-up
     // v024.1: the breadcrumb: set while a job runs, cleared when it stops (a clean end)
     if (j.status === 'running' && j.kind !== 'mvflf') crumb(j, stepOf(j, j.progress));
     else if (j.status !== 'queued') { const c = ls.get(INFLIGHT, null); if (c && c.id === j.id) ls.set(INFLIGHT, null); }   // queued = put back after a death: kept
   });
   Q.on('progress', (j, p) => {
     if (j.status === 'running') crumb(j, stepOf(j, p));   // v024.1: every new sub-step, with the engine's bytes
+    { const L = longParent(j); if (L) { if (S.job && S.job.id === L.id) onProgress(longProgress(S.job, j, p)); else if (S.run && S.run.id === L.id) { const r = S.run, q = longProgress(r, j, p); r.waiting = false; r.p = q; r.frac = Math.max(r.frac, q.frac || 0); renderPill(); } return; } }   // v4: a part of the whole video
     if (S.run && S.run.id === j.id && S.run !== S.job) { const r = S.run; r.waiting = false; r.p = p; r.frac = Math.max(r.frac, p.frac || 0); renderPill(); }
     if (S.job && S.job.id === j.id) onProgress(p);
     if (CH) CH.progress(j, p);
@@ -1528,12 +2084,13 @@ function jobView(j) {
   const rec = CJ.get(j.id), media = mediaOfKind(j.kind), P = j.params || {};
   const params = (rec && rec.params) || P.ui || { media, kind: j.kind, prompt: P.prompt || P.title || P.idea || P.tags || '', width: P.width || 0, height: P.height || 0, frames: P.frames, steps: P.steps, seconds: P.seconds, seed: P.seed };
   const p = j.progress || { phase: 'load', step: 0, steps: media === 'audio' ? 8 : media === 'video' ? 4 : (P.steps || 4), etaSeconds: null };
-  return { id: j.id, origin: isCreateJob(j) ? 'create' : 'assistant', kind: j.kind, mk: KEY_OF[Q.modelOf(j)] || null, media, params, input: rec ? rec.input : null, srcs: rec ? rec.srcs : null,
+  return { id: j.id, origin: isCreateJob(j) ? 'create' : 'assistant', kind: j.kind, mk: j.kind === 'restylelong' ? 'video' : KEY_OF[Q.modelOf(j)] || null, media, params, input: rec ? rec.input : null, srcs: rec ? rec.srcs : null,   // v4: the whole video's model is its parts'
     sub: 'running', armed: false, waiting: j.status !== 'running', p, frac: (j.progress && j.progress.frac) || 0, t0: j.startedAt || Date.now(), at: Date.now() };
 }
 /** a render started: the stage shows it (popcorn) unless the person is looking at a finished result or an error, then only the pill does */
 function syncStage(j) {
   if (!j || j.status !== 'running' || !isStageKind(j.kind)) return;
+  { const L = longParent(j); if (L) return syncLong(L, j); }   // v4: a part of a whole-video restyle
   if (S.run && S.run.id === j.id) return;
   if (S.job && S.job.id === j.id) { S.run = S.job; if (S.job.waiting) { S.job.waiting = false; renderWork(true); renderProgress(); } return; }
   const v = jobView(j); S.run = v;
@@ -1544,6 +2101,25 @@ function syncStage(j) {
   if (create && !v.input) refillInput(v, j);
   set({ phase: 'working' }); tick(); syncWake();
 }
+/** v4: a part of a whole-video restyle started: the stage follows the whole job (the coordinator's view, which part it is on) */
+function syncLong(L, part) {
+  const P = part.params.part || null;
+  if (S.job && S.job.id === L.id) { S.run = S.job; S.job.part = P; if (S.job.waiting) { S.job.waiting = false; renderWork(true); renderProgress(); } return; }
+  if (S.run && S.run.id === L.id) { S.run.part = P; return; }
+  const v = jobView(L); v.part = P; v.waiting = false; S.run = v;
+  if (!isCreateJob(L)) return renderPill();
+  if (S.phase === 'result' || S.phase === 'error') dropResult();
+  Object.assign(S, { error: null, hot: false, gpuReset: false, popped: 0, job: v });
+  if (!v.input) refillInput(v, L);
+  set({ phase: 'working' }); tick(); syncWake();
+}
+/** v4: a part's progress -> the whole job's: the bar over all the parts, the time left for this part and the ones after it */
+function longProgress(v, part, p) {
+  const P = part.params.part || { i: 0, n: 1 }, L = Q.get(v.id), lp = (L && L.params) || {}, parts = lp.parts || [];
+  const rest = parts.slice(P.i + 1).reduce((a, x) => a + estimate({ media: 'video', kind: 'v2v', width: lp.width, height: lp.height, frames: x.frames }), 0) + JOIN_SECONDS;
+  v.part = P;
+  return Object.assign({}, p, { frac: (P.i + (p.frac || 0)) / P.n, etaSeconds: p.etaSeconds != null ? p.etaSeconds + rest : null, part: P });
+}
 /** a Create job that resumed after a reload: its pictures come back from the queue's store (for Again / Edit this) */
 async function refillInput(v, j) {
   const P = j.params || {};
@@ -1551,13 +2127,16 @@ async function refillInput(v, j) {
     if (j.kind === 'edit') v.input = await Q.getBlob(P.inputKey);
     else if (j.kind === 'animate') v.input = [await Q.getBlob(P.imageKey)];
     else if (j.kind === 'between') v.input = [await Q.getBlob(P.firstKey), await Q.getBlob(P.lastKey)];
-    if (j.kind === 'animate' || j.kind === 'between' || j.kind === 'resume') {
+    else if (j.kind === 'restyle') { v.input = [await Q.getBlob(P.sourceKey), await Q.getBlob(P.firstKey)]; if (P.soundKey) v.input.push(await Q.getBlob(P.soundKey)); v.srcs = (P.ui && P.ui.sources) || null; }   // v4 (+ its sound)
+    else if (j.kind === 'restylelong') { v.input = []; for (const k of P.packKeys || []) v.input.push(await Q.getBlob(k)); v.input.push(await Q.getBlob(P.firstKey)); if (P.soundKey) v.input.push(await Q.getBlob(P.soundKey)); v.srcs = (P.ui && P.ui.sources) || null; }   // v4: the whole video
+    if (j.kind === 'animate' || j.kind === 'between' || (j.kind === 'resume' && !(P.ui && P.ui.kind === 'v2v'))) {
       const items = await store.getVideoInputs().catch(() => null);
       if (items) { v.srcs = items.map(({ from, libId, thumb }) => ({ from, libId, thumb })); if (j.kind === 'resume') v.input = items.map((x) => x.blob); }
     }
   } catch (e) { /* Again asks for the pictures */ }
 }
 async function onQDone(j) {
+  if (longParent(j)) return qChanged(j);   // v4: a part of the whole video: the whole job goes on (the next part, or the join)
   if (S.run && S.run.id === j.id) S.run = null;
   if (!isStageKind(j.kind)) return qChanged(j);   // chat and the music-video coordinator: the agent posts its own message
   if (isCreateJob(j)) return createDone(j);
@@ -1573,15 +2152,18 @@ async function createDone(j) {
   let input = rec.input || (mine ? S.job.input : null);
   const key = (r.image || r.video || {}).blobKey, blob = key ? await Q.getBlob(key).catch(() => null) : null;
   CJ.delete(j.id);
-  if (j.kind === 'resume' && mine) {
+  if (params.sty && params.media !== 'video' && !mine) { if (blob) styFrameDone(Object.assign({ blob }, r), params, false); Q.remove(j.id).catch(() => {}); return; }   // v4: a restyle's first frame
+  if (j.kind === 'resume' && mine && params.kind !== 'v2v') {
     const items = await store.getVideoInputs().catch(() => null);
     if (items) { S.job.srcs = items.map(({ from, libId, thumb }) => ({ from, libId, thumb })); S.job.input = input = items.map((x) => x.blob); }
   }
-  const out = blob ? { blob, width: r.width, height: r.height, seed: r.seed, seconds: r.seconds, frames: r.frames, fps: r.fps, steps: r.steps, resumedFromStep: r.resumedFromStep } : {};
+  const out = blob ? { blob, width: r.width, height: r.height, seed: r.seed, seconds: r.seconds, frames: r.frames, fps: r.fps, steps: r.steps, resumedFromStep: r.resumedFromStep, partTimes: r.partTimes, sound: r.sound, soundWhy: r.soundWhy } : {};   // v4: + the parts' times, the sound
+  if (blob && r.madeOn) out.madeOn = r.madeOn;   // Connection (off in public builds)
   if (mine) jobDone(out, params, input);
   else if (blob) {   // not on the stage (it should always be): straight to the Library
     const res = Object.assign({ id: `${Date.now().toString(36)}-${r.seed}`, media: params.media === 'video' ? 'video' : 'image', prompt: params.prompt, kind: params.kind, createdAt: Date.now(), params }, out);
     if (res.media === 'video') Object.assign(res, { frames: r.frames || params.frames, fps: r.fps || 16, vmode: params.kind || 't2v', sources: null });
+    if (res.media === 'video' && params.kind === 'v2v') { Object.assign(res, { sources: params.sources || null, look: params.look || null, follow: params.follow || null, followBy: params.followBy || null, description: params.description || null, parts: params.long ? params.parts.length : null }); styClipDone(); soundNote(params, r); }   // v4
     if (params.quality === '9b') res.model = MODELS.k9b.id;   // v026.6
     if (params.hq && res.media === 'video') { res.hq = params.hq.mode; S.hq = null; saveHq(); }
     saveToLibrary(res);
@@ -1590,12 +2172,14 @@ async function createDone(j) {
   Q.remove(j.id).catch(() => {});
 }
 function onQFailed(j) {
+  if (longParent(j)) return qChanged(j);   // v4: a part of the whole video: the whole job wakes and says which part stopped
   if (S.run && S.run.id === j.id) S.run = null;
   if (!isStageKind(j.kind)) return qChanged(j);
   if (mvRoot(Q, j)) { if (S.job && S.job.id === j.id) { S.job = null; set({ phase: 'ready' }); } syncWake(); renderPill(); return; }   // v023: a music video's frame / shot: it retries once, then its storyboard asks for a reroll
   const e = Object.assign(new Error((j.error && j.error.message) || 'failed'), { code: j.error && j.error.code });
   if (isCreateJob(j)) {
     const rec = CJ.get(j.id) || {}; CJ.delete(j.id);
+    if (j.kind === 'restylelong') return longFailed(j, rec, true);   // v4: kept: it carries on from the part that stopped
     if (S.job && S.job.id === j.id) jobFailed(e, rec.params || (j.params && j.params.ui) || {}, rec.input || S.job.input);
     Q.remove(j.id).catch(() => {});
     return;
@@ -1607,8 +2191,47 @@ function onQFailed(j) {
   }
   syncWake(); renderPill();
 }
-function onQCancelled(j) {
+/** v4: a whole-video restyle stopped (a part failed, the page ended three times in it): kept in the queue, its finished parts with it.
+ *  Create says which part and why; Carry on runs that part again (the parts before are kept, never made again); Stop forgets it. */
+/** what a stopped whole-video restyle says: {title, note, go (the button), code, detail} */
+function longWords(j) {
+  const st = j.state || {}, f = st.failed || null, n = (j.params.parts || []).length, i = f ? f.part : Math.min(n, st.next || 0);
+  const code = f ? f.code : (j.error && j.error.code) || '';
+  const why = /OUT_OF_MEMORY|KILLED/.test(code) ? 'The phone ran out of memory or got hot. ' : code === 'GPU_LOST' ? 'The phone reset its graphics chip. ' : code === 'CANCELLED' ? 'It was stopped. ' : '';
+  const kept = i >= n ? 'Every part is made and kept. ' : i === 1 ? 'Part 1 is made and kept. ' : i > 1 ? `Parts 1–${i} are made and kept. ` : '';
+  return { title: i >= n ? 'The parts are made, but joining them didn’t finish.' : `Part ${i + 1} of ${n} didn’t finish.`,
+    note: `${why}${kept}${i >= n ? 'Join them again to finish the video.' : `Carry on starts again at part ${i + 1}.`}`, go: i >= n ? 'Join them again' : `Carry on from part ${i + 1}`,
+    detail: `${code} ${(f && f.message) || (j.error && j.error.message) || ''}`.trim() };
+}
+function longFailed(j, rec, mine) {
+  const P = (rec && rec.params) || (j.params && j.params.ui) || {};
   if (S.run && S.run.id === j.id) S.run = null;
+  if (S.job && S.job.id === j.id) S.job = null;
+  if (P.sty) styJobEnded(P);
+  refreshCk();
+  const t = longWords(j);
+  set({ phase: 'error', error: { title: t.title, note: t.note, actions: [[t.go, () => longCarryOn(j.id)], ['Stop', () => longDrop(j.id)]], detail: t.detail } });
+  syncWake(); if (mine !== false) toStage(); else render();
+}
+function longCarryOn(id) {
+  const j = Q && Q.get(id);
+  if (!j || j.status !== 'failed') { set({ phase: 'ready', error: null }); return toast('That restyle is gone.'); }
+  if (!consented()) return openLesson();
+  if (!ltxOk()) return void openLtx(() => longCarryOn(id));
+  if (Q.readOnly) return toast('p0pc0rn is open in another tab. Carry on there, or close that tab first.');
+  const P = (j.params && j.params.ui) || {};
+  wake.on(); CJ.set(id, { params: P, input: null, srcs: P.sources || null });
+  const v = jobView(j); v.waiting = true; v.token = j.tag;
+  Object.assign(S, { error: null, hot: false, gpuReset: false, killed: null, vkilled: null, popped: 0, job: v });
+  if (S.sty && P.sty) { S.sty.stage = 'clip'; saveSty(); }
+  set({ phase: 'working' }); tick(); toStage(); refillInput(v, j);
+  Q.retry(id);
+}
+function longDrop(id) { set({ phase: 'ready', error: null }); (Q ? Q.remove(id).catch(() => {}) : Promise.resolve()).then(() => { refreshCk(); render(); }); }
+function onQCancelled(j) {
+  if (longParent(j)) return qChanged(j);   // v4: a part of the whole video (the whole job decides)
+  if (S.run && S.run.id === j.id) S.run = null;
+  { const P = ((CJ.get(j.id) || {}).params) || (j.params && j.params.ui) || {}; if (isCreateJob(j) && P.sty) styJobEnded(P); }   // v4: a restyle's step stopped
   if (isCreateJob(j)) { CJ.delete(j.id); Q.remove(j.id).catch(() => {}); }
   if (S.job && S.job.id === j.id) {   // cancel is silent; the prompt stays
     const create = S.job.origin === 'create', clip = S.job.media === 'video';
@@ -1619,6 +2242,7 @@ function onQCancelled(j) {
   qChanged(j);
 }
 function onQBlocked(j, code, model) {
+  if (longParent(j)) { Q.cancel(j.id).catch(() => {}); return; }   // v4: a part that cannot run (the agreement, a download): it stops, and the whole job keeps its parts for Carry on
   if (S.run && S.run.id === j.id) S.run = null;
   if (isCreateJob(j)) {   // Make checks the agreement and the download first: a blocked Create job becomes v018's error card and leaves the queue
     const rec = CJ.get(j.id) || {}; CJ.delete(j.id);
@@ -1639,6 +2263,8 @@ function onQBlocked(j, code, model) {
 /** the agent's messages: the chat shows them; a finished result (after its review) also goes to the Library */
 function onAgentMessage(sid, m) {
   if (CH) CH.onMessage(sid, m);
+  // v4: a voice turn's answer that did not stream (a lookup's answer, a result's line): spoken whole, once
+  if (VOICE_TURN && VOICEIN && VOICE_TURN.sid === sid && !VOICE_TURN.spoke && m && m.role === 'assistant' && m.text && m.kind !== 'status' && m.history !== false && !VOICE_PAUSED && (!WEBKIT || !(E.brain && E.brain._loaded) || !!(S.brainLoad && S.brainLoad.split))) { VOICE_TURN.spoke = true; VOICEIN.replySpeak(sayZip(splitMood(m.text).text)); }
   if (m && m.kind === 'result' && m.jobId) saveAssistantResult(m.jobId).catch((e) => { S.saveError = msg(e); toast("Couldn't add it to the Library"); });
 }
 /** a picture, clip, song or music video the assistant made -> the Library (id 'a-<job>', so a replayed message never saves it twice) */
@@ -1692,13 +2318,16 @@ function chatApi() {
     animateSong, openBoard, mvStatus: (j) => mvStatusOf(j),   // v023: Animate on a landed song's bubble, the music video's storyboard and progress
     talkFromSay: (jobId, sid) => { const j = Q && Q.get(jobId); if (j && TALKUI) TALKUI.fromSay(j, sid); },   // p0pc0rn Cast: Lip-sync (experimental) on a say bubble
     readOnly: () => !!(Q && Q.readOnly), agentError: () => S.agentError || null,
+    takeVoice: () => !!(VOICEIN && VOICEIN.takeVoice()),   // v4: this message came from the mic (voice mode: she answers out loud)
     routineCard: (m) => (MEM ? MEM.card(m) : null),   // 3.9: a routine (Settings › Juli) as a card
+    appCommand: (t) => (APPS && APPS.command ? APPS.command(t) : null),   // v4 (Token Watch): "watch closely", answered in code (makeapp/host.js command)
     openSettings: (id) => { go('settings'); const el = id && $(id); revealSetting(el); if (el) setTimeout(() => el.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' }), 60); },
     // onboarding: the assistant + starter knowledge as one download, what the first message says about the phone, the Cast's say asks
     // (answered in code, with or without the assistant) and a request handed to Create when the assistant is not on the phone yet
     assistDl, assistTap, isSayAsk: (t) => !!sayIntent(t), toCreate,
     phone: () => ({ android: ANDROID, homeApp: standalone(), free: S.free }),
-    act: (id, what) => chatAct(id, what), picOK: () => picOK(), confirm: (title, text, ok, fn) => openSheet(title, text, ok, fn) };   // 3.9: the chat's action bubbles (ui/chatactions.js), its Delete sheet
+    act: (id, what) => chatAct(id, what), picOK: () => picOK(), confirm: (title, text, ok, fn) => openSheet(title, text, ok, fn),
+    nowcastCard: (m) => ncCard('nowcastCard', m), forecastCard: (m) => (PACKS[MODELS.nowcast.id] ? ncCard('forecastCard', m) : null) };   // v4: the Nowcast's cards under Juli's answers   // 3.9: the chat's action bubbles (ui/chatactions.js), its Delete sheet
 }
 /** 3.9: an action bubble under a result in Juli's chat: the Library viewer's own path for that Library item (id 'a-<job>'):
  *  Edit this, Animate (a picture into a clip), Clip to another picture */
@@ -1735,7 +2364,7 @@ function onWarning(w, k) {
   else if (w.code === 'KILLED_LAST_RUN') {
     S.killedModels = (S.killedModels || []).concat(k);
     if (k === 'video') {
-      const run = w.lastRun || {}, fam = run.picture || isPic(run.mode) ? 'pic' : 't2v';
+      const run = w.lastRun || {}, fam = run.picture || isPic(run.mode) || run.mode === 'v2v' ? 'pic' : 't2v';   // v4: a restyle shares the picture slot
       S.mode = 'video'; S.vkilled = fam; refreshCk();
       if (fam === 'pic' && picOK()) S.vform.src = srcOf(run.mode) === 'words' ? 'pic' : srcOf(run.mode); else if (fam === 't2v') S.vform.src = 'words';
       if (!S.ck[fam]) {   // killed before the first step was saved: offer the same clip again
@@ -1772,12 +2401,14 @@ function estimate(p) {
   if (p.kind === 'assemble' || p.kind === 'musicvideo') return 30;
   const hist = ls.get('pf.app.times', {}), k = tkey(p);
   if (hist[k]) return hist[k];
+  if (p.media === 'video' && p.kind === 'v2v' && p.long && Array.isArray(p.parts)) return wholeSeconds(p.parts, (fr) => estimate({ media: 'video', kind: 'v2v', width: p.width, height: p.height, frames: fr }));   // v4: the whole video: every part's own estimate
+  if (p.media === 'video' && p.kind === 'v2v') return styleSeconds(p.width, p.height, p.frames);   // v4: a restyle (ui/style_v2v.js) until this phone has its own time
   if (p.media === 'video') return VBASE * (0.15 + 0.85 * (p.width * p.height * p.frames) / (832 * 480 * 81)) * (isPic(p.kind) ? 1.04 : 1) + (isPic(p.kind) ? 3 : 0);   // + reading the picture(s) + ~3 % per step
   if (p.quality === '9b') return k9bSeconds(p.width, p.height, p.kind === 'i2i');   // v026.6
   return (BASE_SECONDS[p.steps] || 45 * p.steps) * (0.25 + 0.75 * (p.width * p.height) / 921600) * (p.kind === 'i2i' ? 1.15 : 1);
 }
 function learn(p, secs) {
-  if (!(secs > 0)) return;
+  if (!(secs > 0) || (p && p.remote)) return;   // Connection (off in public builds)
   const k = tkey(p), hist = ls.get('pf.app.times', {});
   hist[k] = Math.round(hist[k] ? 0.5 * hist[k] + 0.5 * secs : secs); ls.set('pf.app.times', hist);
 }
@@ -1875,9 +2506,10 @@ async function refillFrom(sources) {
   return miss;
 }
 // ---- the Library picker (a picture for a slot)
-const PK = { slot: 0, urls: [] };
+const PK = { slot: 0, urls: [], clip: false };   // v4: clip = picking a clip for Restyle a clip
+const PK_EMPTY = 'No pictures in the Library yet. Make one under Picture, or use a photo from your phone.';
 function openPicker(i, exclude) {
-  PK.slot = i; for (const u of PK.urls) URL.revokeObjectURL(u); PK.urls = [];
+  PK.slot = i; PK.clip = false; $('pk-empty').textContent = PK_EMPTY; for (const u of PK.urls) URL.revokeObjectURL(u); PK.urls = [];
   const pics = S.lib.filter((m) => isPicture(m) && m.id !== exclude), two = slotsNeeded() === 2;
   $('pk-title').textContent = two ? (i ? 'Pick the last picture' : 'Pick the first picture') : 'Pick a picture';
   $('pk-note').textContent = pics.length ? 'From your Library. The clip uses the middle of the picture at the size you chose.' : '';
@@ -1917,12 +2549,13 @@ async function saveToLibrary(res) {
   try {
     const clip = isClip(res), song = isSong(res);
     const meta = { id: res.id, createdAt: res.createdAt, media: res.media, kind: res.kind, prompt: res.prompt, seed: res.seed, width: res.width, height: res.height,
-      seconds: res.seconds, thumb: song ? await songCover(res) : clip ? await clipPoster(res) : await makeThumb(res.blob) };   // 3.9: a clip's poster frame (ui/clipthumbs.js; posterOf timed out on the iPhone)
+      seconds: res.seconds, thumb: res.thumb instanceof Blob ? res.thumb : song ? await songCover(res) : clip ? await clipPoster(res) : await makeThumb(res.blob) };   // 3.9: a clip's poster frame (ui/clipthumbs.js; posterOf timed out on the iPhone)   // v4: an HDR copy brings its original's
     if (clip) Object.assign(meta, { frames: res.frames, fps: res.fps, vmode: res.vmode || 't2v', sources: res.sources || null });
     else if (song) Object.assign(meta, { title: res.title || '', tags: res.tags || '', lyrics: res.lyrics || '', bpm: res.bpm || null, key: res.key || null, timeSignature: res.timeSignature || null, lm: res.lm, codec: res.codec || null });
     else Object.assign(meta, { steps: res.steps, reference: res.reference });
     if (clip && res.poster) meta.poster = res.poster;   // 3.9: the thumbnail is a real frame of the clip (made once, reused)
-    for (const k of ['by', 'duration', 'title', 'mvId', 'mvVersion', 'mvSong', 'research', 'model', 'hq']) if (res[k] != null && meta[k] == null) meta[k] = res[k];   // v026.6: + model, hq   // v026.2: + research   // v023: a music video's job, version and song   // v019: who made it (the assistant), a song / music video's length
+    for (const k of ['by', 'duration', 'title', 'mvId', 'mvVersion', 'mvSong', 'research', 'model', 'hq', 'look', 'follow', 'followBy', 'description', 'hdr', 'parts']) if (res[k] != null && meta[k] == null) meta[k] = res[k];   // v4: + parts (the whole video, restyled in parts)   // v4: + hdr (an HDR copy: its look, its original), a restyle's look and its words   // v026.6: + model, hq   // v026.2: + research   // v023: a music video's job, version and song   // v019: who made it (the assistant), a song / music video's length
+    if (res.madeOn && !meta.madeOn) meta.madeOn = { name: String(res.madeOn.name || '').slice(0, 40), gpu: String(res.madeOn.gpu || '').slice(0, 120) };   // Connection (off in public builds)
     await store.add(meta, res.blob);
     S.lib = [meta, ...S.lib.filter((m) => m.id !== meta.id)]; if (S.tab === 'library') renderLibrary();
     if (MUSIC) MUSIC.libChanged();   // 3.9: a new song joins Music (its list and badge)
@@ -1962,23 +2595,24 @@ const V = { id: null, url: null, blob: null, meta: null, reset: null, tok: 0, sr
 /** the viewer's action row: a picture gets Save · Animate · Edit this · Delete · More (when clips from pictures exist), a clip Save · Reuse · Delete */
 function layoutViewerActions(meta) {
   // v023: a song gets Animate (a music video); a music video made from a song's storyboard gets Edit video (its storyboard)
-  const clip = isClip(meta), show = isSong(meta) ? ['v-save', 'v-anim', 'v-del'] : isMV(meta) ? (meta.mvId ? ['v-save', 'v-edit', 'v-del'] : ['v-save', 'v-del']) : clip ? (meta.vmode === 'lipsync' ? ['v-save', 'v-del'] : ['v-save', 'v-talk', 'v-reuse', 'v-del']) : picOK() ? ['v-save', 'v-anim', 'v-edit', 'v-del', 'v-more'] : ['v-save', 'v-reuse', 'v-edit', 'v-del'];
+  const clip = isClip(meta), show = isSong(meta) ? ['v-save', 'v-anim', 'v-del'] : isMV(meta) ? (meta.mvId ? ['v-save', 'v-edit', 'v-del'] : ['v-save', 'v-del']) : clip ? (meta.vmode === 'lipsync' ? ['v-save', 'v-del'] : styleOK() ? ['v-save', 'v-restyle', 'v-reuse', 'v-more', 'v-del'] : ['v-save', 'v-reuse', 'v-more', 'v-del']) : picOK() ? ['v-save', 'v-anim', 'v-edit', 'v-del', 'v-more'] : ['v-save', 'v-reuse', 'v-edit', 'v-del'];
+  if (hdrOk(meta)) show.splice(show.indexOf('v-del'), 0, 'v-hdr');   // v4: Make HDR before Delete (a picture or clip that isn't an HDR copy itself)
   $('v-edit').querySelector('span').textContent = isMV(meta) ? 'Edit video' : 'Edit this';
-  for (const id of ['v-save', 'v-anim', 'v-reuse', 'v-edit', 'v-del', 'v-more', 'v-talk']) $(id).hidden = !show.includes(id);
+  for (const id of ['v-save', 'v-anim', 'v-reuse', 'v-edit', 'v-del', 'v-more', 'v-talk', 'v-restyle', 'v-hdr']) $(id).hidden = !show.includes(id);   // v4: + Restyle (a clip), Make HDR
   $('v-actions').style.gridTemplateColumns = `repeat(${show.length}, 1fr)`;
 }
 /** a picture clip's source thumbnails; a Library picture opens on tap */
 function renderSources(meta) {
   for (const u of V.srcUrls) URL.revokeObjectURL(u); V.srcUrls = [];
-  const list = $('v-src-list'), srcs = isClip(meta) && isPic(meta.vmode) && Array.isArray(meta.sources) ? meta.sources : [];
+  const list = $('v-src-list'), srcs = isClip(meta) && (isPic(meta.vmode) || meta.vmode === 'v2v') && Array.isArray(meta.sources) ? meta.sources : [];   // v4: + the clip a restyle came from
   $('v-src').hidden = !srcs.length; list.textContent = '';
   if (!srcs.length) return;
-  $('v-src-label').textContent = meta.vmode === 'flf' ? 'Between' : 'Made from';
+  $('v-src-label').textContent = meta.vmode === 'flf' ? 'Between' : meta.vmode === 'v2v' ? `Restyled (${(lookOf(meta.look) || { name: 'a look' }).name}) from` : 'Made from';
   srcs.forEach((x, i) => {
     if (i) list.insertAdjacentHTML('beforeend', '<svg class="ic v-src-arrow" aria-hidden="true"><use href="#i-chevron"/></svg>');
     const b = document.createElement('button'); b.type = 'button'; b.dataset.i = i;
-    const inLib = !!(x.libId && S.lib.some((m) => m.id === x.libId)), which = meta.vmode === 'flf' ? (i ? 'The last picture' : 'The first picture') : 'The picture';
-    b.setAttribute('aria-label', `${which}${inLib ? ': open it' : x.from === 'phone' ? ': a photo from your phone' : ': no longer in the Library'}`);
+    const inLib = !!(x.libId && S.lib.some((m) => m.id === x.libId)), v2v = meta.vmode === 'v2v', which = v2v ? 'The clip' : meta.vmode === 'flf' ? (i ? 'The last picture' : 'The first picture') : 'The picture';
+    b.setAttribute('aria-label', `${which}${inLib ? ': open it' : x.from === 'phone' ? (v2v ? ': a video from your phone' : ': a photo from your phone') : ': no longer in the Library'}`);
     if (x.thumb) { const u = URL.createObjectURL(x.thumb); V.srcUrls.push(u); const img = document.createElement('img'); img.alt = ''; img.src = u; b.append(img); }
     list.append(b);
   });
@@ -2012,7 +2646,7 @@ async function viewerLoad(id, dir) {
   if (V.url) URL.revokeObjectURL(V.url);
   if (V.expUrl) { URL.revokeObjectURL(V.expUrl); V.expUrl = null; }
   if (V.coverUrl) { URL.revokeObjectURL(V.coverUrl); V.coverUrl = null; }
-  Object.assign(V, { id, meta, blob, url: URL.createObjectURL(shown), x: { blob, seed: meta.seed, createdAt: meta.createdAt } });   // the only full-size URL; revoked on close
+  Object.assign(V, { id, meta, blob, url: URL.createObjectURL(shown), x: { blob, seed: meta.hdr ? `${meta.seed}-hdr` : meta.seed, createdAt: meta.createdAt } });   // the only full-size URL; revoked on close (v4: an HDR copy's file ends -hdr)
   if (shown !== blob) V.x.expFile = mediaFile(shown, meta.seed, meta.createdAt); else exportOf(V.x);
   const clip = isClip(meta), song = isSong(meta), mv = isMV(meta) || (clip && meta.vmode === 'lipsync'), img = $('v-img'), vid = $('v-vid'), aud = $('v-aud');   // Cast: a lip-sync clip has sound
   img.hidden = clip; vid.hidden = !clip; aud.hidden = !song; $('v-lyrics').hidden = !song; $('v-stage').classList.toggle('song', song);
@@ -2042,7 +2676,7 @@ async function viewerLoad(id, dir) {
   V.reset && V.reset();
   if (dir && !reducedMotion()) vMedia().animate([{ transform: `translateX(${dir * 48}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 240, easing: 'cubic-bezier(.22,1,.36,1)' });
   $('v-prompt').textContent = song || mv ? (meta.title || meta.prompt) : meta.prompt;
-  $('v-info').textContent = `${metaLine(meta)} · ${new Date(meta.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  $('v-info').textContent = `${metaLine(meta)}${hdrInfo(meta)} · ${new Date(meta.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;   // v4: " · HDR · Vivid"
   const i = S.lib.findIndex((m) => m.id === id); $('v-count').textContent = i >= 0 ? `${i + 1} of ${S.lib.length}` : '';
   layoutViewerActions(meta); renderSources(meta);
   renderViewerActions();
@@ -2094,9 +2728,10 @@ async function deleteItem(id) {
     catch (e) { toast("Couldn't bring it back"); }
   } });
 }
-const metaLine = (m) => (isSong(m) ? `Song · ${clock(m.duration || 0)}${m.bpm ? ` · ${m.bpm} BPM` : ''}${m.key ? ` · ${m.key}` : ''} · seed ${m.seed} · made in ${clock(m.seconds)}`
+const metaLine = (m) => metaLine0(m) + (m && m.madeOn && m.madeOn.name ? ` · made on ${m.madeOn.name}${m.madeOn.gpu ? ` (${m.madeOn.gpu})` : ''}` : '');   // Connection (off in public builds)
+const metaLine0 = (m) => (isSong(m) ? `Song · ${clock(m.duration || 0)}${m.bpm ? ` · ${m.bpm} BPM` : ''}${m.key ? ` · ${m.key}` : ''} · seed ${m.seed} · made in ${clock(m.seconds)}`
   : isMV(m) ? `Music video · ${m.width}×${m.height} · ${clock(m.duration || 0)} · made in ${clock(m.seconds)}`
-  : isClip(m) ? `${isPic(m.vmode) ? `${SRC[srcOf(m.vmode)].name} · ` : ''}${m.width}×${m.height} · ${lenText(m.frames)} s${m.hq ? ' · 9B frames' : ''} · seed ${m.seed} · ${clock(m.seconds)}` : `${m.width}×${m.height}${m.model === 'flux2-klein-9b' ? ' · Klein 9B' : ''} · seed ${m.seed} · ${clock(m.seconds)}`);
+  : isClip(m) ? `${isPic(m.vmode) ? `${SRC[srcOf(m.vmode)].name} · ` : m.vmode === 'v2v' ? `Restyled · ${(lookOf(m.look) || { name: 'a look' }).name} · ${m.parts > 1 ? `${m.parts} parts, Experimental · ` : ''}` : ''}${m.width}×${m.height} · ${lenText(m.frames)} s${m.hq ? ' · 9B frames' : ''} · seed ${m.seed} · ${clock(m.seconds)}` : `${m.width}×${m.height}${m.model === 'flux2-klein-9b' ? ' · Klein 9B' : ''} · seed ${m.seed} · ${clock(m.seconds)}`);
 
 // ------------------------------------------------------------------------------------------------ settings: models + storage
 /** the model a running or loaded queue job holds (its files must stay while it works) */
@@ -2104,27 +2739,31 @@ const inUse = (k) => { const m = Q && (Q.active ? Q.modelOf(Q.active.job) : Q.ho
 function askDeleteModel(k) {
   if (S.phase === 'working' || ['downloading', 'pausing'].includes(S.dl[k].sub)) return;
   if (inUse(k)) return toast('Wait until the queue is done with it.');
-  const m = MODELS[k], st = S.st[k] || {}, bytes = (st.complete ? st.totalBytes : S.dl[k].have) || m.total, rd = k === 'reader', pl = k === 'planner', dr = k === 'drafter', add = rd || pl || dr;
+  const m = MODELS[k], st = S.st[k] || {}, bytes = (st.complete ? st.totalBytes : S.dl[k].have) || m.total, rd = k === 'reader', pl = k === 'planner', dr = k === 'drafter', lr = k === 'lora' || k === 'lora2' || k === 'venc', add = rd || pl || dr || lr;
   // an add-on is no use without its model, so it goes with it (said in the sheet): the picture reader with the video model, the planner
   // with music, faster replies (3.8) with the assistant
   const sub = k === 'video' ? 'reader' : k === 'music' ? 'planner' : k === 'brain' ? 'drafter' : k === 'brain4' ? 'drafter4' : null;
   const withSub = !!sub && !!E[sub] && S.dl[sub].have > 0 && !['downloading', 'pausing'].includes(S.dl[sub].sub);
-  const use = { image: 'make pictures', video: 'make clips', brain: 'use Juli', brain4: 'let Juli think and write with it', music: 'make songs', starter: 'look things up offline', voice: 'make your Cast speak (their recordings stay)', lipsync: 'make lip-sync clips' }[k];
+  const withLoras = k !== 'video' ? [] : ['lora', 'lora2', 'venc'].filter((x) => !!E[x] && S.dl[x].have > 0 && !['downloading', 'pausing'].includes(S.dl[x].sub));   // v4: the video LoRAs and the clip reader go with the video model too
+  const withLora = withLoras.length > 0;
+  const use = { image: 'make pictures', video: 'make clips', brain: 'use Juli', brain4: 'let Juli think and write with it', music: 'make songs', starter: 'look things up offline', voice: 'make your Cast speak (their recordings stay)', lipsync: 'make lip-sync clips', jvoice: 'hear her own voice (voice mode gets it again by itself the next time she speaks)' }[k];
   const text = rd ? `Frees ${fmtSize(bytes)}. It downloads again by itself the next time you make a clip from a picture. Your Library stays.`
     : pl ? `Frees ${fmtSize(bytes)}. Songs still work without it, but the singer follows the words less closely. Your Library stays.`
     : dr ? `Frees ${fmtSize(bytes)}. Juli still works without it, with the same answers, just more slowly. Your chats and Library stay.`
-    : `Frees ${fmtSize(bytes + (withSub ? S.dl[sub].have : 0))}. You'll need to download it again to ${use}.${withSub ? (sub === 'drafter' ? ' Faster replies go with it.' : sub === 'drafter4' ? ' Its faster replies go with it.' : ` The ${MODELS[sub].noun} goes with it.`) : ''} ${k === 'brain' || k === 'brain4' ? 'Your chats and Library stay.' : 'Your Library stays.'}`;
-  const title = rd ? 'Delete the picture reader?' : pl ? 'Delete the lyrics planner?' : dr ? 'Delete faster replies?' : k === 'brain' ? 'Delete Juli’s model?' : k === 'brain4' ? 'Delete the bigger brain?' : k === 'starter' ? 'Delete the starter knowledge?' : `Delete the ${m.noun} model?`;
-  openSheet(title, text, rd ? 'Delete picture reader' : pl ? 'Delete lyrics planner' : dr ? 'Delete faster replies' : 'Delete model', async () => {
+    : lr ? (k === 'venc' ? `Frees ${fmtSize(bytes)}. Style video to video needs it; it downloads again when you ask for it. Your Library stays.` : `Frees ${fmtSize(bytes)}. Clips are made without it until you download it again. Your Library stays.`)
+    : `Frees ${fmtSize(bytes + (withSub ? S.dl[sub].have : 0) + withLoras.reduce((a, x) => a + S.dl[x].have, 0))}. You'll need to download it again to ${use}.${withSub ? (sub === 'drafter' ? ' Faster replies go with it.' : sub === 'drafter4' ? ' Its faster replies go with it.' : ` The ${MODELS[sub].noun} goes with it.`) : ''}${withLora ? ` The ${withLoras.map((x) => MODELS[x].noun).join(' and the ')} go${withLoras.length > 1 ? '' : 'es'} with it.` : ''} ${k === 'brain' || k === 'brain4' ? 'Your chats and Library stay.' : 'Your Library stays.'}`;
+  const title = rd ? 'Delete the picture reader?' : lr ? `Delete the ${m.noun}?` : pl ? 'Delete the lyrics planner?' : dr ? 'Delete faster replies?' : k === 'brain' ? 'Delete Juli’s model?' : k === 'brain4' ? 'Delete the bigger brain?' : k === 'starter' ? 'Delete the starter knowledge?' : k === 'jvoice' ? 'Delete Juli’s own voice?' : `Delete the ${m.noun} model?`;
+  openSheet(title, text, rd ? 'Delete picture reader' : lr ? `Delete ${m.noun}` : pl ? 'Delete lyrics planner' : dr ? 'Delete faster replies' : 'Delete model', async () => {
     if (S.phase === 'working' || inUse(k)) return;
     if (k === 'starter' && RS) RS.starter = null;   // v022: no more starter hits once it is gone
-    try { await E[k].deleteModel(); S.st[k] = await E[k].status(); } catch (e) { return toast(rd ? "Couldn't delete the picture reader" : pl ? "Couldn't delete the lyrics planner" : dr ? "Couldn't delete faster replies" : "Couldn't delete the model"); }
+    try { await E[k].deleteModel(); S.st[k] = await E[k].status(); } catch (e) { return toast(rd ? "Couldn't delete the picture reader" : lr ? `Couldn't delete the ${m.noun}` : pl ? "Couldn't delete the lyrics planner" : dr ? "Couldn't delete faster replies" : "Couldn't delete the model"); }
     Object.assign(S.dl[k], dlState(S.dl[k].total), { have: S.st[k].haveBytes || 0, total: S.st[k].totalBytes || S.dl[k].total });
     if (withSub && sub === 'reader') { try { await E.reader.deleteModel(); } catch (e) { /* its own row still shows it */ } }   // the music engine's delete takes the planner's folder with it
+    for (const x of withLoras) { try { await E[x].deleteModel(); } catch (e) { /* its own row still shows it */ } await refreshStatus(x); Object.assign(S.dl[x], dlState(S.dl[x].total), { have: (S.st[x] && S.st[x].haveBytes) || 0 }); }   // v4
     if (withSub && (sub === 'drafter' || sub === 'drafter4')) { try { await E[sub].deleteModel(); } catch (e) { /* its own row still shows it */ } }   // 3.8: its own folder (v040: the bigger brain's too)
     if (sub && E[sub]) { await refreshStatus(sub); Object.assign(S.dl[sub], dlState(S.dl[sub].total), { have: (S.st[sub] && S.st[sub].haveBytes) || 0 }); }
     if (k === 'video') { ls.set('pf.app.ckGoneAt', Date.now()); refreshCk(); store.clearVideoInputs().catch(() => {}); }   // both checkpoints went with the folder
-    toast(rd ? 'Picture reader deleted' : pl ? 'Lyrics planner deleted' : dr ? 'Faster replies deleted' : k === 'brain' ? 'Juli’s model deleted' : k === 'brain4' ? 'Bigger brain deleted' : `${cap(m.noun)} model deleted`);
+    toast(rd ? 'Picture reader deleted' : lr ? `${cap(m.noun)} deleted` : pl ? 'Lyrics planner deleted' : dr ? 'Faster replies deleted' : k === 'brain' ? 'Juli’s model deleted' : k === 'brain4' ? 'Bigger brain deleted' : k === 'jvoice' ? 'Juli’s own voice deleted' : `${cap(m.noun)} model deleted`);
     if (CH) CH.render();
     render(); renderSettings();   // onboarding: no setup screen after the last model goes; Create and the chat offer the downloads
   });
@@ -2133,7 +2772,7 @@ function askDeleteModel(k) {
 const leftovers = () => (S.phase === 'working' ? [] : [{ path: `${VRUN}/frames.rgba`, why: 'frames of an unfinished clip' }, ...(S.ck.t2v ? [] : [{ path: `${VRUN}/latent.bin`, why: 'data of an old unfinished clip' }]),
   { path: `${IRUN}/frames.rgba`, why: 'frames of an unfinished picture clip' },
   ...(S.ck.pic ? [] : ['latent.bin', 'pin0.bin', 'pin1.bin'].map((f) => ({ path: `${IRUN}/${f}`, why: 'data of an old unfinished picture clip' })))]);
-const useName = (k) => (k === 'brain4' ? 'Bigger brain · NVIDIA Nemotron 3.5 Bolt E4B' : k === 'drafter4' ? 'Bigger brain’s faster replies · Gemma 4 E4B drafter' : k === 'reader' ? 'Picture reader · LTX-2.3 encoder' : k === 'planner' ? 'Lyrics planner · ACE-Step 5 Hz LM' : k === 'drafter' ? 'Faster replies · Gemma 4 drafter' : k === 'brain' ? 'Juli · Gemma 4 E2B' : k === 'music' ? 'Music model · ACE-Step 1.5 turbo' : `${cap(MODELS[k].noun)} model · ${MODELS[k].name}`);
+const useName = (k) => (k === 'lora' ? 'Video LoRA · SANA-Video 2.0' : k === 'lora2' ? 'Looks LoRA · SANA-Video 2.0' : k === 'venc' ? 'Clip reader · LTX-2.3 encoder' : k === 'brain4' ? 'Bigger brain · NVIDIA Nemotron 3.5 Bolt E4B' : k === 'drafter4' ? 'Bigger brain’s faster replies · Gemma 4 E4B drafter' : k === 'reader' ? 'Picture reader · LTX-2.3 encoder' : k === 'planner' ? 'Lyrics planner · ACE-Step 5 Hz LM' : k === 'drafter' ? 'Faster replies · Gemma 4 drafter' : k === 'brain' ? 'Juli · Gemma 4 E2B' : k === 'music' ? 'Music model · ACE-Step 1.5 turbo' : `${cap(MODELS[k].noun)} model · ${MODELS[k].name}`);
 const viaEngine = async (p) => { const st = E.video && E.video.store && E.video.store.st; if (!st) throw new Error('no engine storage'); await st.start(); await st.call('remove', { name: p }); };
 async function renderStorage() {
   const tok = ++storTok, list = $('files'), btn = $('s-clean'), why = $('s-clean-why');
@@ -2269,6 +2908,43 @@ function buildRights() {
 
 // ------------------------------------------------------------------------------------------------ toast + sheet + tabs
 let toastT = 0, toastAct = null;
+// v4 (weather in chat, assistant/weather.js): the home ZIP (Settings › Juli, or "my ZIP is 10001" in the chat, asked first), only on this
+// phone; a weather question without a place uses it first: a ZIP is coarser than the phone's location
+const HOME_ZIP = {
+  get: () => { const z = String(ls.get('pf.app.homeZip', '') || ''); return /^\d{5}$/.test(z) ? z : null; },
+  set: (z) => { const v = /^\d{5}$/.test(String(z || '')) ? String(z) : null; ls.set('pf.app.homeZip', v); const i = $('s-homezip'); if (i) i.value = v || ''; },
+};
+/** the phone's location (rounded to 0.01 degree, about 1 km) only when this site may already read it (an app made in p0pc0rn asked for
+ *  it once): never a permission prompt from the chat (Juli asks where in words instead) */
+async function positionIfAllowed() {
+  try { if (!navigator.permissions || !navigator.geolocation) return null; if ((await navigator.permissions.query({ name: 'geolocation' })).state !== 'granted') return null; } catch (e) { return null; }
+  return new Promise((res) => navigator.geolocation.getCurrentPosition((p) => res({ lat: Math.round(p.coords.latitude * 100) / 100, lon: Math.round(p.coords.longitude * 100) / 100 }),
+    () => res(null), { maximumAge: 10 * 60e3, timeout: 8000, enableHighAccuracy: false }));
+}
+// v4: the Nowcast (Experimental; nowcast/): its screen, its queue job and Juli's answer load the module only when one of them is needed
+let NC = null, NC_P = null, NC_OPEN = null;
+const NC_LIC = 'p0pc0rn:nowcast:licence';
+function ncGlue() {
+  return NC_P || (NC_P = import('./nowcast/nowcast_app.js').then((m) => (NC = m.initNowcast({ Q: () => Q, AG: () => AG, section: $('v-nowcast'),
+    ready: () => done('nowcast'), int8Ready: ncInt8, dl: () => { const u = S.dl.nowcast; return u ? { running: u.sub === 'downloading', pct: dlPct(u) } : null; },
+    sizeOf: () => (S.st.nowcast && S.st.nowcast.totalBytes) || MODELS.nowcast.total, precision: () => (S.st.nowcast && S.st.nowcast.precision) || 'float',
+    download: () => { ls.set(NC_LIC, Date.now()); startDownload('nowcast'); }, research: () => !!AS.research, geo: () => loadGeo(), homeZip: () => HOME_ZIP.get(), position: positionIfAllowed,
+    toast, diag, home: () => SHELL.home(), openScreen: (o) => openNowcast(o) })), (e) => { NC_P = null; throw e; }));
+}
+/** the 8-bit model is on the phone (the float one's fallback) */
+const ncInt8 = () => !!(S.st.nowcast && S.st.nowcast.other && S.st.nowcast.other.complete);
+/** open the Nowcast screen (o: { lat, lon, label, run, sheet }) */
+function openNowcast(o = {}) { NC_OPEN = o; if (S.tab === 'nowcast') { NC_OPEN = null; ncGlue().then((g) => g.open(o)); } else SHELL.open('nowcast'); }
+/** a card in Juli's chat that the module draws once it has loaded */
+function ncCard(kind, m) { const d = document.createElement('div'); ncGlue().then((g) => { const el = g[kind](m); if (el) d.replaceWith(el); else d.remove(); }, () => d.remove()); return d; }
+/** the model's licence and what it is, once, before its download (CC BY 4.0: the credit, the licence link, that it was changed) */
+function openNcLicence(then) {
+  openSheet('The nowcast model', `DeepMind's DGMR works out the next 90 minutes of rain on this phone: ${fmtSize(S.st.nowcast && S.st.nowcast.totalBytes || MODELS.nowcast.total)}, downloaded once.`, 'Download',
+    () => { ls.set(NC_LIC, Date.now()); then(); },
+    ['Trained on UK radar: on US radar it is an experiment. It can be wrong, and it never replaces National Weather Service warnings.',
+      'Copyright 2021 DeepMind Technologies Limited. Licensed under CC BY 4.0 (creativecommons.org/licenses/by/4.0). Modified by p0pc0rn: weights converted to 16-bit floats or 8-bit integers, run as WebGPU kernels.',
+      'Each nowcast also downloads about 7 MB of NOAA radar.'], 'cta');
+}
 function toast(text, o = {}) {
   $('toast-text').textContent = text; const b = $('toast-btn');
   b.hidden = !o.action; if (o.action) b.textContent = o.action; toastAct = o.onAction || null;
@@ -2276,8 +2952,8 @@ function toast(text, o = {}) {
   toastT = setTimeout(() => { $('toast').classList.remove('on'); toastAct = null; }, o.ms || 2400);
 }
 let sheetOk = null;
-function openSheet(title, text, ok, onOk, items) {
-  $('sh-title').textContent = title; $('sh-text').textContent = text; $('sh-ok').textContent = ok; sheetOk = onOk;
+function openSheet(title, text, ok, onOk, items, tone = 'danger') {   // v4: tone 'cta' for a start (the whole video), 'danger' for a delete
+  $('sh-title').textContent = title; $('sh-text').textContent = text; $('sh-ok').textContent = ok; sheetOk = onOk; $('sh-ok').className = `btn ${tone === 'cta' ? 'cta' : 'danger'}`;
   const ul = $('sh-list'); ul.hidden = !items; ul.replaceChildren(...(items || []).map((t) => Object.assign(document.createElement('li'), { textContent: t })));
   const w = $('sheet'); w.classList.remove('out'); w.hidden = false; $('sh-ok').focus();
 }
@@ -2314,7 +2990,7 @@ function shareItem(o, fallback) {
 // for Google's Gemma Prohibited Use Policy. "I accept" needs the full LTX text loaded and the box ticked, each only while it is missing (an
 // install that accepted the LTX licence before the tick is asked for the tick alone). The tick is kept in the same record (gemma = the
 // policy's date). Asked before every download of the two packs and before every video job (ltxGate), so an older install sees it once.
-const LTX_KEYS = new Set(['video', 'reader']), LTX_KEY = 'p0pc0rn:ltx-license', LTX_DATE = '2026-01-05';
+const LTX_KEYS = new Set(['video', 'reader', 'venc']), LTX_KEY = 'p0pc0rn:ltx-license', LTX_DATE = '2026-01-05';
 const GEMMA_PUP_DATE = '2024-02-21';   // the policy's "Last modified" (licenses/GEMMA_PROHIBITED_USE_POLICY.txt)
 const ltxRec = () => ls.get(LTX_KEY) || null;
 const ltxAccepted = () => { const a = ltxRec(); return !!(a && a.date === LTX_DATE && a.acceptedAt); };
@@ -2397,12 +3073,17 @@ function acceptFlux() {
 // that version changes. Its faster replies (Google's Gemma 4 E4B drafter) are Apache-2.0 and come with it. No licence text, no download.
 const MDW_KEY = 'p0pc0rn:openmdw-license', MDW_VERSION = '1.1', MDW_FILE = 'licenses/LICENSE-OpenMDW-1.1.txt', MDW_MARK = /OpenMDW/;
 const MDW_LABEL = "The Bigger brain is NVIDIA Nemotron 3.5 Bolt E4B, under NVIDIA's OpenMDW License Agreement, version 1.1 (OpenMDW-1.1). NVIDIA post-trained it from Google's Gemma 4 E4B (Apache-2.0); its faster replies are Google's Gemma 4 E4B drafter (Apache-2.0). Read the licence before you use it.";
-const mdwAccepted = () => { const a = ls.get(MDW_KEY); return !!(a && a.version === MDW_VERSION && a.acceptedAt); };
-let mdwThen = null;
-async function openMdw(then) {
-  mdwThen = typeof then === 'function' ? then : null;
-  $('mdw-label').textContent = MDW_LABEL;
-  $('mdw-size').textContent = `Download: ${fmtSize(partTotal('brain4') + (E.drafter4 ? partTotal('drafter4') : 0))} with its faster replies. Keep p0pc0rn open, the phone plugged in and the screen on; Pause and closing the page both resume.`;
+// v4: voice input (NVIDIA Nemotron 3.5 ASR Streaming) is under the same agreement: its own sheet, accepted once for it (MDW_KEYS)
+const MDW_KEYS = { brain4: MDW_KEY, stt: MDW_KEY + ':stt' };
+const MDW_STT = "Voice input is NVIDIA Nemotron 3.5 ASR Streaming 0.6B, under NVIDIA's OpenMDW License Agreement, version 1.1 (OpenMDW-1.1). It turns your speech into text on this phone; your voice never leaves the phone and is never kept. p0pc0rn's pack is converted and quantized from NVIDIA's weights and carries the agreement and NVIDIA's notices (Settings › About › Licences and notices). Read the licence before you use it.";
+const mdwAccepted = (k = 'brain4') => { const a = ls.get(MDW_KEYS[k] || MDW_KEY); return !!(a && a.version === MDW_VERSION && a.acceptedAt); };
+let mdwThen = null, mdwFor = 'brain4';
+async function openMdw(then, k = 'brain4') {
+  mdwThen = typeof then === 'function' ? then : null; mdwFor = MDW_KEYS[k] ? k : 'brain4';
+  $('mdw-title').textContent = mdwFor === 'stt' ? 'Voice input’s licence' : "The Bigger brain's licence";
+  $('mdw-label').textContent = mdwFor === 'stt' ? MDW_STT : MDW_LABEL;
+  $('mdw-size').textContent = mdwFor === 'stt' ? `Download: ${fmtSize(partTotal('stt'))}. Keep p0pc0rn open, the phone plugged in and the screen on; Pause and closing the page both resume.`
+    : `Download: ${fmtSize(partTotal('brain4') + (E.drafter4 ? partTotal('drafter4') : 0))} with its faster replies. Keep p0pc0rn open, the phone plugged in and the screen on; Pause and closing the page both resume.`;
   openWrap('mdw');
   const pre = $('mdw-text'), ok = $('mdw-ok'), full = () => MDW_MARK.test(pre.textContent) && pre.textContent.length >= 1000;
   if (!full()) {
@@ -2415,8 +3096,8 @@ async function openMdw(then) {
 function closeMdw() { mdwThen = null; closeWrap('mdw'); }
 function acceptMdw() {
   if ($('mdw-ok').disabled) return;
-  ls.set(MDW_KEY, { license: 'OpenMDW License Agreement', version: MDW_VERSION, acceptedAt: new Date().toISOString() });
-  if (!mdwAccepted()) return toast("This browser couldn't save your acceptance. Private browsing blocks it.");
+  ls.set(MDW_KEYS[mdwFor], { license: 'OpenMDW License Agreement', version: MDW_VERSION, acceptedAt: new Date().toISOString() });
+  if (!mdwAccepted(mdwFor)) return toast("This browser couldn't save your acceptance. Private browsing blocks it.");
   const then = mdwThen; closeMdw(); toast('Licence accepted'); if (then) then();
 }
 // ---- v026.4: Settings › About › Licences and notices: every licence text in full, the required notices, the copyright lines
@@ -2425,6 +3106,8 @@ const LIC = [
   ['Apache License 2.0', [['The licence text', 'licenses/LICENSE-Apache-2.0.txt'],
     ['FLUX.2 [klein] 4B and the FLUX.2 autoencoder · Black Forest Labs; Qwen3-4B · Alibaba Cloud', 'licenses/LICENSE-Apache-2.0.txt'],
     ['SANA-Video 2.0 5B · Copyright 2024 Nvidia', 'licenses/LICENSE-SANA-Video.txt'],
+    ['Video LoRA · LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0)', 'licenses/LICENSE-Apache-2.0.txt'],   // v4
+    ['Looks LoRA · LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0)', 'licenses/LICENSE-Apache-2.0.txt'],   // v4 Phase 3
     ['Gemma 4 E2B-it (Juli) · Google', 'licenses/LICENSE-Gemma-4-Apache-2.0.txt'], ['Gemma 4 notice', 'licenses/NOTICE-Gemma-4.md'],
     ['Gemma 4 E2B-it MTP drafter (faster replies) · Google', 'licenses/LICENSE-Gemma-4-Apache-2.0.txt'],
     ['Gemma 4 E4B-it MTP drafter (the Bigger brain’s faster replies) and Gemma 4 E4B (the Bigger brain’s base model) · Google', 'licenses/LICENSE-Gemma-4-Apache-2.0.txt'],
@@ -2432,19 +3115,28 @@ const LIC = [
     ['Qwen3-TTS (voice) · Copyright 2026 Alibaba Cloud', 'licenses/LICENSE-Qwen3-TTS-Apache-2.0.txt'],
     ['MediaPipe face models (lip-sync, experimental) · Google', 'licenses/LICENSE-MediaPipe-Apache-2.0.txt'],
     ['Qwen3-8B (Klein 9B\u2019s text encoder) · Alibaba Cloud', 'licenses/LICENSE-Apache-2.0.txt'],
-    ['Tokenizers in the engine', 'engine/LICENSE-tokenizers.txt']]],
+    ['Tokenizers in the engine', 'engine/LICENSE-tokenizers.txt'],
+    ['Rapier 0.21 (Troll-E’s physics) · Copyright 2020 Dimforge EURL', 'licenses/LICENSE-Rapier-Apache-2.0.txt']]],   // v4
   ['FLUX Non-Commercial License v2.1', [['FLUX.2 [klein] 9B (Better pictures) · Black Forest Labs', 'licenses/LICENSE-FLUX-Non-Commercial-v2.1.md']]],
-  ['OpenMDW License Agreement 1.1', [['NVIDIA Nemotron 3.5 Bolt E4B (the Bigger brain) · NVIDIA', 'licenses/LICENSE-OpenMDW-1.1.txt'], ['Bigger brain notice (NVIDIA’s terms, the Gemma 4 base model, what p0pc0rn changed)', 'licenses/NOTICE-Nemotron-Bolt-E4B.md']]],
+  ['OpenMDW License Agreement 1.1', [['NVIDIA Nemotron 3.5 Bolt E4B (the Bigger brain) · NVIDIA', 'licenses/LICENSE-OpenMDW-1.1.txt'], ['Bigger brain notice (NVIDIA’s terms, the Gemma 4 base model, what p0pc0rn changed)', 'licenses/NOTICE-Nemotron-Bolt-E4B.md'],
+    ['NVIDIA Nemotron 3.5 ASR Streaming 0.6B (voice input) · NVIDIA', 'licenses/LICENSE-OpenMDW-1.1.txt'], ['Voice input notice (NVIDIA’s terms, what p0pc0rn changed)', 'licenses/NOTICE-Nemotron-ASR.md']]],
   ['MIT', [['ACE-Step 1.5 and its lyrics planner · Copyright (c) 2026 ACEStep (their Qwen3 parts: Apache-2.0)', 'licenses/LICENSE-ACE-Step-1.5.txt'],
     ['Music model notices', 'licenses/NOTICE-music.md'],
     ['MuseTalk 1.5 (lip-sync, experimental) · Copyright (c) 2024 Tencent Music Entertainment Group', 'licenses/LICENSE-MuseTalk-MIT.txt'],
     ['Lip-sync use restrictions: CreativeML Open RAIL-M, Attachment A (a precaution, part of your terms)', 'licenses/LICENSE-CreativeML-OpenRAIL-M.txt'],
     ['Whisper tiny (lip-sync) · Copyright (c) 2022 OpenAI', 'licenses/LICENSE-Whisper-MIT.txt'],
     ['sd-vae-ft-mse (lip-sync) · Stability AI', 'licenses/LICENSE-sd-vae-ft-mse-MIT.txt'],
-    ['TOON · Copyright (c) 2025-PRESENT Johann Schopplich', 'licenses/LICENSE-TOON-MIT.txt']]],
+    ['TOON · Copyright (c) 2025-PRESENT Johann Schopplich', 'licenses/LICENSE-TOON-MIT.txt'],
+    ['three.js r186 (Troll-E’s 3D drawing) · Copyright © 2010-2026 three.js authors', 'licenses/LICENSE-three.js-MIT.txt'],   // v4
+    ['Emscripten (Troll-E’s voice, compiled to WebAssembly) · Emscripten authors', 'licenses/LICENSE-emscripten.txt'],   // 4.0
+    ['musl (the C library inside Troll-E’s voice) · Copyright © 2005-2020 Rich Felker, et al.', 'licenses/LICENSE-musl-MIT.txt']]],   // 4.0
+  ['BSD-style', [['CMU Flite 2.2 (Troll-E’s voice, and Juli’s fallback voice in voice mode) · Language Technologies Institute, Carnegie Mellon University', 'licenses/LICENSE-flite.txt'],
+    ['Its cmu_us_slt voice (the CMU ARCTIC slt voice) · Copyright (c) 2003 Carnegie Mellon University, free for any use', 'licenses/LICENSE-cmu_us_slt.txt'],   // 4.0
+    ['CMU Pronouncing Dictionary (Juli’s voice: her pronunciations) · Carnegie Mellon University, BSD 2-Clause', 'licenses/LICENSE-cmudict-BSD-2-Clause.txt']]],   // 4.0
+  ['CC BY 4.0', [['Troll-E’s trolley: equipment_trash_trolley_a01 · NVIDIA SimReady (what p0pc0rn changed)', 'licenses/NOTICE-trolley-model.md'], ['Troll-E’s props and open world: the grab arm, trash, supplies, shelters, the leech, the 24 crafted machines · NVIDIA SimReady (what p0pc0rn changed)', 'licenses/NOTICE-trolley-props.md'], ['Nowcast model: DeepMind DGMR · Copyright 2021 DeepMind Technologies Limited (what p0pc0rn changed)', 'licenses/NOTICE-nowcast.md'], ['The licence', 'licenses/LICENSE-CC-BY-4.0.txt']]],   // v4 (4.0: + the Nowcast, the licence text)
   ['LGPL-2.1', [['p5.js 1.11.13 (the Apps tab’s app runtime) · the Processing Foundation and contributors', 'licenses/LICENSE-p5js-LGPL-2.1.txt'], ['p5.js notice', 'licenses/NOTICE-p5js.md']]],
   ['Gemma 2 (the video model reads your words with it)', [['Gemma Terms of Use', 'licenses/GEMMA_TERMS_OF_USE.txt'], ['Gemma Prohibited Use Policy', 'licenses/GEMMA_PROHIBITED_USE_POLICY.txt'], ['Gemma notice', 'licenses/NOTICE-Gemma.txt']]],
-  ['LTX-2.3 by Lightricks (the video decoder and the picture reader)', [['LTX-2 Community License Agreement, with Attachment A', 'licenses/LICENSE-LTX-2.txt'], ['Video model notices', 'licenses/NOTICE-video.md']]],
+  ['LTX-2.3 by Lightricks (the video decoder, the picture reader and the clip reader)', [['LTX-2 Community License Agreement, with Attachment A', 'licenses/LICENSE-LTX-2.txt'], ['Video model notices', 'licenses/NOTICE-video.md']]],
   ['Knowledge', [['Starter pack: CC BY-SA 4.0 (Wikipedia text)', 'https://creativecommons.org/licenses/by-sa/4.0/legalcode'], ['Starter pack notice', 'starter:NOTICE.md']]],
   ['Other', [['Engine notices', 'engine/NOTICE.md'], ['Progress animation notice', 'licenses/NOTICE-progress-animation.md']]],
 ];
@@ -2460,7 +3152,7 @@ function buildLic() {
 }
 function openLic() {
   const a = ls.get(LTX_KEY);
-  $('lic-ltx').textContent = (a && a.acceptedAt ? `You accepted the LTX-2 licence (${a.date}) on ${day(a.acceptedAt)}.` : 'The LTX-2 licence is shown for you to accept before the video model or the picture reader downloads.')
+  $('lic-ltx').textContent = (a && a.acceptedAt ? `You accepted the LTX-2 licence (${a.date}) on ${day(a.acceptedAt)}.` : 'The LTX-2 licence is shown for you to accept before the video model, the picture reader or the clip reader downloads.')
     + (a && a.gemma && a.gemmaAcceptedAt ? ` You agreed to the Gemma Prohibited Use Policy (${a.gemma}) on ${day(a.gemmaAcceptedAt)}.` : ' The Gemma Prohibited Use Policy is asked for on the same sheet.');
   openWrap('lic');
 }
@@ -2515,11 +3207,18 @@ function renderGate() {
   }
   show('g-home');   // setup: iPhone, "Add to Home Screen first"; the models download from the app (the chat's first message, Create, Settings)
 }
+/** v4: Restyle's "Follow the motion": the person's own pick, else the look's (LOOK_FOLLOW; the help line says when the look chose) */
+function renderFollow() {
+  const lk = styLookNow(), fo = followFor(lk, S.vform.followPick), own = !S.vform.followPick && !!LOOK_FOLLOW[lk];
+  radio($('follow'), fo); const t = STYLE_FOLLOW[fo].help + (own ? ` ${lookOf(lk).name} starts here: its look holds better this way.` : '');
+  if ($('follow-help').textContent !== t) $('follow-help').textContent = t;
+}
 function renderCreate() {
-  const ph = S.phase, j = S.job, vid = S.mode === 'video', f = F(), z = vid ? vsize(f.size) : size(f.size), stage = $('stage');
+  const ph = S.phase, j = S.job, vid = S.mode === 'video', f = F(), z = vid ? (vsrc() === 'style' ? styZ() : vsize(f.size)) : size(f.size), stage = $('stage');   // v4: a restyle's size is its clip's
   const need = !done(S.mode) && ph !== 'working';
   radio($('kind'), S.mode); $('kind').inert = ph === 'working';
-  const src = vsrc(), first = vid && src !== 'words' ? S.vslots[0] : null;
+  const src = vsrc(), sty = vid && src === 'style', first = sty ? styFirst() : vid && src !== 'words' ? S.vslots[0] : null;
+  { const so = styleOK(); $('vsrc-style').hidden = !so; $('vsrc').classList.toggle('three', !so); $('vsrc').classList.toggle('four', so); }   // v4: + Restyle a clip
   $('vsrc').hidden = !vid || !picOK(); $('vsrc').inert = ph === 'working'; if (vid) radio($('vsrc'), src);
   $('b-killed').hidden = !S.killed || ph === 'working' || S.killed.media !== S.mode;
   if (S.killed) { $('b-killed-text').textContent = S.killed.message; $('k-small').textContent = S.killed.media === 'video' && !VSMALLER[S.vform.size] ? 'Shorter clip' : 'Smaller size'; }
@@ -2547,14 +3246,14 @@ function renderCreate() {
   if (mode === 'result') { $('res-meta').textContent = metaLine(S.result); $('r-edit').hidden = isClip(S.result); }
   // compose
   $('compose').inert = ph === 'working';
-  $('prompt').placeholder = vid ? (src === 'pic' ? 'Describe what moves…' : src === 'two' ? 'Describe the change…' : 'Describe a short clip…') : S.photo ? 'What should change?' : 'Describe a picture…';
+  $('prompt').placeholder = vid ? (src === 'pic' ? 'Describe what moves…' : src === 'two' ? 'Describe the change…' : src === 'style' ? 'What is in the clip and what happens…' : 'Describe a short clip…') : S.photo ? 'What should change?' : 'Describe a picture…';
   $('v-phint').hidden = !vid || src === 'words'; if (vid && src !== 'words') $('v-phint').textContent = HINT[src];
-  renderSlots();
+  renderSlots(); renderStyle();
   $('prompt-row').hidden = vid;
   $('add-photo').hidden = !!S.photo; $('photo-chip').hidden = !S.photo;
   $('attest-box').hidden = vid || !S.photo; $('attest').checked = S.attest;
   $('g-shape').hidden = vid; $('g-q').hidden = vid; $('g-detail').hidden = vid || !S.photo;
-  $('g-vshape').hidden = !vid; $('g-vlen').hidden = !vid;
+  $('g-vshape').hidden = !vid || sty; $('g-vlen').hidden = !vid || (sty && styWhole());   // v4: a restyle takes its clip's shape (the whole video: its length too)
   { // v026.6: Klein 9B, once it is on the phone: Create › Picture's model; Create › Video's quality modes (from words)
     const has9 = done('k9b'), zz = vid ? vsize(S.vform.size) : size(S.form.size), edit = !!S.photo;
     $('g-pmodel').hidden = vid || !has9; radio($('pmodel'), S.form.model === '9b' ? '9b' : '4b');
@@ -2569,13 +3268,17 @@ function renderCreate() {
       $('t-highest').textContent = about(k9bSeconds(zz.w, zz.h) + k9bSeconds(zz.w, zz.h, true) + estimate({ media: 'video', kind: 'flf', width: zz.w, height: zz.h, frames: fr }));
     }
   }
-  renderHq();
+  renderHq(); renderStyReview();
   radio($('sizes'), S.form.size); radio($('steps'), S.form.steps); radio($('detail'), S.form.ref);
   radio($('vsizes'), S.vform.size); radio($('vlen'), S.vform.len); radio($('seedmode'), f.seedMode);
+  renderFollow();   // v4: Restyle's "Follow the motion"
   for (const b of $('vlen').querySelectorAll('button[data-v]')) { const t = `${lenLabel(Number(b.dataset.v), SRC[src].kind)} s`, el = b.querySelector('b'); if (el && el.textContent !== t) el.textContent = t; }   // v026.3: 0.5 .. 4.5 s between two pictures
+  { const ml = sty && S.sty && S.sty.clip ? S.sty.clip.maxLen : 0; for (const b of $('vlen').querySelectorAll('button[data-v]')) { const off = sty && !!ml && Number(b.dataset.v) > ml; b.disabled = off; b.setAttribute('aria-disabled', String(off)); } }   // v4: a restyle: at most what the clip has
   $('seed').hidden = f.seedMode !== 'fixed'; if ($('seed').value !== f.seed) $('seed').value = f.seed;
   $('v-slow').hidden = !vid || !z.slow;
-  if (vid) $('v-est').textContent = `${cap(aboutLong(estimate({ media: 'video', kind: SRC[src].kind, width: z.w, height: z.h, frames: FRAMES[f.len] })))}; the phone slows down when hot.`;
+  if (vid && sty && styWhole()) { const ps = styParts(); $('v-est').textContent = `First frame ${about(estimate({ kind: 'i2i', width: z.w, height: z.h, steps: 4 }))}, then the whole video ${aboutLong(wholeSeconds(ps, (fr) => styEst(S.sty.clip, fr)))} (${ps.length} parts, one after another); the phone slows down when hot.`; }   // v4: the whole video
+  else if (vid && sty) $('v-est').textContent = `First frame ${about(estimate({ kind: 'i2i', width: z.w, height: z.h, steps: 4 }))}, then the clip ${aboutLong(estimate({ media: 'video', kind: 'v2v', width: z.w, height: z.h, frames: FRAMES[f.len] }))}; the phone slows down when hot.`;   // v4
+  else if (vid) $('v-est').textContent = `${cap(aboutLong(estimate({ media: 'video', kind: SRC[src].kind, width: z.w, height: z.h, frames: FRAMES[f.len] })))}; the phone slows down when hot.`;
   else {
     const kind = S.photo ? 'i2i' : 't2i';
     $('t-best').textContent = `4 steps · ${about(estimate({ kind, width: z.w, height: z.h, steps: 4 }))}`;
@@ -2585,10 +3288,12 @@ function renderCreate() {
   renderCta();
 }
 function renderCk(c) {
-  const steps = Math.min(4, c.step || 0), p = c.prompt.length > 64 ? c.prompt.slice(0, 62) + '…' : c.prompt, fam = isPic(c.mode) ? 'pic' : 't2v';
-  const where = steps >= 4 ? 'All 4 steps are done; only developing the frames is left.' : `${steps} of 4 steps saved.`;
-  $('b-clip-text').textContent = `${S.vkilled === fam ? 'It was interrupted. ' : ''}${fam === 'pic' ? `${SRC[srcOf(c.mode)].name} · ` : ''}“${p}” · ${c.width}×${c.height} · ${lenLabel(lenOf(c.frames), c.mode)} s. ${where}${fam === 'pic' ? ' The pictures are saved with it.' : ''}`;
-  $('c-go').textContent = steps >= 4 ? 'Decode the last clip' : `Resume from step ${steps + 1}`;
+  // v4: a restyle runs 3 of its schedule's stages (its checkpoint's step counts the schedule's: 5 from stage 2, or 4 from stage 1)
+  const v2v = c.mode === 'v2v', k0 = v2v ? (c.startStep == null ? 1 : c.startStep) : 0, n = (v2v && Array.isArray(c.sigmas) ? c.sigmas.length : 4) - k0, steps = Math.max(0, Math.min(n, (c.step || 0) - k0));
+  const p = c.prompt.length > 64 ? c.prompt.slice(0, 62) + '…' : c.prompt, fam = isPic(c.mode) || v2v ? 'pic' : 't2v';
+  const where = steps >= n ? `All ${n} steps are done; only developing the frames is left.` : `${steps} of ${n} steps saved.`;
+  $('b-clip-text').textContent = `${S.vkilled === fam ? 'It was interrupted. ' : ''}${fam === 'pic' ? `${SRC[srcOf(c.mode)].name} · ` : ''}“${p}” · ${c.width}×${c.height} · ${lenLabel(lenOf(c.frames), c.mode)} s. ${where}${fam === 'pic' ? (v2v ? ' The clip and its first frame are saved with it.' : ' The pictures are saved with it.') : ''}`;
+  $('c-go').textContent = steps >= n ? 'Decode the last clip' : `Resume from step ${steps + 1}`;
 }
 function renderNeed() {
   const k = S.mode, m = MODELS[k], u = S.dl[k], live = u.sub !== 'idle' || u.have > 0;
@@ -2654,7 +3359,7 @@ function renderAttests() {
 }
 /** the picture reader note on a picture clip while the reader is not on the phone: it downloads by itself on Make */
 function renderReader() {
-  const el = $('v-reader'), show = S.mode === 'video' && vsrc() !== 'words' && picOK() && !done('reader');
+  const el = $('v-reader'), show = S.mode === 'video' && vsrc() !== 'words' && vsrc() !== 'style' && picOK() && !done('reader');   // v4: a restyle lists what it needs itself (renderStyle)
   el.hidden = !show; if (!show) return;
   const u = S.dl.reader, live = ['downloading', 'pausing', 'paused', 'dropped', 'failed'].includes(u.sub), size = fmtSize(u.total);
   $('v-reader-text').textContent = u.sub === 'downloading' ? `Getting the picture reader · ${dlLine(u, true)}${S.pending ? '. Your clip starts when it’s ready.' : ''}`
@@ -2729,7 +3434,8 @@ function renderWork(changed) {
   $('w-phase').textContent = j.waiting || j.sub === 'cancelling' || S.gpuReset ? caption(j) : phaseText(j);   // v026.9: the stage, the whole job's time below
   $('w-hot').hidden = !S.hot;
   const mv = j.id && Q ? mvRoot(Q, Q.get(j.id)) : null;   // v023: a music video's frame, shot or cut says which
-  $('w-keep').textContent = (mv ? `Music video: ${mvStatusOf(mv).text}. ` : j.origin === 'assistant' ? `Juli's ${NOUN[j.kind] || 'job'}. ` : '') + (wake.supported ? 'Keep p0pc0rn open — the screen stays on.' : 'Keep the screen on until it finishes.');
+  const lg = j.kind === 'restylelong' ? `The whole video, Experimental${j.part ? `: part ${j.part.i + 1} of ${j.part.n}` : ''}. Each part is its own job; the app may reload between them. ` : '';   // v4
+  $('w-keep').textContent = (mv ? `Music video: ${mvStatusOf(mv).text}. ` : j.origin === 'assistant' ? `Juli's ${NOUN[j.kind] || 'job'}. ` : lg) + (wake.supported ? 'Keep p0pc0rn open — the screen stays on.' : 'Keep the screen on until it finishes.');
   renderTime();
 }
 function renderProgress() {
@@ -2743,7 +3449,7 @@ function renderProgress() {
 /** v026.9: a popcorn canvas follows a job: its current stage (0 -> 100% within it); a job still waiting its turn heats */
 function popTo(pc, j) { if (!pc || !j) return; if (j.waiting) pc.set(0, true); else pc.stage(stageOf(j, CAST_KINDS.has(j.kind) ? {} : {})); }
 /** "Stage 2 of 4 · Painting · step 3/4" (Cast jobs and the cut: their own words) */
-function phaseText(j) { return CAST_KINDS.has(j.kind) || j.kind === 'assemble' ? caption(j) : stageText(stageOf(j)); }
+function phaseText(j) { return CAST_KINDS.has(j.kind) || j.kind === 'assemble' ? caption(j) : (j.part && j.part.n > 1 ? `Part ${j.part.i + 1} of ${j.part.n} · ` : '') + stageText(stageOf(j)); }   // v4: + the whole video's part
 function renderTime() {
   const j = S.job; if (!j) return;
   const now = Date.now(), el = (now - j.t0) / 1000, p = j.p;
@@ -2764,8 +3470,8 @@ function renderCta() {
   const b = $('cta'), j = S.job, working = S.phase === 'working';
   const label = !working ? 'Make' : j.sub === 'cancelling' ? 'Stopping…' : j.armed ? 'Tap again to stop' : 'Cancel';
   b.classList.toggle('stop', working); b.disabled = working && j.sub === 'cancelling';
-  const pic = S.mode === 'video' && vsrc() !== 'words';
-  b.setAttribute('aria-disabled', String(!working && (!F().prompt.trim() || !done(S.mode) || !consented() || (S.mode === 'image' && !!S.photo && !S.attest) || (pic && (!slotsReady() || !attestOK())))));
+  const sty = S.mode === 'video' && vsrc() === 'style', pic = S.mode === 'video' && vsrc() !== 'words' && !sty;
+  b.setAttribute('aria-disabled', String(!working && (!F().prompt.trim() || !done(S.mode) || !consented() || (S.mode === 'image' && !!S.photo && !S.attest) || (pic && (!slotsReady() || !attestOK())) || (sty && !!styleMissing(styState())))));
   b.querySelector('span').textContent = label; b.querySelector('use').setAttribute('href', working ? '#i-x' : '#i-sparkle');
 }
 function renderPill() {
@@ -2803,7 +3509,7 @@ function renderLibrary() {
     const song = isSong(m), mv = isMV(m), shape = tileShape(m);
     if (shape) t.style.aspectRatio = `${shape[0]} / ${shape[1]}`;   // post-launch: the picture inside takes the same shape (app.css .tile img)
     t.setAttribute('aria-label', song ? `Song, ${Math.round(m.duration || 0)} seconds: ${m.title || m.prompt}` : mv ? `Music video, ${Math.round(m.duration || 0)} seconds: ${m.title || m.prompt}`
-      : isClip(m) ? `${m.vmode === 'flf' ? 'Clip between two pictures' : m.vmode === 'i2v' ? 'Clip from a picture' : 'Clip'}, ${lenText(m.frames)} seconds: ${m.prompt}` : m.prompt);
+      : isClip(m) ? `${m.vmode === 'flf' ? 'Clip between two pictures' : m.vmode === 'i2v' ? 'Clip from a picture' : m.vmode === 'v2v' ? 'Restyled clip' : 'Clip'}, ${lenText(m.frames)} seconds: ${m.prompt}` : m.prompt);
     if (isClip(m)) t.classList.add('clip'); if (song) t.classList.add('song');
     const sn = document.createElement('span'); sn.className = 'selnum num'; sn.setAttribute('aria-hidden', 'true'); t.append(sn);
     const img = document.createElement('img'); img.loading = 'lazy'; img.decoding = 'async'; img.alt = ''; if (u) img.src = u; t.append(img);
@@ -2812,6 +3518,7 @@ function renderLibrary() {
       badge.innerHTML = song ? '<svg><use href="#i-note"/></svg>' : '<svg><use href="#i-play"/></svg>'; badge.append(song || mv ? clock(m.duration || 0) : `${lenText(m.frames)} s`); t.append(badge);
     }
     if (m.model === 'flux2-klein-9b' || m.hq) { const q = document.createElement('span'); q.className = 'badge9 num'; q.setAttribute('aria-hidden', 'true'); q.textContent = m.hq ? '9B frames' : '9B'; t.append(q); }   // v026.6
+    { const hm = hdrMark(m); if (hm) { t.append(hm); t.setAttribute('aria-label', `${t.getAttribute('aria-label')} (HDR copy)`); } }   // v4: Make HDR's copy
     const r = shape ? shape[1] / shape[0] : 1;   // post-launch: an item without a stored size counts as square (was NaN: every later tile went right)
     if (ha <= hb) { a.append(t); ha += r; } else { b.append(t); hb += r; }
   }
@@ -2847,8 +3554,8 @@ function renderModels() {
   const busy = S.phase === 'working';
   for (const row of $('models').children) {
     const k = row.dataset.m, m = MODELS[k], u = S.dl[k], st = S.st[k] || {}, inst = done(k), q = (s) => row.querySelector(s);
-    row.hidden = !E[k] || (k === 'brain4' && !e4bHere()); if (row.hidden) continue;   // the picture reader row needs the picture modes; the planner row the music engine; 3.8: the Bigger brain where it can run
-    const auto = k === 'reader' ? ' · downloads by itself when a clip from a picture needs it' : k === 'planner' ? ' · comes with Download music' : k === 'drafter' ? ' · comes with Juli’s download' : k === 'k9b' && !inst ? ' · about 30 min on Wi-Fi' : '';
+    row.hidden = !E[k] || (k === 'brain4' && !e4bHere()) || ((k === 'stt' || k === 'jvoice') && !voiceHere()); if (row.hidden) continue;   // v4: voice input where it fits beside Juli   // the picture reader row needs the picture modes; the planner row the music engine; 3.8: the Bigger brain where it can run
+    const auto = k === 'reader' ? ' · downloads by itself when a clip from a picture needs it' : k === 'lora' || k === 'lora2' ? ' · optional' : k === 'venc' ? ' · for style video to video' : k === 'planner' ? ' · comes with Download music' : k === 'drafter' ? ' · comes with Juli’s download' : k === 'k9b' && !inst ? ' · about 30 min on Wi-Fi' : k === 'jvoice' ? ' · downloads by itself the first time Juli speaks in voice mode' : '';
     if (k === 'music' && !inst) {   // v021: the pair (music + lyrics planner): one button, one bar, both parts listed
       const md = musicDl(), go = q('.m-go');
       q('.m-sub').textContent = `${m.what} + lyrics planner · ${fmtSize(md.total)} · ${md.have > 0 ? `${md.running ? '' : md.failed ? 'stopped · ' : 'paused · '}${Math.floor(md.pct * 100)}% · ${md.parts}` : st.error ? "can't reach the model server" : 'not downloaded'}`;
@@ -2883,6 +3590,13 @@ function renderModels() {
   }
   $('s-models-why').hidden = !busy;
   $('s-clean').disabled = busy || !(S.files && S.files.remove.length);
+  renderLora();   // v4
+}
+/** v4: Settings › Models: each video LoRA's switch, once it is on this phone */
+function renderLora() {
+  const box = $('s-lora-list'), sw = $('s-lora'), r1 = $('s-lora-row'), r2 = $('s-lora2-row'), sw2 = $('s-lora2'); if (!box || !sw) return;
+  const a = !!(E.lora && done('lora')), b = !!(E.lora2 && done('lora2'));
+  box.hidden = !(a || b); if (r1) r1.hidden = !a; if (r2) r2.hidden = !b; sw.checked = loraOn(); if (sw2) sw2.checked = lora2On();
 }
 /** 3.8 (v040): Settings › Juli: the Bigger brain row (shown once it is on the phone and can run here) */
 const BRAIN4_NOTE = 'When you ask Juli to write something, or to make a picture, clip, song or app, she looks things up and checks pictures with her own model, and NVIDIA’s Bigger brain plans and writes. Chat stays on Juli’s own model, so replies stay fast. One model fits in memory at a time, so these jobs take a few seconds longer to start.';
@@ -2899,7 +3613,7 @@ function renderBrain4() {
   }
 }
 function renderAssistantSettings() {
-  $('s-research').checked = AS.research; $('s-review').checked = AS.review;
+  $('s-research').checked = AS.research; $('s-review').checked = AS.review; $('s-homezip').value = HOME_ZIP.get() || '';   // v4: + the home ZIP
   if (MEM) MEM.render();   // 3.9: About me, Routines and the heartbeat line
   radio($('brainmode'), AS.brainMode);
   const b = S.brainLoad, l = S.brainLast;
@@ -2931,7 +3645,7 @@ function renderKB() {
 }
 async function renderSettings() {
   const c = S.caps || {};
-  renderModels(); radio($('budget'), decodeMB()); renderAssistantSettings(); if (CASTUI) CASTUI.render();
+  renderModels(); radio($('budget'), decodeMB()); renderAssistantSettings(); if (CASTUI) CASTUI.render(); if (VOICEIN) VOICEIN.renderSettings();
   $('s-persist').textContent = S.persisted ? 'Yes' : 'No'; $('s-allow').hidden = S.persisted;
   $('s-where').textContent = ANDROID ? (standalone() ? 'in the installed app' : 'in Chrome') : standalone() ? 'in the Home Screen app' : 'in Safari';
   $('s-gpu').textContent = c.gpu || '–'; $('s-ver').textContent = APP_VERSION;
@@ -2955,7 +3669,7 @@ function placeInd(group, instant) {
   ind.classList.toggle('instant', !!instant || !group.dataset.placed); group.dataset.placed = '1';
   Object.assign(ind.style, { width: `${on.offsetWidth}px`, height: `${on.offsetHeight}px`, transform: `translate(${on.offsetLeft}px, ${on.offsetTop}px)` });
 }
-function placeAll() { for (const g of ['kind', 'vsrc', 'sizes', 'steps', 'detail', 'vsizes', 'vlen', 'seedmode', 'budget']) placeInd($(g), true); }
+function placeAll() { for (const g of ['kind', 'vsrc', 'sizes', 'steps', 'detail', 'vsizes', 'vlen', 'seedmode', 'budget', 'follow']) placeInd($(g), true); }
 
 // ------------------------------------------------------------------------------------------------ v023: music video from a landed song
 // Josh (Oct 13): "the landed song has the option to animate in the bubble options" (also the song's Library viewer); "bare bones, user
@@ -3287,6 +4001,7 @@ function init() {
   $('ls-dl-btn').onclick = tapGuard(() => { if (L.dlKey) dlTap(L.dlKey); });
   $('agree-go').onclick = () => openLesson(); $('r-lesson').onclick = () => openLesson();
   $('attest').addEventListener('change', (e) => { S.attest = e.target.checked && !!S.photo; if (S.attest) { rights.logUpload(S.photo.blob); $('attest-box').classList.remove('need'); } renderCta(); });
+  addEventListener('p0pc0rn:voicepack', () => refreshStatus('jvoice').then(() => { if (S.tab === 'settings') renderSettings(); }));   // v4: voice mode downloaded (or first saw) her voice
   addEventListener('storage', (e) => { if (e.key === rights.CONSENT_KEY || e.key === null) { render(); renderLesson(); if (Q && consented()) Q.recheck(); } });   // an agreement made (or cleared) in another tab
   addEventListener('resize', () => { if (L.open) $('ls-track').scrollTo({ left: L.i * $('ls-track').clientWidth }); });
   for (const k of DL) {   // Settings › Models rows (the picture reader's row shows only when the engine has the picture modes)
@@ -3321,6 +4036,7 @@ function init() {
   pick('detail', (v) => { S.form.ref = v; });
   pick('vsizes', (v) => { S.vform.size = v; });
   pick('vlen', (v) => { S.vform.len = Number(v); });
+  pick('follow', (v) => { S.vform.followPick = followOf(v); });   // v4: Restyle's "Follow the motion" (Closely / Loosely; the same time either way): the person's pick wins over the look's
   pick('vsrc', (v) => { if (S.phase === 'result' || S.phase === 'error') { dropResult(); Object.assign(S, { phase: 'ready', error: null }); } S.vform.src = v; });
   // the clip's pictures: Library / phone photo / remove / swap; one attestation per phone photo; the reader's Pause / Resume
   $('vpics').addEventListener('click', (e) => {
@@ -3337,6 +4053,30 @@ function init() {
     if (!f) return;
     try { const p = await shrinkPhoto(f); await fillSlot(vpick, p.blob, p.w, p.h, 'phone'); } catch (err) { toast("That photo couldn't be opened. Try another, or a screenshot of it."); }
   });
+  // v4 Phase 4: Restyle a clip: the clip (Library / a video from the phone / remove), its tick, the look; the first frame's check
+  $('vstyle').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b || S.phase === 'working') return;
+    if (b.dataset.act === 'clib') return openClipPicker();
+    if (b.dataset.act === 'cphone') return $('cfile').click();
+    if (b.dataset.act === 'cx') return styClear();
+    const t = b.closest('.look'); if (t) { S.vform.look = t.dataset.v; saveDraft(); renderStyle(); renderStyReview(); renderCta(); renderFollow(); }   // v4 (Nov 3): + Follow the motion follows the look
+  });
+  $('cfile').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) pickClip(f, { from: 'phone' }); });
+  $('sattest').addEventListener('change', (e) => {
+    if (!S.sty || !S.sty.clip) return;
+    S.sty.attest = e.target.checked; saveSty();
+    if (S.sty.attest) { const b = S.styOrig || (S.styB && S.styB.pack); if (b) rights.logUpload(b); $('sattest-box').classList.remove('need'); }
+    renderCta();
+  });
+  $('sty-whole').addEventListener('change', (e) => {   // v4: the whole video, in parts (Experimental): its other parts are read now
+    if (!S.sty || !S.sty.clip || S.phase === 'working') { e.target.checked = !!(S.sty && S.sty.whole); return; }
+    S.sty.whole = e.target.checked; saveSty(); if (S.sty.whole) styReadParts(); render();
+  });
+  $('sty-kept-go').onclick = tapGuard(() => { const id = $('sty-kept').dataset.job; if (id && S.phase !== 'working') longCarryOn(id); });   // v4: a stopped whole-video restyle
+  $('sty-kept-x').onclick = () => { const id = $('sty-kept').dataset.job; if (id && S.phase !== 'working') longDrop(id); };
+  $('sty-go').onclick = tapGuard(() => styUse());
+  $('sty-re').onclick = tapGuard(() => { if (S.phase !== 'working') styleMake(); });
+  $('sty-x').onclick = () => { if (S.sty) { S.sty.stage = null; styForget(false); saveSty(); styKeep(); } render(); };
   $('vattests').addEventListener('change', (e) => {
     const cb = e.target.closest('input[type="checkbox"]'); if (!cb) return;
     const i = Number(cb.dataset.i), x = S.vslots[i]; if (!x) return;
@@ -3346,7 +4086,7 @@ function init() {
   $('picker').addEventListener('click', (e) => {
     if (e.target.closest('[data-close]')) return closePicker();
     const t = e.target.closest('.pk-tile'); if (!t) return;
-    const id = t.dataset.id, i = PK.slot; closePicker(); pickFromLibrary(i, id);
+    const id = t.dataset.id, i = PK.slot; closePicker(); if (PK.clip) return void clipFromLibrary(id); pickFromLibrary(i, id);
   });
   $('menu').addEventListener('click', (e) => {
     if (e.target.closest('[data-close]')) return closeWrap('menu');
@@ -3376,7 +4116,11 @@ function init() {
     go('create'); if (S.phase === 'error' && !$('err').hidden) $('err').scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
   };
   for (const t of document.querySelectorAll('.tab')) t.onclick = () => go(t.dataset.tab);
-  SHELL.init({ go, tab: () => S.tab, toast, sheet: mvSheet, apps: () => APPS, chat: () => CH, diag });   // 3.9: the phone-OS shell (home screen, dock, badges, wallpaper)
+  SHELL.init({ go, tab: () => S.tab, toast, sheet: mvSheet, apps: () => APPS, chat: () => CH, diag,   // 3.9: the phone-OS shell (home screen, dock, badges, wallpaper)
+    gameBusy: () => phoneBusy(Q, () => S.phase === 'working') });   // v4: a game on its own page leaves this one: never while a job is queued or running (its page would look like it died)
+  if (PACKS[MODELS.nowcast.id] && $('v-nowcast')) SHELL.register({ id: 'nowcast', title: 'Nowcast', icon: 'icons/ui/nowcast.svg', view: 'v-nowcast', home: true, order: 1,   // v4: the Nowcast (Experimental) on the home screen
+    onOpen: () => { const o = NC_OPEN; NC_OPEN = null; ncGlue().then((g) => g.open(o || {}), (e) => { diag('nowcast: could not start', { message: msg(e) }); toast('The Nowcast could not start.'); }); },
+    onClose: () => { if (NC) NC.close(); if (Q && Q.holding && KEY_OF[Q.host && Q.host.currentId] === 'nowcast') Q.endHold(); } });
   $('need-go').onclick = tapGuard(() => dlTap(S.mode));
   // killed-last-run banner
   $('k-retry').onclick = () => {
@@ -3413,7 +4157,7 @@ function init() {
   $('c-go').onclick = tapGuard(() => {
     const c = ckNow(); if (!c || S.phase === 'working') return;
     restoreVForm({ prompt: c.prompt, width: c.width, height: c.height, frames: c.frames });
-    if (isPic(c.mode)) {   // the picture slot: the pinned pictures + latent are checkpointed, so no pictures are needed
+    if (isPic(c.mode) || c.mode === 'v2v') {   // the picture slot: the pinned pictures + latent are checkpointed, so no pictures are needed (v4: a restyle's clip too)
       S.vform.src = srcOf(c.mode); saveDraft();
       return startJob({ media: 'video', kind: c.mode, resume: true, prompt: c.prompt, width: c.width, height: c.height, frames: c.frames, seed: c.seed, attested: true });
     }
@@ -3429,6 +4173,7 @@ function init() {
     const r = S.result; if (!r) return;
     const p = Object.assign({}, r.params, { seed: newSeed() }); delete p.resume;
     if (isClip(r) && isPic(r.vmode)) { if (!r.input) { toast('Pick the pictures again'); return backToCompose(false); } return startJob(p, r.input, r.sources); }
+    if (isClip(r) && r.vmode === 'v2v') { if (!r.input) { toast('Pick the clip again'); return backToCompose(false); } return startJob(p, r.input, r.sources); }   // v4: the same clip and first frame, a new seed
     startJob(p, r.input);
   };
   $('r-change').onclick = () => backToCompose(true);
@@ -3441,8 +4186,11 @@ function init() {
   V.reset = gestures($('v-stage'), vMedia, swipe);
   $('v-save').onclick = () => { if (V.blob && V.x) shareItem(V.x, () => saveHint(true)); };   // v026.4: labelled
   const notBusy = () => { if (S.phase === 'working') { toast('Wait — something is being made'); return false; } return true; };
+  $('v-restyle').onclick = () => { if (!notBusy() || !V.meta || !isClip(V.meta) || !styleOK()) return; const m = V.meta, b = V.blob; closeViewer(); restyleFrom(m, b); };   // v4
   $('v-reuse').onclick = async () => {
-    if (!notBusy() || !V.meta) return; const m = V.meta, clip = isClip(m), pic = clip && isPic(m.vmode) && picOK(); closeViewer();
+    if (!notBusy() || !V.meta) return;
+    if (isClip(V.meta) && V.meta.vmode === 'v2v' && styleOK()) { const m = V.meta; closeViewer(); return reuseStyle(m); }   // v4: the same look and words, its clip again
+    const m = V.meta, clip = isClip(m), pic = clip && isPic(m.vmode) && picOK(); closeViewer();
     if (clip) { restoreVForm(m); S.vform.src = pic ? srcOf(m.vmode) : 'words'; saveDraft(); } else { clearPhoto(); restoreForm(m); }
     backToCompose(false); setMode(clip ? 'video' : 'image'); syncPrompt(); render(); placeAll();
     if (!pic) return toast('Prompt is ready — tap Make');
@@ -3452,7 +4200,10 @@ function init() {
   $('v-anim').onclick = () => { if (V.meta && isSong(V.meta)) { const m = V.meta, b = V.blob; closeViewer(); return void mvSong({ meta: m, blob: b }).then((x) => (x ? openAnimate(x) : toast("Couldn't open that song"))); }   // v023
     if (!notBusy() || !V.meta || isClip(V.meta) || !picOK()) return; const m = V.meta, b = V.blob; closeViewer(); animateFrom(m, b); };
   $('v-more').onclick = () => {
-    if (!V.meta || isClip(V.meta)) return; const m = V.meta, b = V.blob;
+    if (V.meta && isClip(V.meta)) return openMenu('This clip', [   // v4 (Josh, Nov-02: "Move lipsync to more"): the clip row has room for Restyle and Make HDR
+      ['Lip-sync · experimental', '#i-chat', () => { if (V.id && TALKUI) TALKUI.fromClip(V.id); }],
+    ]);
+    if (!V.meta) return; const m = V.meta, b = V.blob;
     openMenu('This picture', [
       ['Clip to another picture', '#i-frames', () => { if (!notBusy()) return; closeViewer(); clipToAnother(m, b); }],
       ['Reuse prompt', '#i-copy', () => $('v-reuse').click()],
@@ -3462,15 +4213,24 @@ function init() {
     const b = e.target.closest('button'); if (!b || !V.meta) return;
     const x = (V.meta.sources || [])[Number(b.dataset.i)]; if (!x) return;
     if (x.libId && S.lib.some((m) => m.id === x.libId)) return viewerLoad(x.libId);
+    if (V.meta.vmode === 'v2v') return toast(x.from === 'phone' ? 'That was a video from your phone; it isn’t in the Library.' : 'That clip was deleted from the Library.');   // v4
     toast(x.from === 'phone' ? 'That was a photo from your phone; it isn’t in the Library.' : 'That picture was deleted from the Library.');
   });
   $('v-edit').onclick = () => { if (V.meta && isMV(V.meta) && V.meta.mvId) { const id = V.meta.mvId; closeViewer(); return openBoard(id); }   // v023: Edit video = the storyboard
     if (!notBusy() || !V.meta || isClip(V.meta)) return; const m = V.meta, b = V.blob; closeViewer(); S.form.prompt = ''; backToCompose(false); setMode('image'); setPhoto(b, m.width, m.height, false); S.form.size = sizeFor(m.width, m.height) || S.form.size; saveDraft(); syncPrompt(); render(); };
+  $('v-hdr').onclick = () => { if (V.meta && HDR) HDR.open(V.meta, { media: isClip(V.meta) ? $('v-vid') : null }); };   // v4: Make HDR (ui/hdr.js)
   $('v-del').onclick = () => { const id = V.id, m = V.meta; if (id) openSheet(isSong(m) ? 'Delete this song?' : isMV(m) ? 'Delete this music video?' : isClip(m) ? 'Delete this clip?' : 'Delete this picture?', 'It will be removed from this phone.', 'Delete', () => deleteItem(id)); };
   // settings
   $('s-allow').onclick = () => E.image.requestPersistentStorage().then((p) => { S.persisted = p; renderSettings(); if (!p) toast(ANDROID ? "Chrome didn't allow it yet. Installing p0pc0rn (menu › Add to Home screen) helps." : "iOS didn't allow it yet. Adding to Home Screen helps."); });
   // v019: the queue button in the header, Settings > Assistant
   for (const id of ['c-queue', 'as-queue', 's-queue']) $(id).onclick = () => { if (CH) CH.openQueue(); };
+  if ($('s-lora')) $('s-lora').addEventListener('change', (e) => { ls.set('pf.app.loraOn', e.target.checked ? null : false); toast(e.target.checked ? 'Clips from pictures use the video LoRA' : 'Clips are made without the video LoRA'); });   // v4: on = the default
+  if ($('s-lora2')) $('s-lora2').addEventListener('change', (e) => { ls.set('pf.app.lora2On', e.target.checked ? null : false); toast(e.target.checked ? 'Style video to video uses the looks LoRA' : 'Style video to video runs without the looks LoRA'); });   // v4 Phase 3
+  $('s-homezip').addEventListener('change', (e) => {   // v4 (weather): 5 digits or empty (cleared)
+    const v = String(e.target.value || '').replace(/\D/g, '');
+    if (v && v.length !== 5) { e.target.value = HOME_ZIP.get() || ''; toast('A ZIP code has 5 digits.'); return; }
+    HOME_ZIP.set(v || null); toast(v ? `Home ZIP ${v} saved, only on this phone.` : 'Home ZIP cleared.');
+  });
   $('s-research').addEventListener('change', (e) => { AS.research = e.target.checked; ls.set('pf.app.research', AS.research); if (AG) AG.research = AS.research ? RS : null; });
   if ($('s-brain4')) $('s-brain4').addEventListener('change', (e) => { ls.set('pf.app.brain4Use', e.target.checked ? null : false); renderAssistantSettings(); });   // 3.8 (v040): on = the default
   $('s-review').addEventListener('change', (e) => { AS.review = e.target.checked; ls.set('pf.app.review', AS.review); if (AG) AG.hooks.review = AS.review; });
@@ -3496,7 +4256,11 @@ function init() {
   $('docv').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeWrap('docv'); });
   $('s-lic').onclick = openLic;
   $('s-credits').onclick = openCredits;
-  initSettings({ placeInd, cast: CAST, castUi: () => CASTUI, diag });   // 3.9 polish: Settings' groups (every 3.8 id and handler kept), the Cast screen
+  initSettings({ placeInd, cast: CAST, castUi: () => CASTUI, diag, apps: () => APPS });   // 3.9 polish: Settings' groups (every 3.8 id and handler kept), the Cast screen
+  initTune({ appVersion: APP_VERSION, busy: () => !!phoneBusy(Q, () => S.phase === 'working'), consented, e4bHere: () => E4B_HERE(), e4bWhy: () => E4B_WHY(),
+    before: () => (VOICEIN ? VOICEIN.release('speed tune') : null),   // v4: voice input lets go of its memory first
+    wake: (on) => (on ? wake.on() : wake.off()), diag });   // v4: the kernel tune: asks on a first run / after an update, and from Settings
+  scheduleAsk(4000);
   $('sh-ok').onclick = () => { const f = sheetOk; sheetOk = null; closeSheet(); if (f) f(); };
   $('toast-btn').onclick = () => { const f = toastAct; toastAct = null; $('toast').classList.remove('on'); if (f) f(); };
   $('g-retry').onclick = () => (S.stop && S.stop.retry === 'boot' ? boot() : location.reload());

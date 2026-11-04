@@ -15,6 +15,7 @@
 .sg-ic svg { width: 19px; height: 19px; stroke-width: 1.8; }
 .sg-ic[data-sg="models"] { background: linear-gradient(160deg, #5CBBFF, #2A6FD9); }
 .sg-ic[data-sg="juli"] { background: linear-gradient(160deg, #9A8CFF, #5B4BF5); }
+.sg-ic[data-sg="apps"] { background: linear-gradient(160deg, #6FE0C8, #1F9C8A); }   /* v4: Apps (Priority) */
 .sg-ic[data-sg="making"] { background: linear-gradient(160deg, #FF9B6A, #E0464E); }
 .sg-ic[data-sg="bench"] { background: linear-gradient(160deg, #5FD38B, #23895A); }
 .sg-ic[data-sg="storage"] { background: linear-gradient(160deg, #8FA6C2, #46566E); }
@@ -36,6 +37,11 @@ html[data-busy] .sg-body.sg-in { animation: none; }
 #v-settings .li.callout > span:last-child { text-align: left; }   /* a paragraph in a row reads from the left (3.8's row rule right-aligned it) */
 #s-cast > span:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: left; }
 #s-cast .li-end { color: var(--text-3); }
+/* v4: Settings › Apps › Priority: each app's name over its own High / Normal / Low control (one column at phone width) */
+#s-apps-prio .prio-row { flex-direction: column; align-items: stretch; gap: var(--s-2); }
+#s-apps-prio .prio-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: left; }
+#s-apps-prio .prio-head .sw-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#s-apps-prio .prio-seg button { min-height: 38px; padding: 6px 4px; }
 
 /* ---------- Cast: its own screen (the people, Add a person); no label above its notes here. Nobody in it yet: its icon over the words */
 #v-cast .pad { margin-top: 0; }

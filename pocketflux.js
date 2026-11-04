@@ -4,6 +4,8 @@
 // Each model has its own pack (its address comes from config.js) and its own OPFS folder inside the engine (engine MODELS registry).
 // v018: the video engine also gets the picture reader's pack (LTX-2.3 still encoder, 213 MB, its own OPFS folder engine/ltx23-still-enc),
 // which turns on imageToVideo / framesToVideo / resumeVideo / encoderStatus / downloadEncoder / deleteEncoder (ENGINE_API.md section 8).
+// v4: the video engine also gets the video LoRA's pack when config.js lists one ('sanavideo2-5b-lora'; its own OPFS folder engine/sana-lora/<id>),
+// which turns on loraStatus / downloadLora / deleteLora and a job's `lora` option (ENGINE_API.md section 6.1).
 // v019: two more engines, each its own ES module tree under engine/ (ENGINE_API.md sections 9 and 10):
 //   'gemma4-e2b'      the assistant (Gemma 4 E2B-it, engine/llm/llm_engine.js): status / download / load / unload / chat
 //   'bolt-e4b'        3.8: the assistant's bigger brain (NVIDIA Nemotron 3.5 Bolt E4B, the same engine; text only)
@@ -40,6 +42,11 @@
       return modFor(o.model).then(function (m) {
         if (!o.packUrl) o.packUrl = PACKS[o.model] || PACK_URL;
         if (o.model === 'sanavideo2-5b' && !o.encoderPackUrl) o.encoderPackUrl = PACKS['ltx23-still-enc'];
+        if (o.model === 'sanavideo2-5b' && !o.loras) {   // v4: the video LoRAs config.js lists (f3: picture clips; Phase 3: c20, style video to video)
+          var L = {}; ['sanavideo2-5b-lora', 'sanavideo2-5b-style-lora'].forEach(function (id) { if (PACKS[id]) L[id] = PACKS[id]; });
+          if (Object.keys(L).length) o.loras = L;
+        }
+        if (o.model === 'sanavideo2-5b' && !o.videoEncoderPackUrl && PACKS['ltx23-video-enc']) o.videoEncoderPackUrl = PACKS['ltx23-video-enc'];   // v4 Phase 3: the clip reader
         if (o.model === 'gemma4-e2b' && !o.dir) o.dir = ASSISTANT_PACK.dir;
         if (o.model === 'gemma4-e2b' && o.drafter !== false && !o.drafterUrl && DRAFTER_PACK.url) { o.drafterUrl = DRAFTER_PACK.url; o.drafterDir = DRAFTER_PACK.dir; }
         if (o.model === 'bolt-e4b' && !o.dir && E4B_PACK.dir) o.dir = E4B_PACK.dir;
@@ -50,6 +57,10 @@
     /** the engine's model registry ({id: {kind, dir, wipe, ...}}): which OPFS folders belong to which model */
     registry: function () { return load().then(function (m) { return m.MODELS || null; }); },
     /** the picture reader's registry entry ({id, dir, wipe, ...}) or null when the engine has no picture modes */
-    encoder: function () { return load().then(function (m) { return m.ENCODER || null; }); }
+    encoder: function () { return load().then(function (m) { return m.ENCODER || null; }); },
+    /** v4: where the video LoRA packs live ({root, dir(id), wipe(id)}), or null in an engine without them */
+    lora: function () { return load().then(function (m) { return m.LORA || null; }); },
+    /** v4 Phase 3: the clip reader's registry entry ({id, dir, wipe}) or null */
+    videoEncoder: function () { return load().then(function (m) { return m.VIDEO_ENCODER || null; }); }
   };
 })();

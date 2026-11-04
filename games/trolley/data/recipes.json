@@ -1,0 +1,441 @@
+{
+ "version": 1,
+ "rule": "inputs (catalog ids, with counts) -> output (a catalog id); crafted only in a sealed shelter (at its workbench) or parked in the dock; tier 2 needs the Matter Loom (R14), tier 3 the Loom and a tier-2 machine",
+ "recipes": [
+  {
+   "id": "R01",
+   "name": "Tetrabrachion",
+   "tier": 3,
+   "inputs": {
+    "diesel_can": 40,
+    "drum_rusty": 1,
+    "car_frame": 1,
+    "wrench": 1,
+    "battery_9v": 1
+   },
+   "output": "r01_tetrabrachion",
+   "hint": "Four hands remember what one forgot. Feed them forty small fires.",
+   "function": "Grabber upgrade: four arms replace the claw. Picks up to 4 items per press, lifts drums and car parts the claw cannot, reach +25%.",
+   "effect": "tetra",
+   "place": "a01",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r01_tetrabrachion.glb"
+  },
+  {
+   "id": "R02",
+   "name": "Heliostat Rail",
+   "tier": 1,
+   "inputs": {
+    "soda_can": 1,
+    "solar_panel": 1
+   },
+   "output": "r02_heliostat_rail",
+   "hint": "Drink the sweetness, keep the tin: the sun needs a cradle.",
+   "function": "Unlocks one solar mount slot on the bin (craft up to 8). The panel itself is consumed into the rail.",
+   "effect": "rail",
+   "place": "mount",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r02_heliostat_rail.glb"
+  },
+  {
+   "id": "R03",
+   "name": "Dioscuri Rig",
+   "tier": 2,
+   "inputs": {
+    "hydraulic_hose": 6,
+    "oilfilter_pliers": 2,
+    "office_monitor": 1,
+    "car_battery": 1
+   },
+   "output": "r03_dioscuri_rig",
+   "hint": "Two brothers, one heartbeat, a screen that watches both.",
+   "function": "Second arm pair on the back of the bin: carry while grabbing, double pickup speed.",
+   "effect": "dioscuri",
+   "place": "a01",
+   "accent": "#FF2BD6",
+   "glb": "assets/craft/craft_r03_dioscuri_rig.glb"
+  },
+  {
+   "id": "R04",
+   "name": "Lumen Vigil",
+   "tier": 2,
+   "inputs": {
+    "light_bulb": 12,
+    "ibc_tank": 1,
+    "car_battery": 1,
+    "fuse": 4
+   },
+   "output": "r04_lumen_vigil",
+   "hint": "What drinks the dark cannot drink this light.",
+   "function": "Wandering UV-C sentry around the shelter. Leeches will not cross its 8 m radius for 3 nights.",
+   "effect": "lumen",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r04_lumen_vigil.glb"
+  },
+  {
+   "id": "R05",
+   "name": "Mole Courier",
+   "tier": 2,
+   "inputs": {
+    "pallet_jack": 1,
+    "car_battery": 2,
+    "cctv_dome": 1
+   },
+   "output": "r05_mole_courier",
+   "hint": "Lay a fork on its back and give it eyes; it will dig for you.",
+   "function": "Autonomous scout: fetches one marked item per day and maps cadmium puddles on the minimap.",
+   "effect": "courier",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r05_mole_courier.glb"
+  },
+  {
+   "id": "R06",
+   "name": "Roentgen Furnace",
+   "tier": 2,
+   "inputs": {
+    "alternator": 2,
+    "copper_cable": 10,
+    "drum_rusty": 1,
+    "soda_can": 20
+   },
+   "output": "r06_roentgen_furnace",
+   "hint": "Wind the copper, crush the silver tins, and the drum will hum through midnight.",
+   "function": "Shelter generator: turns diesel cans into charge at night (1 can = 10% bin battery).",
+   "effect": "furnace",
+   "place": "station",
+   "accent": "#FF2BD6",
+   "glb": "assets/craft/craft_r06_roentgen_furnace.glb"
+  },
+  {
+   "id": "R07",
+   "name": "Skiagraph Pillar",
+   "tier": 3,
+   "inputs": {
+    "light_bulb": 2,
+    "pallet_rack": 1,
+    "copper_cable": 4,
+    "battery_9v": 2
+   },
+   "output": "r07_skiagraph_pillar",
+   "hint": "Stand the bones upright and walls become rumours.",
+   "function": "Needs a Roentgen Furnace nearby. Reveals hidden or buried supplies through walls within 15 m for 20 s.",
+   "effect": "skiagraph",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r07_skiagraph_pillar.glb"
+  },
+  {
+   "id": "R08",
+   "name": "Coherent Lance",
+   "tier": 2,
+   "inputs": {
+    "beer_bottle": 6,
+    "car_battery": 2,
+    "wrench": 1
+   },
+   "output": "r08_coherent_lance",
+   "hint": "Six green throats sing one straight note.",
+   "function": "Cuts barricades and fences (opens shortcuts) and burns a latched leech off in 2 s.",
+   "effect": "lance",
+   "place": "a01",
+   "accent": "#FF2BD6",
+   "glb": "assets/craft/craft_r08_coherent_lance.glb"
+  },
+  {
+   "id": "R09",
+   "name": "Echo Psalter",
+   "tier": 1,
+   "inputs": {
+    "office_monitor": 1,
+    "tin_can": 3,
+    "battery_9v": 1,
+    "copper_cable": 2
+   },
+   "output": "r09_echo_psalter",
+   "hint": "Listen to the mud. It is full of things that were thrown away.",
+   "function": "Pings buried items in mud and puddles within 10 m.",
+   "effect": "psalter",
+   "place": "a01",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r09_echo_psalter.glb"
+  },
+  {
+   "id": "R10",
+   "name": "Cadmium Leachfilter",
+   "tier": 2,
+   "inputs": {
+    "ibc_tank": 1,
+    "hydraulic_hose": 8,
+    "water_bottle": 2,
+    "fuel_jug": 1
+   },
+   "output": "r10_cadmium_leachfilter",
+   "hint": "The yellow water is sick. Give it new kidneys.",
+   "function": "Purifies cadmium puddle water into coolant (consumable: repairs aged panels, cools motors for faster driving).",
+   "effect": "leachfilter",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r10_cadmium_leachfilter.glb"
+  },
+  {
+   "id": "R11",
+   "name": "Somnus Bellows",
+   "tier": 3,
+   "inputs": {
+    "fuel_jug": 2,
+    "hydraulic_hose": 4,
+    "extinguisher": 1,
+    "anesthesia_mask": 1
+   },
+   "output": "r11_somnus_bellows",
+   "hint": "Even hunger sleeps if you breathe for it.",
+   "function": "Releases a sleep cloud at the shelter door: leeches inside 6 m stay dormant for one night.",
+   "effect": "somnus",
+   "place": "station",
+   "accent": "#FF2BD6",
+   "glb": "assets/craft/craft_r11_somnus_bellows.glb"
+  },
+  {
+   "id": "R12",
+   "name": "Iron Breath",
+   "tier": 2,
+   "inputs": {
+    "hvac_duct": 1,
+    "shop_fan": 1,
+    "hydraulic_hose": 4
+   },
+   "output": "r12_iron_breath",
+   "hint": "A shelter that cannot breathe will rust in its sleep.",
+   "function": "Shelter air scrubber: no overnight corrosion, items stored inside keep full value.",
+   "effect": "ironbreath",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r12_iron_breath.glb"
+  },
+  {
+   "id": "R13",
+   "name": "Lazarus Clamps",
+   "tier": 2,
+   "inputs": {
+    "car_battery": 2,
+    "jumper_clamps": 2,
+    "battery_9v": 1
+   },
+   "output": "r13_lazarus_clamps",
+   "hint": "Teeth taken from what bit you will bite back once.",
+   "function": "One-shot revive at 0% battery (restores 25%) and shocks a latched leech off.",
+   "effect": "lazarus",
+   "place": "bin",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r13_lazarus_clamps.glb"
+  },
+  {
+   "id": "R14",
+   "name": "Matter Loom",
+   "tier": 1,
+   "inputs": {
+    "vending_machine": 1,
+    "chips_bag": 10,
+    "utility_cabinet": 1
+   },
+   "output": "r14_matter_loom",
+   "hint": "Every wrapper remembers being a shape.",
+   "function": "Shelter crafting station: unlocks tier-2 recipes and prints fuses and bolts from plastic trash.",
+   "effect": "loom",
+   "place": "station",
+   "accent": "#FF2BD6",
+   "glb": "assets/craft/craft_r14_matter_loom.glb"
+  },
+  {
+   "id": "R15",
+   "name": "Arc Forge",
+   "tier": 1,
+   "inputs": {
+    "car_battery": 2,
+    "copper_cable": 4,
+    "rusty_beam": 2
+   },
+   "output": "r15_arc_forge",
+   "hint": "Marry the rust to the lightning and it will stand up.",
+   "function": "Builds and upgrades shelter walls, roof and doors from scrap.",
+   "effect": "forge",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r15_arc_forge.glb"
+  },
+  {
+   "id": "R16",
+   "name": "Ley Junction",
+   "tier": 2,
+   "inputs": {
+    "utility_cabinet": 1,
+    "fuse": 8,
+    "copper_cable": 6
+   },
+   "output": "r16_ley_junction",
+   "hint": "Where the street's veins meet, store the noon for midnight.",
+   "function": "Shelter power hub: night storage and 2 extra panel circuits. Daylight only charges it; it carries Troll-E through the night.",
+   "effect": "ley",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r16_ley_junction.glb"
+  },
+  {
+   "id": "R17",
+   "name": "Charge Oracle",
+   "tier": 1,
+   "inputs": {
+    "multimeter_clamp": 1,
+    "battery_9v": 2,
+    "jumper_clamps": 1
+   },
+   "output": "r17_charge_oracle",
+   "hint": "Ask the cell how long it has. It will not lie to this.",
+   "function": "Shows true charge on found batteries and each solar panel's age tier and efficiency.",
+   "effect": "oracle",
+   "place": "a01",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r17_charge_oracle.glb"
+  },
+  {
+   "id": "R18",
+   "name": "Photon Altar",
+   "tier": 3,
+   "inputs": {
+    "solar_panel": 4,
+    "pallet_rack": 1,
+    "beer_bottle": 6
+   },
+   "output": "r18_photon_altar",
+   "hint": "Lay the tired suns flat and they remember noon.",
+   "function": "Restores one aged panel one tier per day (ruined to aged to new), at the cost of the four sacrificed panels.",
+   "effect": "altar",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r18_photon_altar.glb"
+  },
+  {
+   "id": "R19",
+   "name": "Salamander Lung",
+   "tier": 2,
+   "inputs": {
+    "diesel_can": 20,
+    "drum_rusty": 1,
+    "hvac_duct": 1
+   },
+   "output": "r19_salamander_lung",
+   "hint": "Cold batteries bleed faster. Give the night a fever.",
+   "function": "Shelter heater: burns diesel at night, so night drain is 30% lower while docked.",
+   "effect": "salamander",
+   "place": "station",
+   "accent": "#FF2BD6",
+   "glb": "assets/craft/craft_r19_salamander_lung.glb"
+  },
+  {
+   "id": "R20",
+   "name": "Dynamo Heart",
+   "tier": 2,
+   "inputs": {
+    "forklift": 1,
+    "alternator": 2,
+    "wrench": 1
+   },
+   "output": "r20_dynamo_heart",
+   "hint": "The old lifter's heart still wants to run downhill.",
+   "function": "Drive upgrade: +25% top speed and regenerative braking on slopes.",
+   "effect": "dynamo",
+   "place": "a01",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r20_dynamo_heart.glb"
+  },
+  {
+   "id": "R21",
+   "name": "Leech Collar",
+   "tier": 1,
+   "inputs": {
+    "leech_husk": 1,
+    "copper_cable": 2,
+    "tin_can": 2,
+    "fuse": 1
+   },
+   "output": "r21_leech_collar",
+   "hint": "Wear the mouth of the thing that fed on you.",
+   "function": "Passive: the first leech each night that latches on is zapped off automatically.",
+   "effect": "collar",
+   "place": "a01",
+   "accent": "#FF2BD6",
+   "glb": "assets/craft/craft_r21_leech_collar.glb"
+  },
+  {
+   "id": "R22",
+   "name": "Contrast Syringe",
+   "tier": 2,
+   "inputs": {
+    "fuel_jug": 1,
+    "hydraulic_hose": 2,
+    "iv_pole": 1
+   },
+   "output": "r22_contrast_syringe",
+   "hint": "Dye the blood of the machine and it will run like a rumour.",
+   "function": "Consumable overdrive: 60 s at double speed with double drain.",
+   "effect": "syringe",
+   "place": "bin",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r22_contrast_syringe.glb"
+  },
+  {
+   "id": "R23",
+   "name": "Warmth Eye",
+   "tier": 1,
+   "inputs": {
+    "cctv_dome": 1,
+    "light_bulb": 2,
+    "battery_9v": 1
+   },
+   "output": "r23_warmth_eye",
+   "hint": "They are cold. Watch for the holes in the heat.",
+   "function": "Shelter sensor: warns 30 s before leeches approach.",
+   "effect": "warmth",
+   "place": "station",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r23_warmth_eye.glb"
+  },
+  {
+   "id": "R24",
+   "name": "Small Vigil",
+   "tier": 1,
+   "inputs": {
+    "light_bulb": 4,
+    "iv_pole": 1,
+    "car_battery": 1
+   },
+   "output": "r24_small_vigil",
+   "hint": "A pocket of noon you can set down in the mud.",
+   "function": "Placeable UV lamp: leech-free 4 m radius for one night.",
+   "effect": "vigil",
+   "place": "bin",
+   "accent": "#00E5FF",
+   "glb": "assets/craft/craft_r24_small_vigil.glb"
+  },
+  {
+   "id": "L01",
+   "name": "Printed fuse",
+   "tier": 2,
+   "station": "R14",
+   "inputs": {
+    "water_bottle": 1,
+    "chips_bag": 1,
+    "juice_carton": 1
+   },
+   "output": "fuse",
+   "hint": "Every wrapper remembers being a shape.",
+   "function": "The Matter Loom prints one fuse from three pieces of plastic trash.",
+   "effect": null,
+   "place": "bin",
+   "accent": "#FF2BD6",
+   "glb": "assets/survival/item_fuse.glb"
+  }
+ ]
+}

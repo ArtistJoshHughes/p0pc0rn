@@ -226,11 +226,17 @@ export const okV5 = (a) => a.w.enc === 'q4g32a.t64' && !((a.w.off || 0) % 16) &&
 /** direct x needs 16-byte aligned x rows and norm weights; anything else is staged (the same values) */
 export const directOkV5 = (a) => !((a.x.rowB || 0) % 4) && !((a.x.ldx || a.K) % 4) && !((a.norm ? a.norm.off || 0 : 0) % 4);
 
-/** the options of one v5 variant (the same in its gemv and gemvM) */
-function v5opts(g, a, opts) {
+/** v4 (Phase 0): 'u8' needs WGSL's packed_4x8_integer_dot_product (unpack4xU8); a browser without it runs 'shift' (the same values) */
+export const u8ok = () => { const f = globalThis.navigator && globalThis.navigator.gpu && globalThis.navigator.gpu.wgslLanguageFeatures; return !!(f && f.has && f.has('packed_4x8_integer_dot_product')); };
+/** v4 (Phase 0): storage buffers a 'direct' v5 binds: gemv 9, gemvM 10 (bindings 1..9 / 1..10); 'stage' binds 7 / 8 */
+export const DIRECT_NEEDS = { gemv: 9, gemvM: 10 };
+/** the options of one v5 variant (the same in its gemv and gemvM). need = the storage buffers 'direct' binds in this form */
+function v5opts(g, a, opts, need = DIRECT_NEEDS.gemvM) {
   if (!okV5(a)) throw new Error('kernx v5: not a 4-bit, 16-byte aligned, K % 32 weight');
-  const ND = opts.ND || 4, Ln = opts.L || 8, deq = opts.deq || 'shift', pro = a.pro || 'raw', epi = a.epi || 'store';
-  const mode = opts.mode === 'direct' && (pro === 'raw' || pro === 'rms') && directOkV5(a) ? 'direct' : 'stage';   // other prologues: staged
+  const ND = opts.ND || 4, Ln = opts.L || 8, pro = a.pro || 'raw', epi = a.epi || 'store';
+  const deq = opts.deq === 'u8' && !u8ok() ? 'shift' : opts.deq || 'shift';   // v4 (Phase 0)
+  const sb = (g.limits && g.limits.maxStorageBuffersPerShaderStage) || 8;   // v4 (Phase 0): WebGPU's default is 8
+  const mode = opts.mode === 'direct' && (pro === 'raw' || pro === 'rms') && directOkV5(a) && sb >= need ? 'direct' : 'stage';   // other prologues: staged
   if ((64 / ND) * Ln > ((g.limits && g.limits.maxComputeInvocationsPerWorkgroup) || 256)) throw new Error('kernx v5: ' + (64 / ND) * Ln + ' threads');
   return { ND, L: Ln, deq, pro, epi, mode, tag: `n${ND}.L${Ln}.${mode[0]}.${deq}` };
 }
@@ -242,7 +248,7 @@ const tileWin = (a, t0, nt, tileB) => {
 
 /** v5 gemv (lops.js gemv's arguments); opts = { ND, L, mode, deq } */
 export function gemvV5(g, a, opts = {}) {
-  const o = v5opts(g, a, opts), K = a.K, N = a.N, woff = a.w.off || 0;
+  const o = v5opts(g, a, opts, DIRECT_NEEDS.gemv), K = a.K, N = a.N, woff = a.w.off || 0;
   const kch = !a.kPer && K > KCH ? Math.ceil(K / 256) * 256 : KCH; if (kch > 3072) throw new Error('kernx v5: K ' + K + ' needs a kPer');
   const kPer = Math.min(kch, a.kPer || K); if (kPer % 32) throw new Error('kernx v5: kPer must be a multiple of 32');
   const xch = Math.min(kch, Math.ceil(kPer / 64) * 64);   // a small K stages (and zero-fills) only what it reads
@@ -270,7 +276,7 @@ export function gemvV5(g, a, opts = {}) {
 
 /** v5 gemvM (lops_spec.js gemvM's arguments); opts = { ND, L, mode, deq, XB (staged: x floats per sub-chunk, all x rows) } */
 export function gemvMV5(g, a, opts = {}) {
-  const o = v5opts(g, a, opts), M = a.M, K = a.K, N = a.N, woff = a.w.off || 0, XB = opts.XB || 4096;
+  const o = v5opts(g, a, opts, DIRECT_NEEDS.gemvM), M = a.M, K = a.K, N = a.N, woff = a.w.off || 0, XB = opts.XB || 4096;
   const kPer = a.kPer ? Math.min(KCH, a.kPer) : K; if (kPer % 32) throw new Error('kernx v5: kPer must be a multiple of 32');
   const xch = Math.min(Math.ceil(kPer / 64) * 64, M <= 1 ? KCH : Math.max(64, Math.min(KCH, Math.floor(XB / M / 64) * 64)));
   const cfg = { M, ND: o.ND, L: o.L, mode: o.mode, deq: o.deq, xch, pro: o.pro, epi: o.epi, one: false };
@@ -306,8 +312,17 @@ export function v5code(cfg) { return codeV5(Object.assign({ M: 1, ND: 4, L: 8, m
 export const PICK = {"rms.softcap.262144x1536": {"ND": 4, "L": 16, "deq": "mask"}, "rms.geglu.6144x1536": {"ND": 2, "L": 8}, "raw.store.1536x6144": {"ND": 4, "L": 16, "mode": "direct"}, "rms.geglu.12288x1536": {"ND": 2, "L": 8}, "raw.store.1536x12288": {"ND": 4, "L": 16, "mode": "direct"}, "raw.store.8960x1536": {"ND": 4, "L": 16, "mode": "direct"}, "rms.store.3072x2560": {"ND": 2, "L": 8}, "raw.store.2560x2048": {"ND": 2, "L": 8}, "rms.store.6144x2560": {"ND": 2, "L": 8}, "raw.store.2560x4096": {"ND": 4, "L": 16, "mode": "direct"}, "rms.store.2048x2560": {"ND": 2, "L": 8}, "rms.store.4096x2560": {"ND": 2, "L": 8}, "rms.softcap.262144x2560": {"ND": 4, "L": 16, "deq": "mask"}, "rms.geglu.10240x2560": {"ND": 2, "L": 8}, "raw.store.2560x10240": {"ND": 4, "L": 16, "mode": "direct"}, "raw.store.256x2560": {"ND": 4, "L": 16, "mode": "direct", "deq": "u8"}, "raw.store.10752x2560": {"ND": 4, "L": 8}};
 export const KX = { on: true };
 export function setKX(on) { KX.on = !!on; }
+/** v4: the kernel set's version (part of a device tune's cache key: a change here re-tunes) */
+export const KERNEL_VERSION = 'v4-k1';
+/** v4 (autotune): this device's measured picks over PICK. over = { 'pro.epi.NxK': v5 options | 'engine' (the engine's own kernel) };
+ *  null = PICK as shipped (the iPhone's picks). A shape not in over keeps PICK's choice. */
+const TUNED = { over: null };
+export function setPicks(over) { TUNED.over = over && typeof over === 'object' ? Object.assign({}, over) : null; }
+export function picksNow() { return TUNED.over ? Object.assign({}, TUNED.over) : null; }
 /** the v5 options for a call (null = the engine's own) */
 export function kxPick(a) {
   if (!KX.on || !okV5(a)) return null;
-  return PICK[`${a.pro || 'raw'}.${a.epi || 'store'}.${a.N}x${a.K}`] || null;
+  const key = `${a.pro || 'raw'}.${a.epi || 'store'}.${a.N}x${a.K}`;
+  if (TUNED.over && Object.prototype.hasOwnProperty.call(TUNED.over, key)) { const o = TUNED.over[key]; return o && typeof o === 'object' ? o : null; }
+  return PICK[key] || null;
 }

@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Troll-E (a game in p0pc0rn). Its own page, so the app's models and memory are gone while it runs. Same rules as index.html,
+     plus 'wasm-unsafe-eval' for the physics engine's WebAssembly (Rapier) and blob: for the trolley model's embedded textures.
+     No network hosts: everything is this page's own files. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self' blob:; worker-src 'self'; manifest-src 'self'; font-src 'self'; frame-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Troll-E · p0pc0rn</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../../icon-32.png">
+<link rel="stylesheet" href="game.css">
+<script src="../../config.js"></script>
+<script type="module" src="boot.js"></script>
+</head>
+<body>
+<canvas id="view" aria-label="The trolley's room, seen from behind the trolley"></canvas>
+
+<div id="hud" class="hud" hidden>
+  <!-- the camera's layer: one finger swings the view round, two pinch between the chase view and the top view, a double tap resets -->
+  <div id="look" class="look" aria-hidden="true"></div>
+
+  <!-- the top bar: Back, Pause (its sheet holds the sound and the restart too), the step's hint folded to a chip (hud_ui.js: a tap shows
+       the words in the message area), the battery and the ROMs -->
+  <div class="top">
+    <button type="button" id="back" class="icon back" aria-label="Back to p0pc0rn"><span class="chev" aria-hidden="true">‹</span></button>
+    <button type="button" id="pause-btn" class="icon pause-btn" aria-label="Pause" aria-haspopup="dialog" aria-expanded="false" aria-controls="pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5v11M15 6.5v11"/></svg></button>
+    <div class="hint" id="hint-box" role="button" tabindex="0" aria-expanded="false" aria-controls="msg" aria-label="The hint (tap to show it)"><span id="step" class="step">1 / 15</span><p id="hint">a01 is booting.</p></div>
+    <div class="gauges">
+      <div id="batt" class="batt" role="meter" aria-label="Battery" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+        <span class="batt-ico" aria-hidden="true"><span id="batt-fill" class="batt-fill"></span><span class="batt-line"></span></span>
+        <span class="batt-txt"><span id="batt-pct" class="batt-pct">100%</span><span id="batt-sub" class="batt-sub">Mk I</span></span>
+      </div>
+      <div id="roms" class="roms" aria-label="ROMs: 0"><span class="rom-ico" aria-hidden="true"></span><span class="rom-txt"><span id="rom-n" class="rom-n">0</span><span id="rom-w" class="rom-w">ROMs</span></span></div>
+    </div>
+  </div>
+  <div class="offscreen" id="offscreen" aria-hidden="true" hidden><span class="offscreen-arrow"></span></div>
+  <!-- the info stack, all of it at the top edge. Upright: the objective chip under the top bar, a row of small chips under it (only what
+       matters now). Sideways: the objective chip top left, the chips under the top bar on the right -->
+  <div class="stack">
+    <!-- the objective chip (hud_ui.js): open, the objective's name over the compass; folded (.min), the compass and the distance; a tap opens or folds it -->
+    <div class="nav" id="nav" role="button" tabindex="0" aria-expanded="true" aria-controls="objective" aria-label="The objective and the compass (tap to show or fold the objective)">
+      <div class="objective" id="objective" aria-live="polite" hidden><span class="obj-in"><span class="obj-k" aria-hidden="true">Next</span><span class="obj-dot" aria-hidden="true"></span><span id="objective-txt"></span></span></div>
+      <div class="nav-row"><div class="compass" id="compass" aria-hidden="true"><div class="compass-tape" id="compass-tape"></div><span class="compass-mark" id="compass-mark"></span><span class="compass-needle"></span></div><span class="nav-d" id="nav-d" aria-hidden="true"></span></div>
+    </div>
+    <!-- the chips: the zone only for ~2 s as it changes (hud_ui.js), the mode and the speed never (the mode buttons say the mode); the
+         stack game's counter only while it is on -->
+    <div class="status" id="status">
+      <span id="zone-chip" class="chip zone q-dock" data-area="hall">DOCK · HALL</span><span id="mode-chip" class="chip mode-chip">DRIVE</span><span id="speed" class="chip speed">0.00 m/s</span>
+      <span id="stack-chip" class="chip stack-chip" hidden></span><span id="cargo" class="chip cargo" hidden>ARM KIT</span><span id="limp" class="chip warn" hidden>LIMP · crawl to the dock</span><span id="bounty" class="chip bounty" hidden></span><span id="juli-chip" class="chip juli-off" hidden>JULI OFFLINE</span>
+      <span id="clock-chip" class="chip clock" hidden>DAY 1 · 08:00</span><span id="leech-chip" class="chip warn" hidden></span><span id="sun-chip" class="chip sun" hidden></span>
+    </div>
+    <!-- where main.js writes Juli's radio line, her move chip (hud_ui.js moves it in here) and the toasts: never shown themselves (their ids
+         and words stay for the page and the desks); hud_ui.js shows what they say in the message area -->
+    <div class="comms" id="comms" aria-hidden="true">
+      <div id="radio" class="radio" hidden><span class="radio-body"><span class="radio-k">JULI</span> <span id="radio-txt"></span></span></div>
+    </div>
+    <div id="toast" class="toast" aria-hidden="true"></div>
+  </div>
+  <!-- the one message area (hud_ui.js createMessages): Juli's lines (her subtitles: always on), her moves, the step's hint and the
+       toasts, one at a time, Juli's first; just above the controls (sideways: between them), never over the trolley or the way ahead -->
+  <div id="msg" class="msg" aria-live="polite" aria-atomic="true"><div class="msg-card"><span class="msg-move" hidden></span><span class="msg-line"><span class="msg-k"></span> <span class="msg-t"></span></span></div></div>
+
+  <div id="stick-zone" class="stick-zone" aria-label="Thumbstick (bottom right): up drives, sideways turns" role="application">
+    <div id="stick-base" class="stick-base"><div id="stick-knob" class="stick-knob"></div></div>
+  </div>
+  <div id="probe" class="probe" hidden aria-hidden="true"></div>
+  <div class="cluster">
+    <div class="actions world-acts">
+      <button type="button" id="craft-btn" class="act wbtn off" aria-label="Craft (in the shelter or the dock)">CRAFT</button>
+      <button type="button" id="build-btn" class="act wbtn off" aria-label="The shelter: choose, mark and build it">BUILD</button>
+      <button type="button" id="bag-btn" class="act wbtn off" aria-label="The bin: what a01 carries">BIN</button>
+    </div>
+    <div class="actions">
+      <button type="button" id="dock-btn" class="act dock off" aria-label="Open the dock's slots">DOCK</button>
+    </div>
+    <div class="modes" role="radiogroup" aria-label="Mode">
+      <button type="button" class="mode" data-mode="drive" role="radio" aria-checked="true">DRIVE</button>
+      <button type="button" class="mode" data-mode="crab" role="radio" aria-checked="false">CRAB</button>
+      <button type="button" class="mode" data-mode="spin" role="radio" aria-checked="false">SPIN</button>
+    </div>
+    <!-- v4 (Nov 3, Josh: "the grab button can be moved to the bottom next to the 'HOLD' button"): the bottom row, HOLD then GRAB, one size -->
+    <div class="btm">
+      <button type="button" id="hold" class="hold" aria-label="Hold: stop now">HOLD</button>
+      <button type="button" id="grab" class="act grab off" aria-label="Grab (beside HOLD): the arm picks up the nearest trash and drops it in the bin"><span>GRAB</span></button>
+    </div>
+  </div>
+</div>
+
+<div id="slots" class="sheet dock-sheet" hidden>
+  <div class="card dock-card" role="dialog" aria-labelledby="slots-h">
+    <div class="dock-head"><p class="kicker">Dock 01 · service bay</p><h2 id="slots-h">Slots</h2><p id="slot-msg" class="dock-msg">Parked. Charging.</p></div>
+    <section class="slot" id="slot-top">
+      <svg class="slot-ico" viewBox="0 0 32 32" aria-hidden="true"><path d="M7 9h18l-2 17H9z"/><path d="M5 9h22M12 9V6h8v3M13 14v8M19 14v8"/></svg>
+      <div class="slot-main"><p class="slot-k">Slot 1 · top</p><p class="slot-v" id="slot1-v">Bin, locked on</p></div>
+      <button type="button" id="slot1-btn" class="slot-btn">Detach</button>
+    </section>
+    <section class="slot" id="slot-front">
+      <svg class="slot-ico" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 27h9M10 27V17l9-8 6 5"/><path d="M25 14l2 5M25 14l-3 4"/><circle cx="10" cy="17" r="2"/><circle cx="19" cy="9" r="2"/></svg>
+      <div class="slot-main"><p class="slot-k">Slot 2 · front tool mount</p><p class="slot-v" id="slot2-v">Empty</p></div>
+      <button type="button" id="slot2-btn" class="slot-btn">Mount</button>
+    </section>
+    <section class="power">
+      <div class="power-row"><p class="slot-k">Battery</p><p id="dock-batt-line" class="power-line">100 %</p></div>
+      <div class="pbar"><span id="dock-batt-fill"></span></div>
+      <div class="tiers" id="tiers"></div>
+    </section>
+    <button type="button" id="slots-close" class="cta">Done</button>
+  </div>
+</div>
+
+<!-- the landing screen (landing.js): the key art, the TROLL-E title and a console menu; then the loading screen, until the game starts -->
+<div id="start" class="sheet landing" data-panel="main">
+  <img id="landing-art" class="landing-art" src="assets/landing/keyart.webp" width="611" height="1088" alt="" decoding="async" fetchpriority="high">
+  <div class="landing-flash" aria-hidden="true"></div>
+  <div class="landing-body">
+    <header class="landing-head">
+      <p class="kicker landing-kicker" id="start-kicker">Level 1 · the tutorial</p>
+      <h1 class="neon-title" id="landing-title"><span class="vh">Troll-E</span><span class="nt" aria-hidden="true"><b>T</b><b>R</b><b>O</b><b>L</b><b>L</b><b class="nt-dash">-</b><b class="nt-e">E</b></span></h1>
+      <p class="ea-tag" id="early-access">Early access · it gets updates as people play</p>
+    </header>
+    <div class="landing-menu" id="landing-menu">
+      <p class="crumb" id="crumb" hidden></p>
+      <nav class="lpanel lp-main" id="lp-main" aria-label="Troll-E">
+        <div class="lmain">
+          <button type="button" id="boot" class="lbtn"><span class="lt">Start</span><span class="ls" id="boot-sub">Level 1: the tutorial</span></button>
+          <button type="button" id="continue" class="lbtn lslot" disabled><span class="lt">Load saved game</span>
+            <span class="ls slot-none" id="save-none">No saved game yet: the open world saves on the shelter’s pad</span>
+            <span class="slot-chips" id="save-chips" hidden><span class="sc sc-day" id="save-day">Day 1</span><span class="sc sc-at" id="save-at">At the shelter</span><span class="sc sc-batt" id="save-batt"><i class="sc-bico" aria-hidden="true"><i id="save-bfill"></i></i><span id="save-bpct">100%</span></span><span class="sc sc-roms" id="save-roms"><i class="rom-ico" aria-hidden="true"></i><span id="save-romn">0 ROMs</span></span></span>
+            <span class="ls slot-when" id="save-when" hidden></span></button>
+          <button type="button" id="skip" class="lbtn" hidden><span class="lt">Skip the tutorial</span><span class="ls">A new game, straight into the open world</span></button>
+        </div>
+        <div class="lside">
+          <button type="button" id="l-settings" class="lbtn lsm"><span class="lt">Settings</span></button>
+          <button type="button" id="l-controls" class="lbtn lsm"><span class="lt">Controls</span></button>
+          <button type="button" id="l-about" class="lbtn lsm"><span class="lt">About</span></button>
+          <button type="button" id="leave" class="lbtn lsm lleave"><span class="lt">Back to p0pc0rn</span></button>
+        </div>
+      </nav>
+      <section class="lpanel lp-sub" id="lp-settings" aria-labelledby="lp-settings-h" hidden>
+        <div class="lp-head"><button type="button" class="lback" data-back aria-label="Back to the menu"><span aria-hidden="true">‹</span></button><h2 id="lp-settings-h">Settings</h2></div>
+        <div class="lp-scroll">
+          <p class="lgroup">Juli</p>
+          <div class="srow"><button type="button" id="t-juli" class="stog" role="switch" aria-checked="true" aria-describedby="d-juli">Juli: on</button><p class="sdesc" id="d-juli">The hall’s AI: she talks to a01 and plays tricks on it, on p0pc0rn’s own model.</p><p class="juli-note" id="juli-note"></p></div>
+          <div class="srow"><button type="button" id="t-voice" class="stog" role="switch" aria-checked="true" aria-describedby="d-voice">Juli’s voice: on</button><p class="sdesc" id="d-voice">She says her lines out loud. Her words always show on screen too.</p></div>
+          <div class="srow"><button type="button" id="t-radio" class="stog" role="switch" aria-checked="true" aria-describedby="d-radio">Radio: on</button><p class="sdesc" id="d-radio">The radio crackle on her voice. Off: a clean voice.</p></div>
+          <div class="srow" id="plot-row"><button type="button" id="t-plot" class="stog" role="switch" aria-checked="true" aria-describedby="d-plot">Juli plots her shift: on</button><p class="sdesc" id="d-plot">The Bigger brain plans her shift while the game loads, then lets go: she plays on her own model.</p><p class="sdesc why" id="plot-note" hidden><b>Juli plots her shift</b> · <span id="plot-why"></span></p></div>
+          <p class="lgroup">Game</p>
+          <div class="srow"><button type="button" id="t-sound" class="stog" role="switch" aria-checked="true">Sound: on</button></div>
+          <div class="srow"><button type="button" id="t-probe" class="stog" role="switch" aria-checked="false" aria-describedby="d-probe">Probe: Juli + FPS: off</button><p class="sdesc" id="d-probe">The frame rate, Juli’s timings and the memory, over the game.</p></div>
+        </div>
+      </section>
+      <section class="lpanel lp-sub" id="lp-controls" aria-labelledby="lp-controls-h" hidden>
+        <div class="lp-head"><button type="button" class="lback" data-back aria-label="Back to the menu"><span aria-hidden="true">‹</span></button><h2 id="lp-controls-h">Controls</h2></div>
+        <div class="lp-scroll">
+          <ul class="how">
+            <li><b>Stick</b> drives. <b>DRIVE</b> skid-turns, <b>CRAB</b> slides sideways, <b>SPIN</b> turns on the spot. <b>HOLD</b> stops hard.</li>
+            <li>Drag to look round. <b>Pinch</b> your fingers together to zoom out to the top view; spread them to come back. Double-tap resets the view.</li>
+            <li>Pick up the grab arm kit, fit the arm at the dock, and <b>GRAB</b> (beside HOLD) cans and bottles into the bin for <b>ROMs</b>. Mind the diesel.</li>
+          </ul>
+        </div>
+      </section>
+      <section class="lpanel lp-sub" id="lp-about" aria-labelledby="lp-about-h" hidden>
+        <div class="lp-head"><button type="button" class="lback" data-back aria-label="Back to the menu"><span aria-hidden="true">‹</span></button><h2 id="lp-about-h">About</h2></div>
+        <div class="lp-scroll">
+          <p class="lede">Every character here is a robot. You are the equipment trash trolley a01. Get yourself to the top of the stairs, using only what a trolley has: four hub motors, four steering modules, real weight and real grip.</p>
+          <p class="credits">Licence: https://creativecommons.org/licenses/by/4.0/ (no warranties: CC BY 4.0, section 5); what was changed: p0pc0rn's licenses/NOTICE-trolley-model.md and NOTICE-trolley-props.md. Trolley model: equipment_trash_trolley_a01, NVIDIA SimReady, CC BY 4.0. 3D assets: NVIDIA SimReady Assets (CC BY 4.0), modified: the robot arm (robotic_system_arm_b01) with an oil-filter-pliers claw, the diesel can, the trash, the battery, the drums, the pallet and the barricade; round the hall, the dock's forklift, pallet jack, tote, crates, rack, hopper and rail, the park's sofas, chairs, kiosk, cooler, bins and lights, the metro's car shell, kiosk, vending machine, barriers, cabinet, siren poles, bins and duct, the forest's wheelbarrow, pipes and boards, and the dead trees' bark; the open world's supplies, salvage, shelter kits, night lights, the energy leech, the solar panel and the 24 crafted machines. Physics: Rapier (Apache-2.0). Drawing: three.js (MIT). The room, the dock, the world's ground, walls and blocks, and the dead trees' shapes are the game's own.</p>
+          <p class="credits art-credit">Troll-E title art made with FLUX.2 [klein] 9B by Black Forest Labs; the trolley and props are NVIDIA SimReady Assets (CC BY 4.0), modified.</p>
+          <p class="credits">Juli’s voice: CMU Flite 2.2, Copyright (c) 1999-2017 Language Technologies Institute, Carnegie Mellon University (BSD-style licence), and its cmu_us_slt voice (the CMU ARCTIC slt voice, Copyright (c) 2003 Carnegie Mellon University, free for any use); compiled to WebAssembly with Emscripten (MIT).</p>
+        </div>
+      </section>
+      <section class="lpanel lp-sub lp-confirm" id="lp-confirm" role="alertdialog" aria-labelledby="confirm-h" aria-describedby="confirm-line" hidden>
+        <h2 id="confirm-h">Start a new game?</h2>
+        <p class="lede" id="confirm-line"></p>
+        <button type="button" id="confirm-yes" class="lbtn lwarn"><span class="lt" id="confirm-yes-t">Start a new game</span></button>
+        <button type="button" id="confirm-no" class="lbtn"><span class="lt">Keep my saved game</span></button>
+      </section>
+      <section class="lpanel lp-loading" id="lp-loading" hidden>
+        <p class="load" id="load" aria-live="polite"></p>
+        <div class="lbar ind" id="load-meter" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100"><span id="load-bar"></span></div>
+        <p class="load-sub" id="load-sub" aria-live="polite" hidden></p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div id="done" class="sheet" hidden>
+  <div class="card">
+    <p class="kicker">Level 1</p>
+    <h1>a01 is up</h1>
+    <p class="lede" id="done-line">Resting on the landing, all four wheels on it.</p>
+    <p class="lede" id="done-roms"></p>
+    <p class="lede">The hall's shutters roll up: the town round it is open. Scavenge by day, craft, build a shelter before night falls.</p>
+    <button type="button" id="world-go" class="cta">Into the open world</button>
+    <button type="button" id="again" class="ghost">Play the tutorial again</button>
+    <button type="button" id="home" class="ghost">Back to p0pc0rn</button>
+    <details class="credits-all"><summary>Every 3D asset (NVIDIA SimReady, CC BY 4.0, modified)</summary><p class="credits">3D assets: NVIDIA SimReady Assets (CC BY 4.0), modified: https://huggingface.co/datasets/nvidia/simready-assets. The open world's crafted machines: robotic_system_a01, extrusion_tSlot_aluminum_b06, robot_surgical_c01, lamp_uvc_robot_a01, robotics_small_bot_a01, Xray_machine_HVgenerator_a01, Xray_machine_buckyStand_a01, laser_system_a01, ultrasound_b01, hemodialysis_machine_a01, anesthesia_machine_a01, lung_ventilation_artificial_a01, defibrillator_a01, equipment_3d_printer_b01, powerTool_welding_station_c01, electrical_main_terminal_a01, testingTool_battery_analyzer_c01, labware_table_thorlabs_a01, climate_heater_dieselTorpedo_a01, engineAssembly_electric_engine_a01, equipment_surgeProtector_batteryClamp_a01, CT_injection_system_a01, detector_thermal_fire_a01, lamp_uvc_a01. Its supplies: handTool_wrench_monkey_a01, power_battery_9v_a01, consumable_hose_hydraulic_a01, consumable_lightBulb_h7_a01, consumable_fuse_mega_orange_a01, electricalSystem_alternator_a01, electrical_cable_a01, detector_camera_a01, computer_monitor_office_a01, fireProtection_extinguisher_portable_b01, anesthesia_mask_a01, climate_shopFan_pedestal_a01, testingTool_multimeter_clamp_b01, IV_pole_a01, serviceTool_pliers_oilFilter_a01, equipment_surgeProtector_batteryClamp_b01, consumable_hydraulic_fluid_a01. Its shelters: wire_securityRoom_b01, barrier_gate_safety_a02, structure_ceiling_a01, pallet_rackable_solid_top_blue_a02, storage_shelf_basic_a01, ibcTank_steel_stainless_a01, machineGuard_a01, bedding_a01, crate_plywood_b01, scaffold_rolling_steel_a03, modular_warehouse_h450cm_corner_in_a01, modular_warehouse_h450cm_center_a01, wire_machineGuard_a01, furniture_workbench_standard_e01, furniture_workbench_modular_a01, equipment_robot_charger_a01, lighting_overheadLed_hexGrid_a01. Its night lights: lighting_taskLight_portableWork_a01, lighting_taskLight_cordedInspection_a01, lighting_taskLight_linearStripBench_a01, warehouse_fireAlarmLight_a01, lighting_candles_tea_a01. The energy leech: consumable_hose_hydraulic_a02, equipment_extensionCord_EV_type2_a01, equipment_surgeProtector_batteryClamp_b01, consumable_lightBulb_py21w_amber_a01. The solar panel: lighting_overheadLed_lightPanel_a01. The rusty beam and the baked grime: structure_beam_a01. Converted from OpenUSD to glTF 2.0, decimated, grimed and recoloured for the game. NVIDIA does not endorse this game.</p></details>
+    <p class="credits">Licence: https://creativecommons.org/licenses/by/4.0/ (no warranties: CC BY 4.0, section 5); what was changed: p0pc0rn's licenses/NOTICE-trolley-model.md and NOTICE-trolley-props.md. Trolley model: equipment_trash_trolley_a01, NVIDIA SimReady, CC BY 4.0. 3D assets: NVIDIA SimReady Assets (CC BY 4.0), modified: the robot arm (robotic_system_arm_b01) with an oil-filter-pliers claw, the diesel can, the trash, the battery, the drums, the pallet and the barricade; round the hall, the dock's forklift, pallet jack, tote, crates, rack, hopper and rail, the park's sofas, chairs, kiosk, cooler, bins and lights, the metro's car shell, kiosk, vending machine, barriers, cabinet, siren poles, bins and duct, the forest's wheelbarrow, pipes and boards, and the dead trees' bark; the open world's supplies, salvage, shelter kits, night lights, the energy leech, the solar panel and the 24 crafted machines. Physics: Rapier (Apache-2.0). Drawing: three.js (MIT). The room, the dock, the world's ground, walls and blocks, and the dead trees' shapes are the game's own.</p>
+  </div>
+</div>
+
+<div id="craft" class="sheet world-sheet" hidden>
+  <div class="card world-card" role="dialog" aria-labelledby="craft-h">
+    <div class="dock-head"><p class="kicker">Crafting · obscure science</p><h2 id="craft-h">Craft</h2><p id="craft-where" class="dock-msg"></p><p id="craft-load" class="credits"></p></div>
+    <div id="craft-list" class="craft-list"></div>
+    <button type="button" id="craft-close" class="cta">Done</button>
+  </div>
+</div>
+<div id="build" class="sheet world-sheet" hidden>
+  <div class="card world-card" role="dialog" aria-labelledby="build-h">
+    <div class="dock-head"><p class="kicker">The shelter · piece by piece</p><h2 id="build-h">Build</h2></div>
+    <div id="build-body" class="craft-list"></div>
+    <button type="button" id="build-close" class="ghost">Close</button>
+  </div>
+</div>
+<div id="bag" class="sheet world-sheet" hidden>
+  <div class="card world-card" role="dialog" aria-labelledby="bag-h">
+    <div class="dock-head"><p class="kicker">Carried in the bin or the claw</p><h2 id="bag-h">Bin</h2></div>
+    <div id="bag-body" class="craft-list"></div>
+    <button type="button" id="bag-close" class="ghost">Close</button>
+  </div>
+</div>
+<div id="bubble" class="bubble" hidden>
+  <div class="bubble-top"><p id="bub-kicker" class="kicker">Collected</p><h2 id="bub-name"></h2><p id="bub-real" class="bub-real"></p></div>
+  <div class="bubble-bottom" role="dialog" aria-labelledby="bub-name">
+    <div id="bub-stats" class="bub-stats"></div>
+    <p id="bub-func" class="bub-func"></p>
+    <p id="bub-hint" class="bub-hint"></p>
+    <button type="button" id="bub-ok" class="cta">Got it</button>
+  </div>
+</div>
+<div id="dead" class="sheet" hidden>
+  <div class="card">
+    <p class="kicker">Drained</p>
+    <h1>a01 is dark</h1>
+    <p class="lede" id="dead-line">The battery ran out.</p>
+    <p class="lede">There is no win and no second life: the save is gone and it starts again from the beginning.</p>
+    <button type="button" id="dead-skip" class="cta">Start again: skip the tutorial</button>
+    <button type="button" id="dead-tut" class="ghost">Start again with the tutorial</button>
+    <button type="button" id="dead-home" class="ghost">Back to p0pc0rn</button>
+    <details class="credits-all"><summary>Every 3D asset (NVIDIA SimReady, CC BY 4.0, modified)</summary><p class="credits">3D assets: NVIDIA SimReady Assets (CC BY 4.0), modified: https://huggingface.co/datasets/nvidia/simready-assets. The open world's crafted machines: robotic_system_a01, extrusion_tSlot_aluminum_b06, robot_surgical_c01, lamp_uvc_robot_a01, robotics_small_bot_a01, Xray_machine_HVgenerator_a01, Xray_machine_buckyStand_a01, laser_system_a01, ultrasound_b01, hemodialysis_machine_a01, anesthesia_machine_a01, lung_ventilation_artificial_a01, defibrillator_a01, equipment_3d_printer_b01, powerTool_welding_station_c01, electrical_main_terminal_a01, testingTool_battery_analyzer_c01, labware_table_thorlabs_a01, climate_heater_dieselTorpedo_a01, engineAssembly_electric_engine_a01, equipment_surgeProtector_batteryClamp_a01, CT_injection_system_a01, detector_thermal_fire_a01, lamp_uvc_a01. Its supplies: handTool_wrench_monkey_a01, power_battery_9v_a01, consumable_hose_hydraulic_a01, consumable_lightBulb_h7_a01, consumable_fuse_mega_orange_a01, electricalSystem_alternator_a01, electrical_cable_a01, detector_camera_a01, computer_monitor_office_a01, fireProtection_extinguisher_portable_b01, anesthesia_mask_a01, climate_shopFan_pedestal_a01, testingTool_multimeter_clamp_b01, IV_pole_a01, serviceTool_pliers_oilFilter_a01, equipment_surgeProtector_batteryClamp_b01, consumable_hydraulic_fluid_a01. Its shelters: wire_securityRoom_b01, barrier_gate_safety_a02, structure_ceiling_a01, pallet_rackable_solid_top_blue_a02, storage_shelf_basic_a01, ibcTank_steel_stainless_a01, machineGuard_a01, bedding_a01, crate_plywood_b01, scaffold_rolling_steel_a03, modular_warehouse_h450cm_corner_in_a01, modular_warehouse_h450cm_center_a01, wire_machineGuard_a01, furniture_workbench_standard_e01, furniture_workbench_modular_a01, equipment_robot_charger_a01, lighting_overheadLed_hexGrid_a01. Its night lights: lighting_taskLight_portableWork_a01, lighting_taskLight_cordedInspection_a01, lighting_taskLight_linearStripBench_a01, warehouse_fireAlarmLight_a01, lighting_candles_tea_a01. The energy leech: consumable_hose_hydraulic_a02, equipment_extensionCord_EV_type2_a01, equipment_surgeProtector_batteryClamp_b01, consumable_lightBulb_py21w_amber_a01. The solar panel: lighting_overheadLed_lightPanel_a01. The rusty beam and the baked grime: structure_beam_a01. Converted from OpenUSD to glTF 2.0, decimated, grimed and recoloured for the game. NVIDIA does not endorse this game.</p></details>
+  </div>
+</div>
+
+<div id="fail" class="sheet" hidden>
+  <div class="card"><h1>It didn’t start</h1><p class="lede" id="fail-line"></p><button type="button" id="fail-home" class="cta">Back to p0pc0rn</button></div>
+</div>
+
+<!-- the pause sheet (landing.js createPause), behind the HUD's pause button: Resume; the sound and the restart (#mute and #reset, out of
+     the top bar: main.js's own buttons, its handlers on them); Save and quit; Back to p0pc0rn -->
+<div id="pause" class="sheet pause-sheet" hidden>
+  <div class="card pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-h">
+    <p class="kicker">Troll-E</p>
+    <h2 id="pause-h" class="pause-h">Paused</h2>
+    <p class="pause-line" id="pause-line" hidden></p>
+    <button type="button" id="pause-resume" class="lbtn lprime"><span class="lt">Resume</span></button>
+    <div class="pause-tools">
+      <button type="button" id="mute" class="lbtn ptool" aria-label="Sound off" aria-pressed="false"><svg class="ptool-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="slash" d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg><span class="lt">Sound</span><span class="ls"><span class="snd-on">On</span><span class="snd-off">Off</span></span></button>
+      <button type="button" id="reset" class="lbtn ptool" aria-label="Put a01 back at this step's start"><svg class="ptool-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12a7 7 0 1 0 2.1-5"/><path d="M5 4.5V8.5h4"/></svg><span class="lt">Restart</span><span class="ls" id="reset-sub">This step’s start</span></button>
+    </div>
+    <button type="button" id="pause-savequit" class="lbtn"><span class="lt" id="pause-savequit-t">Save and quit to the landing screen</span></button>
+    <button type="button" id="pause-leave" class="lbtn lleave"><span class="lt">Back to p0pc0rn</span></button>
+  </div>
+</div>
+</body>
+</html>

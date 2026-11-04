@@ -55,6 +55,12 @@
    "category": "agentic"
   },
   {
+   "id": "token-watch",
+   "file": "token-watch.p0skel.json",
+   "name": "Token Watch (beta)",
+   "category": "agentic"
+  },
+  {
    "id": "connect-four",
    "file": "connect-four.p0skel.json",
    "name": "Four in a Row",

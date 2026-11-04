@@ -86,7 +86,7 @@ function coverEl(id, name) {
   return c;
 }
 
-export function createStorefront({ apps = () => null, go = () => {}, tab = () => '', toast = () => {}, sheet = null, diag = () => {} } = {}) {
+export function createStorefront({ apps = () => null, go = () => {}, tab = () => '', toast = () => {}, sheet = null, diag = () => {}, gameBusy = () => '' } = {}) {
   const A = () => { try { const X = apps(); return X && X.state ? X : null; } catch (e) { return null; } };
   const ST = () => { const X = A(); return X ? X.state : null; };
   const appById = (id) => { const s = ST(); return s && s.apps ? s.apps.find((a) => a.id === id) || null : null; };
@@ -109,6 +109,31 @@ export function createStorefront({ apps = () => null, go = () => {}, tab = () =>
     for (const b of document.querySelectorAll('#sf-seg [data-pane]')) b.addEventListener('click', () => pane(b.dataset.pane));
     const act = $('sf-activity'); if (act) act.addEventListener('click', () => works.activity());
     pane(P.pane);
+  }
+
+  // ---------------------------------------------------------------------------------------------- games on their own page (v4)
+  // Troll-E: a 3D game with real physics (games/trolley/). It is not an app in the sandbox and Juli joins it only as the hall's AI on the radio (games/trolley/juli.js): Play
+  // leaves this page for the game's own (p0pc0rn's models and memory go with it) and the game's Back opens p0pc0rn again. Not while
+  // a job is queued or running: that page would look like it had died in the job.
+  const SOLO = [{ id: 'trolley', name: 'Troll-E', badge: 'Real physics', cover: 'icons/games/trolley-cover.jpg', href: 'games/trolley/index.html',
+    line: 'You are a01, an autonomous trash trolley. Drive, crab and spin it up to the top of the stairs.' }];
+  function soloGames() {
+    const box = $('sf-solo'); if (!box || box.childElementCount) return;
+    for (const g of SOLO) {
+      const row = mk('div', 'li app-row sf-game sf-solo'); row.dataset.game = g.id;
+      const top = mk('span', 'sf-game-top'), cov = mk('span', 'sf-cover'); cov.dataset.cover = 'art'; cov.setAttribute('role', 'img'); cov.setAttribute('aria-label', `${g.name}: the game’s cover`);
+      const img = new Image(); img.alt = ''; img.decoding = 'async'; img.draggable = false; img.src = g.cover; cov.append(img);
+      top.append(cov, mk('span', 'sf-vs sf-solo-badge', g.badge));
+      const txt = mk('span', 'app-txt'); txt.append(mk('span', 'sw-name', g.name), mk('span', 'footnote sf-gline', g.line));
+      const end = mk('span', 'li-end'), play = mk('button', 'btn sm sf-play', 'Play'); play.type = 'button'; play.setAttribute('aria-label', 'Play ' + g.name); play.dataset.solo = g.id;
+      play.addEventListener('click', () => {
+        let why = ''; try { why = gameBusy() || ''; } catch (e) { why = ''; }
+        if (why) { toast(`${g.name} opens when that’s done: ${why}.`); return; }
+        diag('games: opening a game on its own page', { game: g.id });
+        try { location.replace(new URL(g.href, location.href).href); } catch (e) { location.href = g.href; }
+      });
+      end.append(play); row.append(top, txt, end); box.append(row);
+    }
   }
 
   // ---------------------------------------------------------------------------------------------- dressing the host's rows
@@ -333,7 +358,7 @@ export function createStorefront({ apps = () => null, go = () => {}, tab = () =>
     intro: works.intro, needsIntro: works.needsIntro, beforeAfter: works.beforeAfter,
     makePreview: (skelId, slots, name) => { const X = A(); if (!X || !X.confirmMake) return Promise.resolve(null); pane('apps'); return X.confirmMake(skelId, slots, name); },
     refresh: () => { for (const [lid] of DRESS) { const b = $(lid); if (b) for (const r of b.children) delete r.dataset.st; } dressAll(); } };
-  try { wirePanes(); watch(); } catch (e) { diag('storefront: start failed', { message: String((e && e.message) || e).slice(0, 160) }); }
+  try { wirePanes(); watch(); soloGames(); } catch (e) { diag('storefront: start failed', { message: String((e && e.message) || e).slice(0, 160) }); }
   try { globalThis.P0STORE = api; } catch (e) { /* not a browser */ }
   return api;
 }

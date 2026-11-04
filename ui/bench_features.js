@@ -296,7 +296,7 @@ export const CHECKS = {
   async 'shell.home'() {
     if (!SH() || !SH().ready) return fail('the home screen did not start');
     if (!(await goHome())) return fail('the home screen did not show');
-    const want = { library: 'Library', apps: 'Apps', browser: 'Browser', games: 'Games', skills: 'Skills', connection: 'Connection' };
+    const want = { library: 'Library', apps: 'Apps', browser: 'Browser', games: 'Games', skills: 'Skills', connection: 'Connection', settings: 'Settings' };   // v4: + Settings
     const bad = Object.entries(want).filter(([id, t]) => { const b = homeBtn(id); return !b || !visible(b) || label(b) !== t; }).map(([id]) => id);
     const clipped = [...document.querySelectorAll('#home-grid .sh-app .sh-label')].filter((l) => l.scrollWidth > l.clientWidth + 1 && !l.closest('.sh-app').dataset.id.startsWith('app:')).map((l) => l.textContent);
     if (bad.length) return fail('missing or misnamed: ' + bad.join(', '));
@@ -306,8 +306,8 @@ export const CHECKS = {
   async 'shell.dock'() {
     if (!(await goHome())) return fail('the home screen did not show');
     const got = [...document.querySelectorAll('#dock .dock-btn')].map((b) => `${b.dataset.id}=${label(b)}`).join(', ');
-    const want = 'assistant=Juli, create=Create, music=Music, settings=Settings';
-    return got === want ? pass('Juli, Create, Music, Settings') : fail('the dock holds: ' + (got || 'nothing'));
+    const want = 'assistant=Juli, create=Create, music=Music, messages=Messages';   // v4: Messages (grayed) where Settings was
+    return got === want ? pass('Juli, Create, Music, Messages') : fail('the dock holds: ' + (got || 'nothing'));
   },
   async 'shell.pill'(ctx) {
     if (!(await goHome())) return fail('the home screen did not show');
@@ -360,6 +360,11 @@ export const CHECKS = {
   async 'shell.conn'() {
     if (!(await goHome())) return fail('the home screen did not show');
     const b = homeBtn('connection'); if (!b) return fail('no Connection icon');
+    if (globalThis.P0_CONFIG && globalThis.P0_CONFIG.connect === true) {   // a test build with Connect switched on: it opens instead
+      if (b.classList.contains('grayed')) return fail('Connect is on in this build, but Connection is grayed');
+      b.click(); const shown = await until(() => visible($('v-connection')), 3000); await goHome();
+      return shown ? pass('this test build has Connect on: Connection opens') : fail('Connect is on, but Connection did not open');
+    }
     if (!b.classList.contains('grayed')) return fail('Connection is not grayed');
     b.click();
     const sheet = await until(() => { const s = document.querySelector('#sh-connection .sheet'); return s && visible(s) ? s : null; }, 3000);
@@ -368,6 +373,19 @@ export const CHECKS = {
     const okBtn = [...sheet.querySelectorAll('button')].find((x) => /^OK$/.test(x.textContent.trim()));
     if (okBtn) okBtn.click(); else { const c = document.querySelector('#sh-connection [data-close]'); if (c) c.click(); }
     await until(() => !document.getElementById('sh-connection'), 2000);
+    return words.length === 1 && words[0] === 'Coming soon' ? pass('grayed; “Coming soon” and nothing more') : fail('it says: ' + words.join(' | ').slice(0, 120));
+  },
+  async 'shell.msgs'() {   // v4: Messages in the dock, grayed: a tap says "Coming soon" and nothing more
+    if (!(await goHome())) return fail('the home screen did not show');
+    const b = dockBtn('messages'); if (!b) return fail('no Messages in the dock');
+    if (!b.classList.contains('grayed')) return fail('Messages is not grayed');
+    b.click();
+    const sheet = await until(() => { const s = document.querySelector('#sh-messages .sheet'); return s && visible(s) ? s : null; }, 3000);
+    if (!sheet) return fail('a tap showed nothing');
+    const words = [...sheet.querySelectorAll('p')].map((p) => p.textContent.trim()).filter((t) => t && t !== 'Messages');
+    const okBtn = [...sheet.querySelectorAll('button')].find((x) => /^OK$/.test(x.textContent.trim()));
+    if (okBtn) okBtn.click(); else { const c = document.querySelector('#sh-messages [data-close]'); if (c) c.click(); }
+    await until(() => !document.getElementById('sh-messages'), 2000);
     return words.length === 1 && words[0] === 'Coming soon' ? pass('grayed; “Coming soon” and nothing more') : fail('it says: ' + words.join(' | ').slice(0, 120));
   },
   async 'shell.edit'() {
@@ -400,7 +418,7 @@ export const CHECKS = {
   },
   async 'skills.load'(ctx) {
     const APPS = await appsReady(ctx), R = APPS && APPS.state.skills; if (!R) return fail('the skills did not load');
-    const have = new Set(R.list().map((k) => k.name)), want = ['make-an-app', 'change-an-app', 'play-four-in-a-row', 'make-a-game', 'watch-a-wallet'], miss = want.filter((n) => !have.has(n));
+    const have = new Set(R.list().map((k) => k.name)), want = ['make-an-app', 'change-an-app', 'play-four-in-a-row', 'make-a-game', 'watch-a-wallet', 'watch-tokens'], miss = want.filter((n) => !have.has(n));
     return miss.length ? fail('missing: ' + miss.join(', ')) : pass(want.join(', '));
   },
   async 'skills.words'(ctx) {
@@ -552,6 +570,58 @@ export const CHECKS = {
       if (!still) return fail('the game closed while Juli moved' + memTxt);
       return bad.length ? fail(bad.map((x) => `${x.name}: ${x.why}`).join('; ') + memTxt) : pass(`won, blocked, legal (${secs} s for 3 moves${memTxt})`);
     } finally { await dropApp(ctx.api, app.id); ctx.fx.drop({ k: 'app', id: app.id }); undos.forEach((u) => u()); }
+  },
+  // v4 (security; Josh: "We can test the stop button in an automated bench test within popcorn"): the Stop on the message Juli posts
+  // when she starts a job herself from a chat turn (ui/chat.js stopTap). A test conversation asks her for a picture; as soon as her
+  // message with its job card is there, the check taps that card's Stop the way the person does, then checks: the job is cancelled, the
+  // message says it was stopped, she does not start it again, the queue has nothing left of that conversation, and nothing landed in the
+  // Library. A picture keeps it short: no licence sheet (a clip shows the video licence first), and Stop lands within seconds, before
+  // anything is made. ctx.waits (ms) shortens the waits in the node test
+  async 'chat.stop'(ctx) {
+    const AG = ctx.api.AG(), Q = ctx.api.Q(), CH = ctx.api.CH();
+    if (!AG || !Q) return fail('Juli is not ready');
+    const { RENDER_KINDS } = await import('../assistant/queue.js');
+    const W = Object.assign({ start: 60000, card: 10000, stop: 20000, turn: 30000, free: 10000 }, ctx.waits || {});
+    const ended = (j) => !j || ['done', 'failed', 'cancelled'].includes(j.status);
+    const libKeys = async () => (ctx.api.libraryKeys ? ctx.api.libraryKeys() : idbKeys('pocketflux-app', 'meta'));
+    const st = Object.assign({}, ctx.state || {}), keep = () => ctx.save(Object.assign({}, st));
+    const cur = CH ? CH.sid : null, t0 = performance.now();
+    if (st.lib0 == null) { st.lib0 = (await libKeys()).length; st.before = Q.list().map((j) => j.id); }
+    const before = new Set(st.before || []);
+    if (!st.sid) { st.sid = await testSession(ctx); keep(); }
+    const sid = st.sid;
+    try {
+      if (CH && typeof CH.openThread === 'function') await CH.openThread(sid);   // the conversation on screen: its messages, their job cards
+      if (!st.turn) { const t = await AG.ask(sid, 'Make a picture of a red balloon over a green field.'); st.turn = t.id; keep(); }
+      const mine = (j) => j && !before.has(j.id) && j.id !== st.turn && (j.session === sid || j.parent === st.turn) && RENDER_KINDS.has(j.kind);
+      if (!st.job) {
+        const j = await until(() => Q.list().find(mine), W.start);
+        if (!j) return fail('Juli did not start a picture from the chat turn');
+        st.job = j.id; st.kind = j.kind; keep();
+      }
+      const job = st.job;
+      if (!ended(Q.get(job))) {   // its Stop, the way the person taps it
+        const btn = await until(() => { const b = document.querySelector(`.jcard[data-job="${job}"] .jc-stop`); return b && !b.hidden ? b : null; }, W.card);
+        if (!btn) return fail('no Stop on the message that announced it');
+        btn.click(); st.tapped = true; keep();
+      }
+      const end = await until(() => { const j = Q.get(job); return ended(j) ? (j || { status: 'gone' }) : null; }, W.stop);
+      if (!end) return fail(`Stop did not end the job in ${Math.round(W.stop / 1000)} s`);
+      if (end.status !== 'cancelled') return fail(`the job ${end.status === 'done' ? 'was made' : end.status} instead of stopping`);
+      const said = await until(() => { const c = document.querySelector(`.jcard[data-job="${job}"]`), t = c && c.parentElement && c.parentElement.querySelector(':scope > .msg-text'); return t && /^Stopped:/.test(t.textContent) ? t.textContent : null; }, 5000);
+      if (!said) return fail('the chat did not say it was stopped');
+      await until(() => ended(Q.get(st.turn)), W.turn);   // her turn ends after the stop
+      const again = Q.list().filter((j) => mine(j) && j.id !== job);
+      if (again.length) return fail('Juli started it again after Stop: ' + again.map((j) => j.kind).join(', '));
+      const free = await until(() => !Q.list({ includeTerminal: false }).some((j) => j.session === sid || j.id === st.turn || j.id === job), W.free);
+      if (!free) return fail('the queue still holds the stopped job or her turn');
+      const lib1 = (await libKeys()).length;
+      if (lib1 !== st.lib0) return fail(`${lib1 - st.lib0} new item(s) in the Library`);
+      return pass(`stopped in ${((performance.now() - t0) / 1000).toFixed(1)} s: cancelled, “${said.slice(0, 44)}”, not started again, the queue free, nothing in the Library`);
+    } finally {
+      await dropSession(ctx.api, sid); ctx.fx.drop({ k: 'session', id: sid });
+      if (CH && cur && cur !== sid && typeof CH.openThread === 'function') { try { await CH.openThread(cur); } catch (e) { /* the person opens it */ } }
+    }
   },
   async 'split.beat'(ctx) {
     const b = ctx.shared.beat || beatOf(ctx.api, 'brain');

@@ -8,6 +8,11 @@ import { fetchManifest, manifestRefused } from './pin.js';   // v027.3: pinned m
 // process, which held a whole model's worth (3.1 GB for the Bigger brain) until the copies ran: with the page and the second process
 // loaded, the phone had 46 MB free (iPhone memory report, 10-25). Bounded, the GPU process holds ~64 MB of weights in flight.
 const UPCAP = 64 * 1024 * 1024;
+// v4: the direct-HTTP source (development, desks, benches) reads a few bytes at a time (a token's per-layer embedding row). A server that
+// ignores the Range header answers 200 with the WHOLE file: on a desktop test server (Python's SimpleHTTPRequestHandler) every row of the Bigger
+// brain's read-in pulled the 1.76 GB ple.rows.pfw, eight at a time, and the page stopped (Juli, 1.47 GB, crawled at 0.3 tokens/s). Such
+// an answer is now refused at once (code NO_RANGE, its body never read) unless the file is small
+export const RANGE_FALLBACK_MAX = 16 * 1024 * 1024;
 
 export class Storage {
   constructor(url) { this.url = url || new URL('./opfs_worker.js', import.meta.url); this.id = 0; this.pend = new Map(); }
@@ -168,6 +173,13 @@ export class WeightStore {
   async _range(file, at, len) {
     const r = await fetch(this.base + file, { headers: { Range: `bytes=${at}-${at + len - 1}` } });
     if (!r.ok) throw new Error(`fetch ${file}: HTTP ${r.status}`);
+    if (r.status !== 206) {   // v4: the byte range was ignored: never read a big file whole for a few bytes (see RANGE_FALLBACK_MAX)
+      const n = +(r.headers && r.headers.get && r.headers.get('content-length')) || 0;
+      if (!n || n > RANGE_FALLBACK_MAX) {
+        try { if (r.body && r.body.cancel) r.body.cancel(); } catch (e) { /* nothing was read */ }
+        throw Object.assign(new Error(`the pack server sent the whole of ${file} (${n ? Math.round(n / 1e6) + ' MB' : 'size unknown'}) for ${len} bytes: serve the packs with a server that honours HTTP Range requests (tools/serve.py)`), { code: 'NO_RANGE' });
+      }
+    }
     const ab = await r.arrayBuffer();
     return r.status === 206 ? ab : ab.slice(at, at + len);
   }

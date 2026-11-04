@@ -11,15 +11,16 @@
  *  is then in memory for it), 'final' (last: the lines that come from the speed tests, and the person's data compared) */
 export const FEATURES = {
   'shell.home': { name: 'Home screen · every icon with its name', group: 'idle', eta: 3, needs: ['shell'] },
-  'shell.dock': { name: 'Dock · Juli, Create, Music, Settings', group: 'idle', eta: 2, needs: ['shell'] },
+  'shell.dock': { name: 'Dock · Juli, Create, Music, Messages', group: 'idle', eta: 2, needs: ['shell'] },   // v4: Settings moved to the home screen
   'shell.pill': { name: 'The p0pc0rn pill above the dock opens Juli', group: 'idle', eta: 3, needs: ['shell'] },
   'shell.screens': { name: 'Every screen opens and goes back home', group: 'idle', eta: 14, needs: ['shell'] },
   'shell.badge': { name: 'A red number badge at the top left, set and cleared', group: 'idle', eta: 2, needs: ['shell'] },
   'shell.wall': { name: 'The wallpaper behind the icons, blurred', group: 'idle', eta: 1, needs: ['shell'] },
   'shell.conn': { name: 'Connection says only “Coming soon”', group: 'idle', eta: 2, needs: ['shell'] },
+  'shell.msgs': { name: 'Messages says only “Coming soon”', group: 'idle', eta: 2, needs: ['shell'] },   // v4: grayed for now
   'shell.edit': { name: 'Edit mode: a long press on, Done off', group: 'idle', eta: 3, needs: ['shell'] },
   'shell.pin': { name: 'A made app added to the home screen and taken off', group: 'idle', eta: 3, needs: ['shell', 'apps'] },
-  'skills.load': { name: 'Skills · the five that come with p0pc0rn', group: 'idle', eta: 1, needs: ['skills'] },
+  'skills.load': { name: 'Skills · the six that come with p0pc0rn', group: 'idle', eta: 1, needs: ['skills'] },
   'skills.words': { name: 'Skills · picked by the words of a request', group: 'idle', eta: 1, needs: ['skills'] },
   'skills.named': { name: 'Skills · “use my … skill” picks that skill', group: 'idle', eta: 1, needs: ['skills'] },
   'chat.actions': { name: 'Chat · the action bubbles for each kind of result', group: 'idle', eta: 1, needs: ['chat'] },
@@ -33,6 +34,9 @@ export const FEATURES = {
   'chat.writing': { name: 'Chat · Juli writes a piece herself when the Bigger brain is not used', group: 'juli', eta: 30, needs: ['brain'] },
   'games.c4': { name: 'Games · Juli plays Four in a Row: legal, wins, blocks', group: 'juli', eta: 60, needs: ['brain', 'games'] },
   'split.beat': { name: 'Two processes · the helper’s heartbeat', group: 'juli', eta: 1, needs: ['brain', 'split'] },
+  // v4 (security; Josh: "We can test the stop button in an automated bench test within popcorn"): last in Juli's group (it may load the
+  // picture model for a moment)
+  'chat.stop': { name: 'Chat · Stop on a picture Juli started: stopped, nothing made, the queue free', group: 'juli', eta: 40, needs: ['brain', 'chat', 'picture'] },
   'big.writing': { name: 'Bigger brain · writes when asked to write', group: 'big', eta: 60, needs: ['brain', 'brain4'] },
   'apps.make': { name: 'Make an app · from one sentence, and it starts', group: 'big', eta: 100, needs: ['brain', 'apps'] },
   'apps.change': { name: 'Change an app · by asking, and it starts after', group: 'big', eta: 150, needs: ['brain', 'apps', 'edit'] },

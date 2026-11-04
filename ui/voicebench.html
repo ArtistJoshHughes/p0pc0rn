@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Settings › Benchmark › Voice in (v4): its own page, so each step starts with the app's models and memory gone. Same rules as
+     index.html, plus 'wasm-unsafe-eval' for her fallback voice (Flite, WebAssembly) in the voice loop; no network hosts: the models are read from this phone's storage (her own voice, p0voice, downloads first only from a test build's own address), the test speech is this folder's own files. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self'; media-src 'self'; connect-src 'self' https://api.weather.gov; worker-src 'self'; manifest-src 'self'; font-src 'self'; frame-src 'none'; child-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Voice in bench · p0pc0rn</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../icon-32.png">
+<link rel="stylesheet" href="../app.css">
+<script src="../config.js"></script>
+<script type="module" src="voicebench.js"></script>
+</head>
+<body class="vb-page">
+<main class="vb">
+  <p class="label">Settings › Benchmark</p>
+  <h1 class="title">Voice in bench</h1>
+  <p class="callout" id="vb-banner" aria-live="polite">Starting…</p>
+  <pre class="mono footnote bench-text" id="vb-card" hidden></pre>
+  <div class="vb-actions"><button class="btn sm" id="vb-copy" type="button" hidden>Copy</button><button class="btn sm" id="vb-back" type="button">Back to p0pc0rn</button></div>
+</main>
+</body>
+</html>

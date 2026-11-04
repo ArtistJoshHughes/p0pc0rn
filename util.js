@@ -42,10 +42,10 @@ export const wake = {
 };
 document.addEventListener('visibilitychange', () => { if (!document.hidden && want) wake.on(); });
 
-/** File named p0pc0rn-YYYYMMDD-HHMM-<seed>.png (pictures), .mp4 (clips) or .m4a (songs; the extension follows the blob's type) */
+/** File named p0pc0rn-YYYYMMDD-HHMM-<seed>.png (pictures; .jpg for an HDR picture), .mp4 (clips) or .m4a (songs; the extension follows the blob's type) */
 export function mediaFile(blob, seed, when) {
   const d = new Date(when || Date.now()), p = (n) => String(n).padStart(2, '0'), t = blob.type || 'image/png';
-  const ext = /^audio\/(mp4|aac|x-m4a)/.test(t) ? 'm4a' : /^audio\/(wav|x-wav|wave)/.test(t) ? 'wav' : /^audio\/(ogg|webm)/.test(t) ? 'ogg' : /mp4/.test(t) ? 'mp4' : /webm/.test(t) ? 'webm' : 'png';
+  const ext = /^audio\/(mp4|aac|x-m4a)/.test(t) ? 'm4a' : /^audio\/(wav|x-wav|wave)/.test(t) ? 'wav' : /^audio\/(ogg|webm)/.test(t) ? 'ogg' : /mp4/.test(t) ? 'mp4' : /webm/.test(t) ? 'webm' : /^image\/jpe?g/.test(t) ? 'jpg' : 'png';   // v4: + .jpg (an HDR picture)
   const name = `p0pc0rn-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}-${seed}.${ext}`;
   return new File([blob], name, { type: t });
 }

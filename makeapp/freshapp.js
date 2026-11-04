@@ -17,12 +17,12 @@ export function openAppOf(APPS) {
 }
 
 /** after the planned fresh page: the app opens again once the Apps tab has started (its own openApp) -> true when it was asked to open;
- *  false when the tab did not start within ms, the app is gone, or another app is already open */
+ *  false when the tab did not start within ms, the app is gone or held (v4), or another app is already open */
 export async function reopenApp(APPS, id, ms = 8000) {
   const t0 = Date.now(), ready = () => { const A = APPS && APPS.state; return !!(A && A.db && A.skels && A.skels.size); };
   while (!ready()) { if (Date.now() - t0 > ms) return false; await new Promise((r) => setTimeout(r, 100)); }
   const A = APPS.state, app = (A.apps || []).find((a) => a.id === id);
-  if (!app || A.open) return false;
+  if (!app || A.open || app.broke) return false;   // v4: the page ended while it ran (makeapp/host.js holdBroken): it never opens by itself
   await APPS.openApp(app);
   return true;
 }

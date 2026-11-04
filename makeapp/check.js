@@ -41,13 +41,17 @@ export function checkBundle(b) {
   if (m.entry !== 'sketch.js') e.push('entry must be sketch.js');
   if (m.recipe && m.recipe.length) e.push('recipes are not supported in this version: an agentic app does its work in K.agent tasks');
   const P = m.permissions || {};
-  for (const k of Object.keys(P)) if (!['storage', 'online', 'juli', 'chat.post', 'location'].includes(k)) e.push(`unknown permission "${k}"`);
+  for (const k of Object.keys(P)) if (!['storage', 'online', 'juli', 'chat.post', 'location', 'tap'].includes(k)) e.push(`unknown permission "${k}"`);
   if (P.online != null && !Array.isArray(P.online)) e.push('permissions.online must be a list of sources');
   for (const s of P.online || []) if (!SOURCE_IDS.includes(s)) e.push(`unknown online source "${s}" (this version has: ${SOURCE_IDS.join(', ')})`);
+  // v4 (Token Watch): permissions.tap = the online sources it reads only at the person's tap in the open app (never in a check)
+  if (P.tap != null && !(Array.isArray(P.tap) && P.tap.every((s) => (P.online || []).includes(s)) && new Set(P.tap).size === P.tap.length)) e.push('permissions.tap: a list of its online sources, each once (read only at the person’s tap)');
   // 3.9: "choose" = Juli picks one of the app's options while the person has it open (a game's move); "ask" = an agentic app's checks
-  if (P.juli != null && !(Array.isArray(P.juli) && P.juli.every((x) => x === 'ask' || x === 'choose') && new Set(P.juli).size === P.juli.length))
+  if (P.juli != null && !(Array.isArray(P.juli) && P.juli.every((x) => x === 'ask' || x === 'choose' || x === 'big') && new Set(P.juli).size === P.juli.length))
     e.push('permissions.juli: a list with "ask" (the checks of an agentic app) and/or "choose" (Juli picks while the app is open, as in a game), each once');
   if (P.location != null && !['none', 'place', 'device'].includes(P.location)) e.push('permissions.location must be none, place or device');
+  // v4: "big" = the app may use the Bigger brain for work its own switch turns on (off until the person turns it on), in its checks
+  if ((P.juli || []).includes('big') && !(P.juli || []).includes('ask')) e.push('permissions.juli: "big" goes with "ask" (the Bigger brain works in the app’s checks)');
   const T = Array.isArray(m.triggers) ? m.triggers : [];
   if (!T.length) e.push('triggers: at least one');
   for (const t of T) {

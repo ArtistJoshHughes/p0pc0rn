@@ -659,6 +659,246 @@
           "licence_id": "Apache-2.0"
         }
       ]
+    },
+    {
+      "pack": "juli-voice",
+      "app_key": "jvoice",
+      "app_model": "p0voice-juli",
+      "feature": "Juli's own voice in voice mode (v4; without it voice mode speaks with Flite)",
+      "label": "p0voice v3 (p0pc0rn's own text-to-speech, int8)",
+      "status": "optional",
+      "bytes": 24718711,
+      "hf_repo": "JoshHughes/p0pc0rn-voice-juli-p0voice",
+      "repo_type": "model",
+      "revision": "368aee8cc52380a878532436ef5db40a69c4e19c",
+      "manifest": "manifest.json",
+      "manifest_sha256": "f3b9afbe2579642f77f53a228c447db17918abc97abb5ffb417dde77d474816b",
+      "licence_id": "LicenseRef-p0pc0rn-Non-Commercial-License-1.2 AND BSD-2-Clause",
+      "licence_files": [
+        "LICENSE.md",
+        "licenses/LICENSE-cmudict-BSD-2-Clause.txt"
+      ],
+      "terms": [],
+      "redistributable": true,
+      "redistributable_for": "non-commercial purposes only (p0pc0rn's own licence)",
+      "requires_hf_login": false,
+      "conditions": [
+        "Josh Hughes owns the engine and the weights: p0pc0rn's own licence (LICENSE.md), with its attribution rule.",
+        "No real person's voice: trained from scratch on speech made with Qwen3-TTS (Apache-2.0, which puts no terms on what the models make) reading public-domain texts (Project Gutenberg) and lines written for p0pc0rn.",
+        "Keep CMUdict's BSD-2-Clause notice (the lexicon and the letters-to-sounds model's training data)."
+      ],
+      "components": [
+        {
+          "part": "p0voice v3 (acoustic model, vocoder, letters-to-sounds model)",
+          "source": "the p0pc0rn project",
+          "source_revision": null,
+          "licence_id": "LicenseRef-p0pc0rn-Non-Commercial-License-1.2"
+        },
+        {
+          "part": "CMU Pronouncing Dictionary (lexicon)",
+          "source": "Carnegie Mellon University",
+          "source_revision": null,
+          "licence_id": "BSD-2-Clause"
+        }
+      ]
+    },
+    {
+      "pack": "nowcast",
+      "app_key": "nowcast",
+      "app_model": "dgmr-nowcast",
+      "feature": "Nowcast (Experimental): the next 90 minutes of rain, from NOAA radar (v4)",
+      "label": "DeepMind DGMR (8-bit; the float model in f16/)",
+      "status": "experimental",
+      "bytes": 135786355,
+      "_bytes": "The float model (f16/); the 8-bit model at the top of the repository is 70,719,135 bytes. The phone downloads the one it can run.",
+      "hf_repo": "JoshHughes/p0pc0rn-nowcast-dgmr",
+      "repo_type": "model",
+      "revision": "30f81dfe8faecd786b49bb3517d8baaa780f4730",
+      "manifest": "manifest.json",
+      "manifest_sha256": "6f8a385e6bfaf703762bac06322819542f2f75b7d56e9724254884ecf2c3719e",
+      "sub_manifests": {
+        "f16/manifest.json": "4df6bbaebf3ca7cd41edf33c64d3c2f7f43661503f4cd40cc18b72a8b144f64d"
+      },
+      "licence_id": "CC-BY-4.0",
+      "licence_files": [
+        "licenses/LICENSE-CC-BY-4.0.txt",
+        "licenses/NOTICE-nowcast.md"
+      ],
+      "terms": [],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "CC BY 4.0: credit DeepMind, link the licence, say it was changed: \"Nowcast model: DeepMind DGMR (CC BY 4.0), modified\" with every nowcast and in the pack.",
+        "Modified: 8-bit integer weights and activations with spectral and batch normalisation folded, or 16-bit floats; p0pc0rn's own WebGPU kernels. Not an official DeepMind or Google product.",
+        "Trained on UK radar: Experimental, never a replacement for NWS warnings."
+      ],
+      "components": [
+        {
+          "part": "DGMR, the 256 x 256 TF-Hub snapshot",
+          "source": "google-deepmind/deepmind-research (nowcasting)",
+          "source_revision": null,
+          "licence_id": "CC-BY-4.0"
+        }
+      ]
+    },
+    {
+      "pack": "video-lora",
+      "app_key": "lora",
+      "app_model": "sanavideo2-5b-lora",
+      "feature": "Videos: clips from a picture and between two pictures hold their pictures better (v4)",
+      "label": "Video LoRA (first frame + first/last frame, f3)",
+      "status": "optional",
+      "needs": [
+        "video"
+      ],
+      "bytes": 64061440,
+      "hf_repo": "JoshHughes/p0pc0rn-video-lora-firstframe-f3",
+      "repo_type": "model",
+      "revision": "a9d7b77470c31ece27978b3e4ff512d2a00f4815",
+      "manifest": "manifest.json",
+      "manifest_sha256": "eba7f272bd3e125f1e996ad6958b0c4e09a9a8612a2844b50d04427fadb8b11a",
+      "licence_id": "Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-Apache-2.0.txt"
+      ],
+      "terms": [],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0); Apache-2.0 notice.",
+        "It runs with SANA-Video 2.0 and the separately licensed LTX-2.3 decoder and picture reader, accepted before those download.",
+        "Modified-files notice (fp32 -> fp16, alpha / rank folded)."
+      ],
+      "components": [
+        {
+          "part": "SANA-Video 2.0 LoRA f3 (step 1000)",
+          "source": "JoshHughes/sana-video2-firstframe-lora",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
+      "pack": "looks-lora",
+      "app_key": "lora2",
+      "app_model": "sanavideo2-5b-style-lora",
+      "feature": "Videos: Restyle a clip, one of 20 looks (v4)",
+      "label": "Looks LoRA (style video to video, c20)",
+      "status": "optional",
+      "needs": [
+        "video",
+        "clip-reader"
+      ],
+      "bytes": 64061440,
+      "hf_repo": "JoshHughes/p0pc0rn-video-lora-looks-c20",
+      "repo_type": "model",
+      "revision": "256fc6c62eff2e64eb96b1481cb0ffb316b30fcc",
+      "manifest": "manifest.json",
+      "manifest_sha256": "341db0a1934ce903291616bd3b6b9472883b76335722adb2d325a5b7c7bf8dfd",
+      "licence_id": "Apache-2.0",
+      "licence_files": [
+        "licenses/LICENSE-Apache-2.0.txt"
+      ],
+      "terms": [],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0); Apache-2.0 notice.",
+        "It runs with SANA-Video 2.0, the clip reader and the LTX-2.3 decoder (LTX-2 Community License, accepted before those download).",
+        "Modified-files notice (fp32 -> fp16, alpha / rank folded)."
+      ],
+      "components": [
+        {
+          "part": "SANA-Video 2.0 LoRA c20 (step 1500)",
+          "source": "JoshHughes/sana-video2-style-v2v-lora",
+          "source_revision": null,
+          "licence_id": "Apache-2.0"
+        }
+      ]
+    },
+    {
+      "pack": "clip-reader",
+      "app_key": "venc",
+      "app_model": "ltx23-video-enc",
+      "feature": "Videos: Restyle a clip reads your clip (v4)",
+      "label": "Clip reader (LTX-2.3 video VAE encoder, f16)",
+      "status": "optional",
+      "needs": [
+        "video"
+      ],
+      "bytes": 637964544,
+      "hf_repo": "JoshHughes/p0pc0rn-clip-reader-f16",
+      "repo_type": "model",
+      "revision": "bf9e3ab5f568c2ce3fef603ecfe5ab7ff4f50ae9",
+      "manifest": "manifest.json",
+      "manifest_sha256": "d3307435de6636f93656572c52376a275f68365e9d46c59bcd7857e90cc44bfb",
+      "licence_id": "LicenseRef-LTX-2-Community-License",
+      "licence_files": [
+        "licenses/LICENSE-LTX-2.txt",
+        "licenses/NOTICE-video.md"
+      ],
+      "terms": [
+        {
+          "sheet": "ltx-2",
+          "licence_version": "2026-01-05"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Distribute only under the LTX-2 Community License Agreement, complete copy with Attachment A; accepted before download (the same sheet as the video decoder and the picture reader).",
+        "State the modification (the encoder half only, f16, re-laid out for the engine's 3-D convolution, conv_in padded, conv_out cut to its mean channels, down_blocks.3 and the mid block rescaled by 1/64; NOTICE-video.md) and the modified-files notice.",
+        "AI disclosure, the USD 10 million revenue rule and no Lightricks trademarks, as for the video pack."
+      ],
+      "components": [
+        {
+          "part": "LTX-2.3 video VAE encoder (vae.* tensors, Diffusers layout)",
+          "source": "Lightricks/LTX-2.3",
+          "source_revision": null,
+          "licence_id": "LicenseRef-LTX-2-Community-License"
+        }
+      ]
+    },
+    {
+      "pack": "voice-input",
+      "app_key": "stt",
+      "app_model": "nemotron35-asr-0.6b",
+      "feature": "Voice input: talk to Juli (v4; 40 language-locales, on the phone)",
+      "label": "NVIDIA Nemotron 3.5 ASR Streaming 0.6B (int8)",
+      "status": "optional",
+      "bytes": 640473363,
+      "hf_repo": "JoshHughes/p0pc0rn-voicein-nemotron35-asr-06b",
+      "repo_type": "model",
+      "revision": "85748c8a44ad4f8e4214cd463459e86c6cff249d",
+      "manifest": "manifest.json",
+      "manifest_sha256": "f43ffaf67c9478ab296809f14bbd5679fef720b797c19fa756356b1c696d4d0a",
+      "licence_id": "LicenseRef-OpenMDW-1.1",
+      "licence_files": [
+        "licenses/LICENSE-OpenMDW-1.1.txt",
+        "licenses/NOTICE-Nemotron-ASR.md"
+      ],
+      "terms": [
+        {
+          "sheet": "openmdw-1.1",
+          "licence_version": "1.1"
+        }
+      ],
+      "redistributable": true,
+      "requires_hf_login": false,
+      "conditions": [
+        "Keep a copy of the OpenMDW License Agreement 1.1 and NVIDIA's notices with any copy of the model; the pack carries both.",
+        "Modified files: 8-bit re-quantised, folded and re-laid-out by the p0pc0rn packer; not the original files, not an official NVIDIA product.",
+        "'NVIDIA' and 'Nemotron' are NVIDIA trademarks; no trademark rights are granted.",
+        "Your voice never leaves the phone and is never kept."
+      ],
+      "components": [
+        {
+          "part": "NVIDIA Nemotron 3.5 ASR Streaming 0.6B",
+          "source": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+          "source_revision": "ea30d66debe3740a08b573244286791d423d6b3e",
+          "licence_id": "LicenseRef-OpenMDW-1.1"
+        }
+      ]
     }
   ],
   "bundled_in_repo": [
@@ -681,6 +921,41 @@
       "part": "Popcorn progress animation (AI-generated)",
       "path": "popcorn/",
       "licence_id": "see licenses/NOTICE-progress-animation.md"
+    },
+    {
+      "part": "three.js r186 (0.186.1) and five of its add-ons (Troll-E's 3D drawing)",
+      "path": "games/trolley/vendor/",
+      "licence_id": "MIT"
+    },
+    {
+      "part": "Rapier 0.21.0 (@dimforge/rapier3d-compat; Troll-E's physics)",
+      "path": "games/trolley/vendor/rapier.mjs",
+      "licence_id": "Apache-2.0"
+    },
+    {
+      "part": "CMU Flite 2.2 + the cmu_us_slt voice (CMU ARCTIC slt), compiled with Emscripten (musl libc) (Troll-E's voice, Juli's fallback voice)",
+      "path": "games/trolley/voice/",
+      "licence_id": "LicenseRef-Flite-BSD-style AND MIT"
+    },
+    {
+      "part": "NVIDIA SimReady Assets (Troll-E's trolley, props and world), modified",
+      "path": "games/trolley/assets/",
+      "licence_id": "CC-BY-4.0"
+    },
+    {
+      "part": "US Census Bureau Gazetteer places and ZCTAs, population estimates (Juli's weather, the app maker's place search)",
+      "path": "assistant/data/",
+      "licence_id": "LicenseRef-US-Government-Work"
+    },
+    {
+      "part": "US Census Bureau cartographic boundary lines (the Nowcast's map)",
+      "path": "nowcast/data/us_lines.bin",
+      "licence_id": "LicenseRef-US-Government-Work"
+    },
+    {
+      "part": "CMU Pronouncing Dictionary (inside Juli's voice pack; its notice in licenses/)",
+      "path": "licenses/LICENSE-cmudict-BSD-2-Clause.txt",
+      "licence_id": "BSD-2-Clause"
     }
   ],
   "not_in_this_build": [

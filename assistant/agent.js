@@ -18,6 +18,9 @@ import { renderBlock, citationFooter, relevant, asOf, numberWords } from './rese
 import { blockTerms, scanPrompt, stripPrompt, isProtected, fnv } from './likeness.js';
 import { openDB, uid } from './idb.js';
 import { clipFrames, shrinkForModel } from './media.js';
+import { quickMath } from './quickmath.js';   // v4 (voice mode): simple number and unit questions worked out in code
+import { weatherAsk, resolvePlace, weatherNote, createWeather, zipSetAsk, YES, NO, dropNoLive } from './weather.js';   // v4: weather in chat (the US National Weather Service)
+import { loadGeo } from './places.js';   // v4: US places and ZIP codes -> coordinates, on the phone
 import { estTokens, promptTokens, EST_LOW } from './fit.js';   // 3.8 (v040): prompt sizes for the Bigger brain's context
 import { pickSkill, skillText } from './skills.js';   // H39: a 'for: chat' skill (know-how the person added) in the plan prompt, where it fits
 import { helpAsk, selfAsk, selfPicture, howToAsk, jokeAsk, dangerAsk, cleanTopics, stripPointer, shouldNudge, refusalLike, factsAnswer, taskAsk, MAKE_TOOLS, HELP_NOTE, HELP_IDS, SELF_PIC_NOTE, ANSWER_NOTE, ANSWER_NOTE_OWN, NUDGE, HELP_NOTES,
@@ -130,15 +133,16 @@ export class Agent {
     return m;
   }
   /** the person's message (and optionally a photo they added, with its rights-box state) -> the queued chat job */
-  async ask(sid, text, { photoBlob = null, attested = false, shape = null, kind = null } = {}) {   // 3.9: kind 'routine' (Settings › Juli › Routines)
+  async ask(sid, text, { photoBlob = null, attested = false, shape = null, kind = null, voice = false } = {}) {   // 3.9: kind 'routine' (Settings › Juli › Routines); v4: voice = it came from the mic (voice mode)
     const s = await this.session(sid); if (!s) throw new Error('no session ' + sid);
     let photoKey = null;
     if (photoBlob) { photoKey = await this.queue.putBlob(photoBlob, { role: 'user-photo' }); s.photo = { blobKey: photoKey, attested: !!attested, shape: shape || 'wide' }; }
     const m = Object.assign({ id: uid('m'), role: 'user', at: Date.now(), text: String(text || '').slice(0, 4000), photoKey }, kind ? { kind: String(kind) } : {});
     s.messages.push(m); s.history.push({ role: 'user', content: m.text, mid: m.id }); s.history = s.history.slice(-this.limits.historyKeep);
     await this.db.put('sessions', s); this.emit('message', sid, m);
+    if (this.hooks.nowcastTurn && !photoBlob) { try { const nj = await this.hooks.nowcastTurn(sid, m, { voice }); if (nj) return nj; } catch (e) { /* the chat turn answers */ } }   // v4: the Nowcast (Experimental) answers "will it rain in the next hour" (app.js)
     const follow = s.brainLast && Date.now() - s.brainLast.at < 30 * 60e3 ? s.brainLast.kind : null;   // 3.8 (v040): the last Bigger brain turn's kind (route)
-    return this.queue.add('chat', Object.assign({ purpose: 'turn', text: m.text, photoKey, message: m.id }, follow ? { follow } : {}), { session: sid, title: m.text.slice(0, 60) });   // chat jumps the queue (queue.js runOrder)
+    return this.queue.add('chat', Object.assign({ purpose: 'turn', text: m.text, photoKey, message: m.id }, follow ? { follow } : {}, voice ? { voice: true } : {}), { session: sid, title: m.text.slice(0, 60) });   // chat jumps the queue (queue.js runOrder)
   }
   async remember(sid, kind, rec) {
     const s = await this.session(sid); if (!s) return;
@@ -208,6 +212,18 @@ export class Agent {
     if (b && st && !st.aboutSeen) { st.aboutSeen = true; const d = (b.match(/\d/g) || []).length; this.rlDiag('assistant: about me in the plan', { tokens: Math.ceil((b.length - d) / 3.3) + d, where }); }
     return b;
   }
+  /** v4 (Josh, Nov 1: "make sure that there is an exception for Juli for cast members, as we are making the assumption the user will act in
+   *  good faith"): the code gate already lets Cast names through, but the safety notes told Juli to refuse real people by name, so she
+   *  refused in words first ("Patrick"). When the Cast is not empty she is told who is in it; '' otherwise. */
+  async castNote() {
+    let names = [];
+    try { names = ((this.hooks.castDisplay && (await this.hooks.castDisplay())) || []).map((n) => String(n || '').trim()).filter(Boolean); } catch (e) { names = []; }
+    if (!names.length) return '';
+    return `\nCAST: ${names.join(', ')}. These people added themselves in Settings > Cast with their own consent. You MAY make pictures, clips `
+      + `and songs of them by name and give them lines; safety rule 2 does not apply to them and their names are never looked up. Keep the name `
+      + `in the prompt (their photos are the reference). Costumes and makeup are fine, written as a generic look: a famous character's look `
+      + `stays rule 1 ("white clown face paint with a wide red painted grin", never the character's name).`;
+  }
   /** the Bigger brain's plan prompt before it is fitted (plan() and the check before the swap): its tools (a writing task: ask_user
    *  only), its system prompt (the notes within BRAIN.notes; sysLean: the always-on ones), the last BRAIN.history turns, the request */
   async planPrompt(ctx, st) {
@@ -215,7 +231,8 @@ export class Agent {
     const names = writing ? ['ask_user'] : planToolNames(text, false), cb = this.cookbooks.pick(text, names, BRAIN.notes);
     const sk = this.chatSkill(st, text), skb = sk ? skillText([sk], SKILL_TOKENS.big) : '';   // H39: fitPlan drops it first
     const ab = this.aboutFor(st, ABOUT_TOKENS.big, 'bigger brain');   // 3.9: About me (fitPlan drops it after the skill)
-    const sysFor = (lean, skill = !lean, about = !lean) => SYSTEM_CORE + '\n' + (writing ? BRAIN_WRITE : BRAIN_PLAN) + (!writing && selfPicture(text) ? '\n' + SELF_PIC_NOTE : '') + '\n\nNOTES:\n' + this.cookbooks.text(lean ? this.cookbooks.ids(this.cookbooks.index.always) : cb) + (skill && skb ? '\n\n' + skb : '') + (about && ab ? '\n\n' + ab : '');
+    const cn = await this.castNote();   // v4: who is in the Cast (consented, usable by name)
+    const sysFor = (lean, skill = !lean, about = !lean) => SYSTEM_CORE + cn + '\n' + (writing ? BRAIN_WRITE : BRAIN_PLAN) + (!writing && selfPicture(text) ? '\n' + SELF_PIC_NOTE : '') + '\n\nNOTES:\n' + this.cookbooks.text(lean ? this.cookbooks.ids(this.cookbooks.index.always) : cb) + (skill && skb ? '\n\n' + skb : '') + (about && ab ? '\n\n' + ab : '');
     const history = ((s && s.history) || []).filter((h) => h.mid !== ctx.params.message).slice(-BRAIN.history).map((h) => ({ role: h.role, content: clipText(h.content, BRAIN.historyChars) }));
     return { system: sysFor(false), sysNoSkill: sysFor(false, false), sysNoAbout: sysFor(false, false, false), sysLean: sysFor(true), history, user: { role: 'user', content: text }, tools: decls(names), writing };
   }
@@ -279,7 +296,7 @@ export class Agent {
   readerFor(ctx) {
     return async (messages, o = {}) => {
       const r = await ctx.engine.chat(messages, Object.assign({ maxTokens: o.maxTokens || 600, stop: STOP, signal: o.signal || ctx.signal },
-        o.temperature ? { temperature: o.temperature, topP: 0.95, topK: 64 } : {}, o.prefix ? { prefix: o.prefix } : {}));   // 3.8: exact unless a temperature is asked for   // v022: the reader's forced start
+        o.temperature ? { temperature: o.temperature, topP: 0.95, topK: 64 } : {}, o.prefix ? { prefix: o.prefix } : {}, o.keepPrefix ? { keepPrefix: o.keepPrefix } : {}));   // v4: + the prefix snapshot   // 3.8: exact unless a temperature is asked for   // v022: the reader's forced start
       return typeof r === 'string' ? r : (r.raw != null ? r.raw : r.text || '');
     };
   }
@@ -292,6 +309,7 @@ export class Agent {
     if (st.stage === 'plan') {
       const hard = screenRequest(ctx.params.text);                   // the absolute cases never reach a model
       if (hard) { await this.say(sid, { text: hard.reply, kind: 'refusal', code: hard.code }); st.stage = 'done'; await save(); return { reply: hard.reply, refused: hard.code }; }
+      const zt = await this.zipTurn(ctx, st, save); if (zt) return zt;   // v4 (weather): "my ZIP is 10001" (asked first) and its yes
       // 3.8 (v040): the two-model route (BRAIN): Juli looks things up on her own model, then the Bigger brain plans and writes
       if (!st.route) { st.route = this.route(ctx.job); if (this.onBig(ctx)) Object.assign(st.route, { brain: true, gather: false }); await save(); }
       if (st.route.brain && !st.brainPhase) {
@@ -336,28 +354,33 @@ export class Agent {
     // 3.8 (v040): the Bigger brain's turn (BRAIN): no lookups (Juli did them first) and, for a writing task, no tools to make things with
     const big = !!st.brainPhase, onBig = this.onBig(ctx), writing = big && !!st.route && st.route.kind === 'writing';
     const selfWrite = !big && !!st.route && st.route.kind === 'writing';   // 3.9: a piece of writing Juli plans herself: she writes it (JULI_WRITE)
-    const help = !big && !onBig && !ctx.params.photoKey && (helpAsk(text) || selfAsk(text)), selfPic = !help && selfPicture(text);   // 3.9 (juliqa): Juli answers a how-to or self question herself
+    const help = !big && !onBig && !ctx.params.photoKey && (helpAsk(text) || selfAsk(text)), selfPic = !help && selfPicture(text);
+    const voice = !!ctx.params.voice && !big && !onBig, voiceSlim = voice && !voiceMakes(text) && !ctx.params.photoKey, qm = voiceSlim ? quickMath(text) : null;   // v4 (Josh's phone, Nov 2: "three and a half hours" -> "one hundred eighty minutes"): the result goes in her note   // v4: a spoken turn   // 3.9 (juliqa): Juli answers a how-to or self question herself
     // 3.9 (juliqa): a how-to ("how do i remove a red wine stain", or a terse task: "tie a bowline knot") in a chat with nothing made yet
     // (no edit can be meant): steps from what Juli knows (HOWTO_NOTE); nothing is looked up or made (the farm looked up "Port-wine stain")
     const howTo = !help && !big && !onBig && !selfWrite && !ctx.params.photoKey && !(s && s.last && Object.keys(s.last).length) && (taskAsk(text) || howToAsk(text)) && !INTENT.pic.test(text) && !INTENT.clip.test(text) && !INTENT.song.test(text) && !dangerAsk(text) && !screenRequest(text);   // never a picture, clip or song request ("make a lullaby for my baby")
-    const toolNames = help || howTo ? [] : writing || selfWrite ? ['ask_user'] : planToolNames(text, !!this.research && !big);   // 3.9 (juliqa): no tool at all for a question about the app or a how-to (the desk round: "keep basil alive" -> "What kind of basil?")
+    const wxAsk = !big && !onBig && !help && !selfWrite && !ctx.params.photoKey && !voiceMakes(text) ? weatherAsk(text) : null;   // v4: a weather question
+    const wx = wxAsk ? await this.weatherFor(ctx, st, save, wxAsk) : null;   // its forecast (or why there is none) for her note: spoken and typed turns alike
+    const toolNames = help || howTo || voiceSlim || wx ? [] : writing || selfWrite ? ['ask_user'] : planToolNames(text, !!this.research && !big);   // 3.9 (juliqa): no tool at all for a question about the app or a how-to (the desk round: "keep basil alive" -> "What kind of basil?")
     const songOnly = toolNames.includes('make_song') && !toolNames.some((n) => /picture|clip|sound/.test(n));   // a song's words are written later, by the song writer
-    const cb = help ? this.cookbooks.ids([...this.cookbooks.pick(text, [], HELP_NOTES).filter((id) => /^faq#/.test(id)), ...HELP_IDS], HELP_NOTES) : this.cookbooks.pick(text, toolNames, onBig ? BRAIN.notes : songOnly || toolNames.length >= 7 ? this.limits.songNotes : this.limits.planNotes);   // a follow-up with no clear kind: the short budget (3.8: the Bigger brain's, shorter)
+    const cb = help ? this.cookbooks.ids([...this.cookbooks.pick(text, [], HELP_NOTES).filter((id) => /^faq#/.test(id)), ...HELP_IDS], voice ? VOICE_LIMITS.helpNotes : HELP_NOTES) : this.cookbooks.pick(text, toolNames, onBig ? BRAIN.notes : songOnly || toolNames.length >= 7 ? this.limits.songNotes : this.limits.planNotes);   // a follow-up with no clear kind: the short budget (3.8: the Bigger brain's, shorter)
     const hist0 = (s.history || []).filter((h) => h.mid !== ctx.params.message), recentN = this.limits.history;
     const earlier = earlierSummary(hist0.slice(0, Math.max(0, hist0.length - recentN)));
-    const sk = onBig ? null : this.chatSkill(st, text), skb = sk ? skillText([sk], SKILL_TOKENS.plan) : '';   // H39: a TOO_LONG drops it first
-    const ab = onBig ? '' : this.aboutFor(st, ABOUT_TOKENS.plan, 'juli');   // 3.9: About me (a TOO_LONG drops it after the skill)
+    const sk = onBig || voiceSlim ? null : this.chatSkill(st, text), skb = sk ? skillText([sk], SKILL_TOKENS.plan) : '';   // H39: a TOO_LONG drops it first
+    const ab = onBig || voiceSlim ? '' : this.aboutFor(st, ABOUT_TOKENS.plan, 'juli');   // 3.9: About me (a TOO_LONG drops it after the skill)
     // 3.9 (juliqa): an everyday question (no tool can make anything here, lookups on): ANSWER_NOTE (from the facts looked up for it, or
     // ANSWER_NOTE_OWN when none were found), and the notes lose the render-only safety sections; never for a request that could hurt
     // someone or one the safety screen holds
     const answerMode = () => !help && !big && !selfWrite && !!this.research && !ctx.params.photoKey && !toolNames.some((n) => MAKE_TOOLS.has(n)) && !dangerAsk(text) && !screenRequest(text);   // not a question about a photo
     const cautious = () => !howTo && safetyAsk(text) && !safetyCovered(st.research);   // round 4: a safety question that nothing looked up answers
     const answerNote = () => (howTo ? howToNote(text) : cautious() ? safetyNote(text) : (st.research || []).some((r) => r.status === 'hit') ? ANSWER_NOTE : ANSWER_NOTE_OWN);
-    const sysFor = (lean) => SYSTEM_CORE + (big ? '\n' + (writing ? BRAIN_WRITE : BRAIN_PLAN) : (this.research ? '' : '\n' + LOOKUPS_OFF) + (selfWrite ? '\n' + JULI_WRITE : '')) + (help ? '\n' + HELP_NOTE : selfPic ? '\n' + SELF_PIC_NOTE : answerMode() ? '\n' + answerNote() : '') + '\n\nNOTES:\n'
+    const cn = help || voiceSlim ? '' : await this.castNote();   // v4: who is in the Cast (consented, usable by name)
+    const sysFor = (lean) => (voiceSlim && !help ? voiceSystem(this.cookbooks, { research: !!this.research, note: [wx ? wx.note : answerMode() ? answerNote() : '', qm ? qm.note : ''].filter(Boolean).join('\n\n') }) : sysFull(lean) + (voice ? '\n\n' + VOICE_NOTE : ''));
+    const sysFull = (lean) => SYSTEM_CORE + cn + (big ? '\n' + (writing ? BRAIN_WRITE : BRAIN_PLAN) : (this.research ? '' : '\n' + LOOKUPS_OFF) + (selfWrite ? '\n' + JULI_WRITE : '')) + (help ? '\n' + HELP_NOTE : selfPic ? '\n' + SELF_PIC_NOTE : wx ? '\n' + wx.note : answerMode() ? '\n' + answerNote() : '') + '\n\nNOTES:\n'
       + this.cookbooks.text(lean ? this.cookbooks.ids(help ? HELP_IDS : answerMode() ? [] : this.cookbooks.index.always) : answerMode() ? cb.filter((id) => !this.cookbooks.index.always.includes(id)) : cb)   // 3.9 (juliqa)
       + (skb && !lean && !st.noSkill ? '\n\n' + skb : '')
       + (ab && !lean && !st.noAbout ? '\n\n' + ab : '')   // 3.9: About me, after the skill
-      + (earlier && !st.noHistory && !onBig ? '\n\n' + earlier : '');   // 3.8: no room for the summary in the Bigger brain's context
+      + (earlier && !st.noHistory && !onBig && !voice ? '\n\n' + earlier : '');   // 3.8: no room for the summary in the Bigger brain's context
     let system = sysFor(!!st.leanNotes);
     // v021: a song's subject is looked up by code (groundSong: song_subject -> research -> the writer with the facts), so the planner
     // of a song request is not offered research (the desktop smoke test: Gemma called research itself, then the plan overflowed)
@@ -367,7 +390,7 @@ export class Agent {
     // p0pc0rn v021 (Josh: "chat with Wikipedia and Fandom grounding"): a plain chat turn that asks about something the lane can look up
     // is looked up HERE, in code, before the first planning call; the answer is then written from the airlocked fact lines
     if (!st.chatGround) {
-      st.chatGround = howTo ? { skip: true } : (await this.groundChat(ctx, st, text, s)) || { skip: true }; await save();   // 3.9 (juliqa r4): a how-to is not looked up
+      st.chatGround = howTo || qm || wx || (voice && !lookupWorthy(text) && !safetyAsk(text) && !FORCE_ASK.test(text)) ? { skip: true } : (await this.groundChat(ctx, st, text, s)) || { skip: true }; await save();   // 3.9 (juliqa r4): a how-to is not looked up
       if (st.chatGround.ask) return this.finish(ctx, st, save, st.chatGround.ask, { kind: 'question', options: [] });
     }
     // 3.9 (juliqa r4): a safety question whose facts say nothing about safety: one more lookup, "<the thing> toxicity" (the farm's
@@ -390,13 +413,13 @@ export class Agent {
       system = sysFor(!!st.leanNotes);   // 3.9 (juliqa): with the facts looked up so far (an everyday question they answer gets ANSWER_NOTE)
       if (st.steps >= this.limits.steps) return this.finish(ctx, st, save, "I couldn't settle on a plan for that. Could you say it another way?");
       st.steps++;
-      const history = st.noHistory ? [] : hist0.slice(-(onBig ? BRAIN.history : recentN)).map((h) => ({ role: h.role, content: clipText(h.content, onBig ? BRAIN.historyChars : 600) }));   // v026.8: the last turns, each at most 600 characters (3.8: the Bigger brain: 2, 300)
+      const history = st.noHistory ? [] : hist0.slice(-(onBig ? BRAIN.history : voice ? VOICE_LIMITS.history : recentN)).map((h) => ({ role: h.role, content: clipText(h.content, onBig ? BRAIN.historyChars : voice ? VOICE_LIMITS.historyChars : 600) }));   // v026.8: the last turns, each at most 600 characters (3.8: the Bigger brain: 2, 300)
       const user = { role: 'user', content: text };
       if (ctx.params.photoKey && st.steps === 1) {
         const ph = await ctx.getBlob(ctx.params.photoKey);
         if (ph) user.content = [{ type: 'image', image: await this.hooks.shrink(ph) }, { type: 'text', text: text + '\n(The person added the photo above.)' }];
       }
-      let messages = [{ role: 'system', content: system }, ...history, user, ...(st.shortFacts ? cutFacts(keepRecent(st.msgs), 3) : st.msgs)], maxTokens = 1000, tools = planTools;
+      let messages = [{ role: 'system', content: system }, ...history, user, ...(st.shortFacts ? cutFacts(keepRecent(st.msgs), 3) : st.msgs)], maxTokens = voiceSlim ? VOICE_LIMITS.maxTokens : 1000, tools = planTools;
       if (onBig) {   // 3.8 (v040): fitted to the Bigger brain's context; a turn that cannot fit goes to Juli (the queue's fallback)
         const bp = await this.planPrompt(ctx, st), f = await this.fitPlan(ctx, st, bp); await save();
         if (!f) throw Object.assign(new Error('the request is too long for the Bigger brain'), { code: 'TOO_LONG' });
@@ -406,7 +429,7 @@ export class Agent {
       }
       if (!onBig && skb && !st.noSkill && !st.leanNotes) this.emit('activity', sid, ctx.job.id, `Using the “${sk.name}” skill…`);   // H39
       let out;
-      try { out = await this.llm(ctx, messages, Object.assign({ tools, maxTokens, stream: true }, SAMPLING.tool)); }   // 3.8: stream = the plan call (its words show in the chat)
+      try { out = await this.llm(ctx, messages, Object.assign({ tools, maxTokens, stream: true }, SAMPLING.tool, voiceSlim && !help ? { keepPrefix: true } : {}, wx && wx.credit ? { dropNoLive: true } : {})); }   // v4: the voice prompt's system turn is kept (the prefix snapshot)   // 3.8: stream = the plan call (its words show in the chat)
       catch (e) {
         if (onBig || !e || e.code !== 'TOO_LONG' || (st.leanNotes && st.noHistory && st.shortFacts)) throw e;   // 3.8: the Bigger brain's TOO_LONG: the queue gives the turn to Juli
         // v021 / v026.8: a TOO_LONG plan call is retried with only the always-on notes, then without the earlier turns; 3.8 (v040): then with
@@ -460,6 +483,7 @@ export class Agent {
       }
       // research calls first (up to 2 at once), then at most one other call
       const calls = out.toolCalls.slice(0, 3);
+      const offered = new Set((tools || []).map((d) => d && d.function && d.function.name).filter(Boolean));   // 4.0 (review): only a tool offered in this step runs
       // research always runs first; a render call in the same answer is dropped and the model plans again WITH the facts
       const research = calls.filter((c) => c.name === 'research').slice(0, 2), other = calls.find((c) => c.name !== 'research');
       if (research.length) {
@@ -469,6 +493,7 @@ export class Agent {
           let content;
           if (!v.ok) { content = 'error: ' + v.errors.join('; '); st.bad++; }
           else if (st.research.length >= this.limits.research) content = 'research limit reached for this message: answer with the facts you have.';
+          else if (!offered.has('research') && !(big || help || howTo)) { content = 'error: "research" is not offered here: reply in words, with what you know.'; st.bad++; }   // 4.0 (review)
           else if (big || help || howTo) content = big ? 'the lookups for this message are done: answer with the facts you have.' : help ? 'there is nothing to look up for this: answer it from the HOW TO ASK notes.' : 'there is nothing to look up for this: answer with the steps, from what you know.';   // 3.9 (juliqa): + a how-to question   // 3.8 (v040): the Bigger brain never looks things up
           else content = await this.doResearch(ctx, st, v.args, text);
           st.msgs.push({ role: 'tool', tool_call_id: id, name: 'research', content });
@@ -483,6 +508,10 @@ export class Agent {
       if ((selfWrite || help || howTo) && c.name !== 'ask_user') {   // 3.9: a piece of writing: a call to make something is turned back into words (juliqa: and a how-to question)
         if (st.bad >= this.limits.badCalls) return this.finish(ctx, st, save, help || howTo ? "Ask me again in other words, and I'll explain." : "I couldn't write that one. Could you ask again?");
         await toolErr(help ? `error: "${c.name}" is not offered here: answer the question in words, from the HOW TO ASK notes.` : howTo ? `error: "${c.name}" is not offered here: answer in words, with the steps.` : `error: "${c.name}" is not offered here: this is a piece of writing. Write it yourself as your reply, in plain text.`); continue;
+      }
+      if (!c.forced && c !== st.longCall && !offered.has(c.name)) {   // 4.0 (review): a call for a tool this step did not offer never runs (a weather or voice turn offers none)
+        if (st.bad >= this.limits.badCalls) return this.finish(ctx, st, save, "I couldn't work out how to do that. Could you say it another way?");
+        await toolErr(`error: "${c.name}" is not offered here: reply in words, or call one of the tools you were given.`); continue;
       }
       if (!v.ok || !MAIN_TOOLS.includes(c.name)) {
         if (st.bad >= this.limits.badCalls) return this.finish(ctx, st, save, "I couldn't work out how to do that. Could you say it another way?");
@@ -617,7 +646,7 @@ export class Agent {
       if (kept.length && FOLLOW_UP.test(t)) { this.injectFacts(st, kept[kept.length - 1]); out.reused.push(kept[kept.length - 1].title); this.emit('activity', sid, jid, ''); return out; }
       this.emit('activity', sid, jid, ''); return null;
     }
-    for (const tp of topics.slice(0, forced ? 4 : 2)) {
+    for (const tp of topics.slice(0, forced ? 4 : ctx.params && ctx.params.voice ? VOICE_LIMITS.lookups : 2)) {
       const prev = kept.find((r) => relevant(tp.topic, r.title) && relevant(r.title, tp.topic));
       if (prev) { this.injectFacts(st, prev); out.reused.push(prev.title); continue; }
       if (st.research.length >= this.limits.research) break;
@@ -655,7 +684,7 @@ export class Agent {
     const exact = explicitTitles(text, forced);
     let topics = [];
     try {
-      const raw = await this.readerFor(ctx)([{ role: 'system', content: PLAN_SYS + (forced ? PLAN_FORCE : '') }, { role: 'user', content: 'MESSAGE:\n' + String(text).slice(0, 1200) }], { maxTokens: 160 });   // 3.8: exact (the planner's reading)
+      const raw = await this.readerFor(ctx)([{ role: 'system', content: PLAN_SYS + (forced ? PLAN_FORCE : '') }, { role: 'user', content: 'MESSAGE:\n' + String(text).slice(0, 1200) }], Object.assign({ maxTokens: 160 }, ctx.params && ctx.params.voice ? { keepPrefix: true } : {}));   // v4: a spoken turn keeps the planner's fixed system turn (the prefix snapshot)   // 3.8: exact (the planner's reading)
       topics = cleanTopics(parseTopics(raw));   // 3.9 (juliqa): Juli herself is never looked up
     } catch (e) { if (isAbort(e)) throw e; topics = []; }
     if (forced && !topics.length && !exact.length) { const rest = String(text).replace(FORCE_ASK, '').split(/[.;?!\n]/)[0].trim(); if (rest.length >= 2) exact.push(rest.slice(0, 80)); }
@@ -865,13 +894,78 @@ export class Agent {
     }
     return { verdict: 'accept', issue: 'none' };   // the model could not decide: never loop on it
   }
+  /** v4 (voice mode): the two fixed starts a spoken turn reads in, as it will send them: the voice prompt (small talk's note) and the
+   *  lookup planner's system turn (lookups on) -> chat messages for the engine's warm-up (keepPrefix + prefixOnly; app.js warmVoice) */
+  voiceWarmMessages() {
+    const out = [[{ role: 'system', content: voiceSystem(this.cookbooks, { research: !!this.research, note: this.research ? ANSWER_NOTE_OWN : '' }) }, { role: 'user', content: '.' }]];
+    if (this.research) out.push(lookupPlannerMessages('.'));
+    return out;
+  }
+  // ---- v4: weather in chat (assistant/weather.js; Josh, Nov 2: the US National Weather Service)
+  /** the place and ZIP tables (read on the first weather question) */
+  geo() { return this.hooks.geo ? this.hooks.geo() : loadGeo(); }
+  /** the weather sources behind one forecast(lat, lon) (each point kept 30 min) */
+  weatherSrc() { return this._wx || (this._wx = this.hooks.weather || createWeather()); }
+  /** a weather question -> { note (for her prompt), credit (under her words when a forecast came), kind, ms, periods, source, cached }:
+   *  where = the ZIP or US place it names; none named = the home ZIP (Settings › Juli, or "my ZIP is ..."), then the phone's location only
+   *  when this site may already read it (never asked from the chat). Only the rounded coordinates go to the source. Kept on the turn */
+  async weatherFor(ctx, st, save, ask) {
+    if (st.weather !== undefined) return st.weather;
+    const sid = ctx.job.session, jid = ctx.job.id;
+    let res = { kind: 'off' };
+    if (this.research) {
+      try {
+        const geo = await this.geo();
+        res = resolvePlace(ask, geo);
+        if (res.kind === 'none') {
+          const hz = this.hooks.homeZip ? this.hooks.homeZip() : null, z = hz ? geo.zcta.find(hz) : null;
+          if (z) res = { kind: 'ok', lat: z.lat, lon: z.lon, label: `your home ZIP (${z.zip})`, short: 'your area', via: 'home' };
+          else { const p = this.hooks.position ? await this.hooks.position() : null; if (p) res = { kind: 'ok', lat: p.lat, lon: p.lon, label: 'where you are', short: 'your area', via: 'location' }; }
+        }
+        if (res.kind === 'ok') {
+          this.emit('activity', sid, jid, 'Checking the forecast…');
+          try { res.fc = await this.weatherSrc().forecast(res.lat, res.lon, { hourly: ask.when === 'now', signal: ctx.signal }); }
+          finally { this.emit('activity', sid, jid, ''); }
+          if (res.fc && res.fc.outside) res = { kind: 'outside', name: res.label, us: [] };
+        }
+      } catch (e) { if (isAbort(e)) throw e; res = { kind: 'error', why: String((e && e.message) || e).slice(0, 80) }; }
+    }
+    const fc = res.fc || null;
+    st.weather = { note: weatherNote(ask, res, { voice: !!ctx.params.voice }), credit: fc && fc.periods ? fc.credit : null, kind: res.kind, via: res.via || null,
+      source: fc ? fc.source || null : null, ms: fc ? fc.ms : null, cached: fc ? !!fc.cached : null, periods: fc && fc.periods ? fc.periods.length : 0,
+      place: res.kind === 'ok' && fc && fc.periods ? { lat: Math.round(res.lat * 100) / 100, lon: Math.round(res.lon * 100) / 100, label: String(res.label || '').slice(0, 80) } : null };   // v4: the card under her answer opens this place's week and rain map
+    this.rlDiag('weather', { kind: res.kind, via: res.via || null, ms: st.weather.ms, cached: st.weather.cached, why: res.why || null });   // never the place
+    await save();
+    return st.weather;
+  }
+  /** "my ZIP is 10001": asked first, kept only on a yes (hooks.setHomeZip: this phone's storage); any other answer drops it -> a reply, or null */
+  async zipTurn(ctx, st, save) {
+    const sid = ctx.job.session, text = String(ctx.params.text || '').trim(), s = await this.session(sid);
+    if (!s) return null;
+    const pend = s.zipAsk && Date.now() - s.zipAsk.at < 10 * 60e3 ? s.zipAsk : null;
+    const set = zipSetAsk(text);
+    if (set) {
+      let z = null; try { z = (await this.geo()).zcta.find(set); } catch (e) { z = null; }
+      if (!z) return this.finish(ctx, st, save, `I couldn't find ${set} in the US ZIP code list. Could you check the digits?`, { kind: 'question', options: [] });
+      if (!this.hooks.setHomeZip) return this.finish(ctx, st, save, 'You can set a home ZIP in Settings › Juli.', {});
+      s.zipAsk = { zip: z.zip, at: Date.now() }; await this.db.put('sessions', s);
+      return this.finish(ctx, st, save, `Save ${z.zip} as your home ZIP for weather? It stays on this phone, and I use it when you ask about the weather without naming a place.`, { kind: 'question', options: ['Yes, save it', 'No'] });
+    }
+    if (!pend) return null;
+    delete s.zipAsk; await this.db.put('sessions', s);
+    if (YES.test(text)) { this.hooks.setHomeZip(pend.zip); return this.finish(ctx, st, save, `Saved. When you ask about the weather without a place, I'll use ${pend.zip}. You can change or clear it in Settings › Juli.`, {}); }
+    if (NO.test(text)) return this.finish(ctx, st, save, 'OK, I won\'t save it.', {});
+    return null;   // something else: the question lapses and this turn goes on
+  }
   async finish(ctx, st, save, text, extra = {}) {
     const sid = ctx.job.session;
     const foot = citationFooter(st.research || []);
     const body = extra.modelText && !st.refused && !st.likeAsked ? stripYes(stripPointer(String(text || '').trim(), ctx.params && ctx.params.text), ctx.params && ctx.params.text) : String(text || '').trim();   // 3.9 (juliqa): the Rights & Copyright line only where it belongs (round 4: no "Yes:" before an answer to a question that is not a yes or no one)
-    const reply = foot && (extra.modelText || extra.kind === 'result') ? `${body}\n\n${foot}` : body;
+    const body2 = st.weather && st.weather.credit && extra.modelText ? dropNoLive(body, { final: true }).text || body : body;   // v4: never "I don't have live weather" over the live forecast
+    const reply0 = foot && (extra.modelText || extra.kind === 'result') ? `${body2}\n\n${foot}` : body2;
+    const reply = st.weather && st.weather.credit && extra.modelText ? `${reply0}\n\n${st.weather.credit}` : reply0;   // v4: "Forecast: US National Weather Service (weather.gov)"
     st.stage = 'done'; st.reply = reply; await save();
-    await this.say(sid, Object.assign({ text: reply, history: body }, extra, st.rl && st.rl.length ? { research: st.rl.slice() } : {}, { modelText: undefined }));   // v026.2: the research list
+    await this.say(sid, Object.assign({ text: reply, history: body2 }, extra, st.rl && st.rl.length ? { research: st.rl.slice() } : {}, st.weather && st.weather.credit && st.weather.place && extra.modelText ? { forecast: st.weather.place } : {}, { modelText: undefined }));   // v4: + the forecast card (the Nowcast's map)   // v026.2: the research list
     if (st.route && (st.route.brain || (st.route.kind === 'writing' && !this.bigModel()))) {   // 3.9: with no Bigger brain, Juli's own writing too; 3.8 (v040): its follow-up ("make it shorter") goes to the Bigger brain too (ask: follow)
       const s = await this.session(sid); if (s) { s.brainLast = { kind: st.route.kind, at: Date.now() }; await this.db.put('sessions', s); }
     }
@@ -1020,6 +1114,24 @@ const FOLLOW_UP = /^(?=[\s\S]{0,160}$)[\s\S]*\b(?:it|its|it's|they|them|their|he
 const BRAIN_PLAN = 'Juli already looked up the facts for this message: they are the research results below, if any. Use only those facts and never invent facts. There are no more lookups for this message.';
 const BRAIN_WRITE = BRAIN_PLAN + ' The person asked for a piece of writing: write all of it as your reply, in plain text, in the form and length they asked for. Call ask_user only if the request is unclear in a way that changes the writing.';
 // 3.9: a piece of writing Juli plans herself (no Bigger brain for it): she writes it in her reply; only ask_user is offered (plan())
+// v4 (voice mode, Josh's phone Nov 2: a spoken turn read 2,476 prompt tokens, 12 s to her first word): a turn that came from the mic
+// gets a slim prompt (no tools unless it asks to make something, the always-on safety notes only, no skill, About me or summary, the last
+// two turns) and this note; its answer starts with a mood tag (ui/voiceout.js MOODS; app.js brainChat strips it and speaks the rest)
+export const VOICE_NAMES = 'Reading their message: it comes from speech recognition, so a name in it may have no capital letter, and a word right after "my dog", "my cat", "my friend" or the like is probably a name (in "my dog pepper", Pepper is the dog). Write your own reply with normal capital letters and punctuation.';
+export const VOICE_NOTE = 'The person is talking to you out loud and will hear your reply spoken. Start your reply with a mood tag in square brackets and a colon, '
+  + 'one or two of: neutral, calm, excited, teasing, smug, warning, sad, whisper, cheerful (for example "[calm and cheerful]:"). Then answer in one to three short sentences that sound natural spoken: '
+  + 'no lists, no markdown, no emoji. ' + VOICE_NAMES;
+export const VOICE_LIMITS = { history: 2, historyChars: 300, maxTokens: 200, helpNotes: 450, lookups: 1 };
+/** a spoken turn that asks to make something keeps its tools (and their notes); anything else is answered in words */
+export const voiceMakes = (text) => INTENT.pic.test(text) || INTENT.clip.test(text) || INTENT.song.test(text) || /music video/i.test(text);
+/** the slim voice-mode system prompt: the core rules, the always-on safety notes, the voice note, then this answer's note (an answer from
+ *  looked-up facts, a safety question's caution). The note goes last: the engine keeps the system turn's read-in from spoken turn to
+ *  spoken turn (llm.js keepPrefix), and a turn whose note changed reads in only from the note on (a partial hit) */
+export function voiceSystem(cookbooks, { research = true, note = '', cast = '' } = {}) {
+  return SYSTEM_CORE + cast + (research ? '' : '\n' + LOOKUPS_OFF) + '\n\nNOTES:\n' + cookbooks.text(cookbooks.ids(cookbooks.index.always)) + '\n\n' + VOICE_NOTE + (note ? '\n\n' + note : '');
+}
+/** the lookup planner's call (the Voice in bench measures it as the chat sends it) */
+export const lookupPlannerMessages = (text, forced = false) => [{ role: 'system', content: PLAN_SYS + (forced ? PLAN_FORCE : '') }, { role: 'user', content: 'MESSAGE:\n' + String(text).slice(0, 1200) }];
 export const JULI_WRITE = 'The person asked for a piece of writing: write all of it yourself as your reply, in plain text, in the form and length they asked for. Do not make a song, picture or clip for it. Call ask_user only if the request is unclear in a way that changes the writing.';
 const MAKE_NOUN = /\b(?:picture|photo|image|drawing|painting|portrait|poster|wallpaper|clip|video|movie|animation|song|track|tune|ballad|music|lyrics)s?\b/i;
 const WRITE_ASK = new RegExp(String.raw`\b(?:write|compose|draft|rewrite|redraft|polish|proofread|edit|shorten|expand|summari[sz]e|outline|brainstorm|plan|translate|make|give|create|come up with)\b[\s\S]{0,80}?\b(?:poems?|poetry|story|stories|tale|essay|letter|e-?mail|note|message|speech|toast|eulogy|script|scene|chapter|blog|post|caption|bio|article|report|review|haiku|limerick|sonnet|verses?|rhymes?|jokes?|riddles?|outline|itinerary|recipe|description|pitch|summary|tweet|cover letter|invitation|slogan|tagline|dialogue|monologue|fable|agenda|paragraph)\b`

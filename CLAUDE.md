@@ -76,9 +76,11 @@ Talk to the user in plain words. Do each step with them and confirm it worked be
 | `index.html`, `app.js`, `app.css`, `*.js`, `manifest.webmanifest`, `icon-*.png` | the app shell and UI |
 | `assistant/` | the assistant: agent, job queue, lookups, storyboard, music video |
 | `cast/` | Cast: people, voices, lip-sync screens |
-| `engine/` | the WebGPU engines: pictures/video, assistant LLM, music, voice, lip-sync, face finding |
+| `engine/` | the WebGPU engines: pictures/video, assistant LLM, music, voice, lip-sync, face finding; 4.0: speech to text (`engine/stt/`), Juli's own voice (`engine/p0voice/`), Make HDR (`engine/hdr/`), the kernel tune (`engine/tune/`) |
 | `ui/`, `popcorn/` | the home screen and dock (`shell.js`, `shell_core.js`, `gesture.js`, `wallpaper.js`, `browser.js`), Juli's chat and Chats (`chat.js`, `threads.js`, `chatactions.js`), Music (`music.js`, `music_core.js`), About me and routines (`memory_ui.js`), Settings' groups and the Cast screen (`settings.js`), the benchmark, research views; the progress animation |
 | `makeapp/` | the Apps lane: the sandbox host (`host.js`), the frame, the Kit, the checks, the skeletons, making (`fill.js`) and changing (`edit.js`) an app, games (`choose.js`), the Skeleton Guide |
+| `nowcast/` | the Nowcast (v4, Experimental): DeepMind DGMR on the phone on NOAA radar, its map screen and Juli's rain answers (ENGINE_API.md section 28) |
+| `games/` | games on their own page (v4): `games/trolley/`, Troll-E, the trash trolley game (three.js and Rapier, vendored; its README has the versions, the physics and the controls). Games › On your own lists it (`ui/storefront.js` SOLO) |
 | `skills/` | the skills that come with p0pc0rn (`index.json` + one `.md` each) |
 | `icons/ui/`, `wallpapers/` | the home screen's icons and default wallpaper (AI-generated for p0pc0rn; NOTICE.md) |
 | `docs/` | explainers (`TWO-PROCESSES.md`) and the README's screenshots |
@@ -177,8 +179,8 @@ The models are not in the repository. The phone downloads them from Hugging Face
   one starts by itself; after two failures in a row that model stops using the helper until p0pc0rn is reopened: Juli runs in one
   part, and the Bigger brain's work goes to Juli.
   How the two parts work: [docs/TWO-PROCESSES.md](docs/TWO-PROCESSES.md).
-- **Where did the tabs go? (3.9)** p0pc0rn opens on its home screen: Juli, Create, Music and Settings are in the dock; Library,
-  Apps, Browser, Games, Skills and Cast are on the home screen; Settings opens in groups (tap one to open it). Swipe in from the left edge, or use the home button at the top, to come
+- **Where did the tabs go? (3.9)** p0pc0rn opens on its home screen: Juli, Create, Music and Messages (coming soon) are in the dock
+  (v4; Settings was there in 3.9); Library, Apps, Browser, Games, Skills, Cast and Settings are on the home screen; Settings opens in groups (tap one to open it). Swipe in from the left edge, or use the home button at the top, to come
   back.
 - **A conversation seems lost.** Juli › Chats lists every conversation, 3.8's too. A chat can't be deleted while Juli is still
   working in it.
@@ -189,6 +191,16 @@ The models are not in the repository. The phone downloads them from Hugging Face
 - **Juli's move in a game looks wrong.** It is hers: the game never moves for her. Her model picks from every legal move, with the
   game's read of each one as a hint. When her model gives no answer the game says so ("Ask Juli again").
 - **A change to an app went wrong.** Apps › My apps › Undo the last change, or Versions for an earlier one.
+- **No mic in Juli's chat (4.0).** Voice input needs its model (Settings › Models › Voice input, 640 MB) and the switch in Settings ›
+  Juli; on an iPhone it needs iOS 27 (Juli's two-part mode). The microphone is asked for on the first tap only.
+- **Juli speaks with a robot voice (4.0).** That is Flite, the fallback, while her own voice (25 MB) downloads, or on a browser
+  without WebGPU. Settings › Models › Juli's voice shows its state.
+- **No Nowcast (4.0).** It covers the lower 48 US states only, from NOAA radar; outside them Juli says so and the NWS answers.
+  It is Experimental (trained on UK radar): for warnings, the National Weather Service.
+- **Restyle a clip asks for two downloads (4.0).** The looks LoRA (64 MB) and the clip reader (638 MB, under the LTX-2 licence
+  sheet). A longer video is restyled as its first 5 seconds unless "the whole video" (Experimental, up to 20 s) is on.
+- **Troll-E closed by itself (4.0, early access).** The game keeps a play trail; the next open of p0pc0rn or the game puts one line
+  in Settings › About › Diagnostics. Settings › Benchmark has a Troll-E bench for the phone.
 - **A clip stops while it develops.** Settings › Video decode memory › 450 MB.
 - **The phone is hot or slow.** Plug it in, take the case off, keep it out of the sun, and leave a short break between jobs.
 - **Out of space.** Settings › Models: delete the models the user doesn't need. The Library stays.
@@ -271,6 +283,59 @@ Each one came from a real page end on an iPhone with iOS 27.
   - With one KV head and every layer in one process the kernels run the same arithmetic in the same order as before. A kernel
     change must keep the words the same, split or not: check on a desktop browser first.
 
+### 4.0: where each new part lives
+
+- Restyle a clip and the video LoRA: ENGINE_API.md, "The video LoRA and Settings › Benchmark › Video" (`ui/style_v2v.js`,
+  `ui/style_run.js`, `ui/clipprep.js`, `ui/clipsound.js`); the notes below.
+- Voice input and Juli's voice: ENGINE_API.md, "Voice input" (`engine/stt/`, `ui/voicein.js`, `engine/p0voice/`, `ui/voiceout.js`).
+- Make HDR: section 26; the kernel tune: section 27; the Nowcast: section 28; Troll-E, Messages and Connection: section 29 and
+  `games/trolley/README.md`.
+- The six 4.0 packs are in `config.js` next to 3.9's, each at a pinned revision with its manifest sha256.
+
+### v4 notes: read these before changing the video engine's DiT or its LoRA
+
+- **The video LoRA** (`lora/sana_lora.js` inside `engine/pocketflux-engine.js`; ENGINE_API.md section 6.1): y = W x + B'(A x) on five linears
+  of every block and on t_block.1, as two small GEMMs per linear next to the base GEMM (never a merged or requantised weight). Every LoRA
+  dispatch sits behind `if (S.lh)` / `S.lora` in `models/sana_dit.js` and `i2v/sana_dit_cond.js`: a job without a LoRA must stay bit-identical
+  to the engine before it (the desk check compares both bundles). Keep `_block` / `step` of the two classes in step, as before.
+- The LoRA pack is made by `tools/sana_lora_pack.py` from the lab's safetensors (alpha / rank folded into B, rank padded to 32, one shard per
+  block); `SanaLora.check()` refuses a pack laid out any other way.
+- **Style video to video** (`v2v/video_encoder.js`, `v2v/v2v_sampler.js`; ENGINE_API.md section 8.1): the video encoder is causal and keeps
+  2 frames of history per conv between chunks; it reproduces the lab's TILED encode (Diffusers tiled_encode), which differs from an untiled
+  one by 3.5 %: keep the tiles and the in-place blend order. The sampler is the lab's `dmd_sample_v2v` in JS; keep it in step with svcore.
+- **Restyle a clip** (Create › Video; `ui/style_v2v.js`, `ui/clipprep.js`, `ui/style_run.js`; ENGINE_API.md app section): the look words
+  and the Klein edit words are the lab's own, word for word (a node test checks them against the model card's looks.json): never let a
+  model (Juli or another) rewrite the look part of the prompt; the person writes only what is in the clip. A video from the phone has
+  its own unticked box like a photo; Klein's first frame is checked, never saved. The clip's own sound goes under the new clip, cut to
+  its exact length (`ui/clipsound.js`: read from the sound track only, never the whole file). A longer video is restyled as its first
+  5 s unless the person turns on the whole video (Experimental, up to 20 s): one `restylelong` job queues a `restyle` job a part, each
+  later part pinned on the part before's LAST frame (no new Klein frame), the join keeps the shared frame once, and a failed part
+  carries on from that part: never from scratch. The size is never a hard centre crop: the whole frame scaled to fit the SANA 480p bucket nearest its
+  shape (`styleSize`: at most 832 × 480's 390 latent tokens a frame, a trim of at most 2.5 % of a side, else its edges repeated).
+  "Follow the motion" (Nov 3): Closely, the default, is the engine's `follow: 'close'` (stage 2 with a stage added at 0.76: 0.857 ->
+  0.76 -> 0.666 -> 0); Loosely is `'loose'` (stage 1, the model's own stages 1-3: the strongest look). Both are 3 transformer calls, so the
+  setting never shows a time. The schedule is in the engine's checkpoint key: a clip never resumes into another schedule; a job queued
+  before Nov 3 carries its own `startStep` (stage 1) and keeps it (`scheduleOf`).
+  The DEFAULT is per look (`LOOK_FOLLOW` in ui/style_v2v.js, one small table beside the looks): puppet, blueprint and origami
+  start Loosely (from stage 2 they lost their look on the held-out eval), the rest Closely; the person's own tap (`followPick`) wins.
+
+### v4 notes: read these before changing the Nowcast (`nowcast/`; ENGINE_API.md section 28)
+
+- Experimental and labelled so ("Experimental · trained on UK radar"); it never replaces or hides an NWS warning: warnings come first
+  (the banner, the outlines), with "For warnings, follow the National Weather Service and your local officials." No user-to-user traffic of
+  any kind; only NOAA, NASA (map tiles) and NWS hosts. Stale (over 15 minutes) or missing radar: it says so and does not run.
+- The int8 model must stay bit-identical to its reference run for the same inputs, seed and member (the desk check compares the hashes);
+  the float model is checked against TensorFlow. The box regrid is the reference tool's arithmetic step for step (a node test compares it).
+- Keep the credit lines (DeepMind DGMR CC BY 4.0 modified, NOAA MRMS, NASA GIBS, US Census) and the measured-only accuracy page.
+
+### v4 notes: read these before changing Make HDR (`engine/hdr/`, `ui/hdr.js`; ENGINE_API.md section 26)
+
+- HLG only (royalty-free, BBC / NHK); never add PQ / HDR10. The two looks (Vivid = R250, the default; Bright = W550) are p0pc0rn's own curve
+  family, five numbers each in `hdr_core.js` `LOOKS`; never ship ITU-R BT.2446's formulas.
+- The SPS colour rewrite (`hevc_vui.js`) must stay byte for byte what FFmpeg's `hevc_metadata` writes; the GPU kernel must stay within one
+  code value of `hdr_core.frameToI420`. An HDR copy is a new Library item: the original is never touched.
+- A gain-map JPEG goes out through `export.js` unchanged only while it carries the label and nothing else (its MPF offsets would break).
+
 ### 3.9 notes: read these before changing the home screen, the chat, Music, games, skills or memory
 
 The APIs are in ENGINE_API.md section 25. Each part has node tests for its pure module; keep them passing.
@@ -282,7 +347,8 @@ The APIs are in ENGINE_API.md section 25. Each part has node tests for its pure 
   - Kept on the phone: the home order (`p0pc0rn:home:order`), pinned apps (`p0pc0rn:home:pins`), bookmarks
     (`p0pc0rn:browser:bookmarks`) and unseen results (`p0pc0rn:shell:unseen`) in localStorage; the wallpaper in IndexedDB
     `p0pc0rn-shell`, scaled to 720 px wide and blurred by CSS.
-  - Connection is a grayed placeholder: a tap shows only "Coming soon".
+  - Connection and Messages (v4: in the dock, where Settings was; Settings is on the home screen after Connection, and a saved order
+    gets it there too: `orderHome`) are grayed placeholders: a tap shows only "Coming soon".
   - The page's rules still hold (the CSP in index.html): no inline styles or scripts, no `data:` images, no new network hosts.
     p0pc0rn ships no font files: text uses the device's system fonts (NOTICE.md). Nothing animates while `data-busy` is set.
 - **Settings and Cast** (`ui/settings.js`; pure parts `ui/settings_core.js`): Settings' 3.8 sections are moved, whole, into six
@@ -323,8 +389,10 @@ The APIs are in ENGINE_API.md section 25. Each part has node tests for its pure 
 - **Wallet Watch** (agentic; `makeapp/skeletons/wallet-watch.p0skel.json`, its pure CORE block node-tested): public Avalanche C-Chain
   addresses through the source `chain.snowtrace` (`makeapp/snowtrace.js`: Snowtrace's free, keyless API at `api.routescan.io`, the
   page's only new host). Josh's hard restrictions, all in the host: every request passes the HARD CAP in `makeapp/budget.js` (in
-  `createFetcher`): 1 a second, 60 a minute, 5,000 a day for every app together (half of the free 2 a second and 10,000 a day; the
-  day is UTC, kept in localStorage `p0pc0rn:quota:snowtrace`) and 1,600 a day for any one app; a refused request is never sent, a
+  `createFetcher`): v4, per COPY of p0pc0rn (its own storage): one every 2 s, 30 a minute, 2,500 a day for every app together (a
+  quarter of the free 2 a second and 10,000 a day, so two copies on one device stay within half; the day is UTC, kept in localStorage
+  `p0pc0rn:quota:snowtrace`) and 1,600 a day for any one app; Snowtrace is read only when p0pc0rn is opened from the Home Screen
+  (`installedOnly`, `installedApp()`: a browser tab gets `NOT_INSTALLED`, nothing sent); a refused request is never sent, a
   429 rests the source 1 minute, then 2, 4 ... 1 hour. An app that reads it (`idleOnly`) is checked at most every 15 minutes (its
   trigger's minMinutes; `check.js` keeps 15 for every app) and only when the phone is idle (`phoneBusy`: no model, no job of the
   person's queued or running); a job that arrives stops its requests (`BUSY`) and its question to Juli. Its data carries Routescan's
@@ -332,6 +400,20 @@ The APIs are in ENGINE_API.md section 25. Each part has node tests for its pure 
   Keep the caps, the floor, the idle rule, the credit and the one host. Juli's notices and habits are kept only when `K.facts` and
   the app's checks pass (no advice, no guess who is behind an address). Its skill `watch-a-wallet` (`for: app`) rides along with
   `K.ask(prompt, {skill})`. A check may return `{next}` (minutes; the host keeps it within its trigger's range).
+- **Token Watch** (v4, agentic; `makeapp/skeletons/token-watch.p0skel.json`, its pure CORE block node-tested): the new tokens that rose
+  most since launch on the chains the person picks (Avalanche on by default; up to 3 of Avalanche, Solana, Base, Ethereum, BNB Chain,
+  Arbitrum) through the source `tokens.dexscreener` (`makeapp/tokenwatch.js`: GeckoTerminal's new pools + DEX Screener's profiles and
+  boosts to find them, every number from DEX Screener, flags as GoPlus and RugCheck report them for the top 5). Only tokens on a real DEX
+  pool: a token still on a launchpad's bonding curve is never shown (`CURVE_DEXES`, `AMM_DEXES`; its launch = its first pair, from
+  `token-pairs/v1`). Ranking is code (launched in the window, at least $5,000 of liquidity, risen, biggest rise first), never the model; Juli writes 2 sentences a token and a
+  summary in a check, kept only when they pass the app's advice filter and `K.facts`, and every summary ends "Not financial advice. New
+  tokens are very high risk and many are scams." Josh's hard rules: no trading advice of any kind, "rose most since launch", never
+  "best", no buy, sell or swap anywhere; on safety p0pc0rn only relays what GoPlus and RugCheck report ("GoPlus reports ..."), takes no
+  responsibility for security or safety, and Juli checks no contract (her words never claim one is safe, audited or checked). The caps are in the host (`TOKENWATCH_RULES`, `createSpacing`, the fetcher's `perCall` and
+  per-host `budgets` with `perHour`): each chain at most every 5 minutes, at most 12 requests a look, an hourly cap per source. Watch
+  closely (the app's button, or "watch closely" in the chat: `apps.command`, answered in code) looks every 15 minutes while p0pc0rn is
+  open, posts only on a new entrant or a changed flag, and stops after 2 hours or when `p0.visit` changes. Keep the caps, the floor,
+  the disclaimer, the credit and the four hosts.
 - **Made apps: p5's names and the home indicator** (`makeapp/p5names.js`; hooks in `makeapp/check.js`, `host.js`, `frame.html`,
   `kit.js`): p5 starts after an app's script and writes its own functions and values onto `window`, so `checkBundle` refuses a
   sketch's top-level `function` / `var` with a p5 name (and a `let` / `const` / `class` with a name the Kit uses from p5, or `K`).

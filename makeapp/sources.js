@@ -3,8 +3,10 @@
 // page's CSP connect-src too), caches, rate-limits and hands back trimmed JSON. No keys, no cookies, no personal data in a request:
 // only the place (rounded to about 1 km) or the words the app passes. Each source is named on the permission sheet and the privacy page.
 
-import { createBudget } from './budget.js';   // 3.9 (Wallet Watch): the hard cap on a source with a free tier (Snowtrace)
+import { createBudget, NWS_CAP, COINGECKO_CAP, WFIGS_CAP } from './budget.js';   // v4 (scheduler): + one shared budget per keyless source (S.shared: no quota on its answers, no settings row)   // 3.9 (Wallet Watch): the hard cap on a source with a free tier (Snowtrace)
 import { SNOWTRACE } from './snowtrace.js';   // 3.9 (Wallet Watch): Snowtrace, the public Avalanche explorer (read only)
+import { TOKENS } from './tokenwatch.js';
+import { loadGeo, searchPlaces, US_ONLY_NOTE } from '../assistant/places.js';   // v4: the place search on this phone   // v4 (Token Watch): new tokens that rose most since launch (DEX Screener, GeckoTerminal, GoPlus, RugCheck)
 const r2 = (v) => Math.round(+v * 100) / 100;                 // ~1 km: enough for weather and fires, never a street address
 const ll = (p) => {
   const lat = +p.lat, lon = +p.lon;
@@ -18,7 +20,7 @@ const WFIGS = 'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/service
 
 export const SOURCES = {
   'alerts.nws': {
-    label: 'US National Weather Service alerts', host: 'api.weather.gov', attribution: 'NWS', ttl: 5 * 60e3, perMin: 6,
+    label: 'US National Weather Service alerts', host: 'api.weather.gov', attribution: 'NWS', ttl: 5 * 60e3, perMin: 6, shared: NWS_CAP,
     async get(p, get) {
       const { lat, lon } = ll(p), d = await get(`https://api.weather.gov/alerts/active?point=${lat},${lon}`);
       return { alerts: (d.features || []).slice(0, 25).map((f) => { const x = f.properties || {}; return { id: str(x.id, 200), event: str(x.event, 80), severity: str(x.severity, 20),
@@ -26,7 +28,7 @@ export const SOURCES = {
         ends: str(x.ends || x.expires, 40), sender: str(x.senderName, 80), description: str(x.description, 1200), instruction: str(x.instruction, 600) }; }) };
     } },
   'weather.nws': {
-    label: 'US National Weather Service forecast', host: 'api.weather.gov', attribution: 'NWS', ttl: 30 * 60e3, perMin: 4,
+    label: 'US National Weather Service forecast', host: 'api.weather.gov', attribution: 'NWS', ttl: 30 * 60e3, perMin: 4, shared: NWS_CAP,
     async get(p, get) {
       const { lat, lon } = ll(p), pt = await get(`https://api.weather.gov/points/${lat},${lon}`), u = pt && pt.properties && pt.properties.forecast;
       if (!u || !/^https:\/\/api\.weather\.gov\//.test(u)) throw Object.assign(new Error('no NWS forecast for this place (NWS covers the US only)'), { code: 'NO_DATA' });
@@ -35,16 +37,18 @@ export const SOURCES = {
         start: str(x.startTime, 40), day: !!x.isDaytime, temp: +x.temperature, unit: str(x.temperatureUnit, 2), wind: str(x.windSpeed, 30), short: str(x.shortForecast, 80),
         pop: n((x.probabilityOfPrecipitation || {}).value), detail: str(x.detailedForecast, 300) })) };   // pop: chance of rain or snow (%), null when NWS gives none
     } },
-  'geocode.openmeteo': {
-    label: 'Open-Meteo place search', host: 'geocoding-api.open-meteo.com', attribution: 'Open-Meteo', ttl: 24 * 3600e3, perMin: 10,
-    async get(p, get) {
+  // v4 (Josh, Nov 2: "If that's an issue it should be fixed"): the place search runs on this phone, in the US Census Bureau tables Juli's
+  // weather uses (assistant/places.js, read only when a search needs them): nothing the person types leaves the phone, and a ZIP code
+  // works. US towns and ZIP codes only (the weather sources cover the US). 'geocode.openmeteo', the id of apps made before, is this source
+  'geocode.local': {
+    label: 'US place and ZIP search (on this phone)', host: null, local: true, attribution: 'US Census Bureau (on this phone)', ttl: 24 * 3600e3, perMin: 60,
+    async get(p) {
       const name = str(p.name, 80).trim(); if (name.length < 2) throw bad('name is too short');
-      const d = await get(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=5&language=en&format=json`);
-      return { results: (d.results || []).slice(0, 5).map((x) => ({ name: str(x.name, 80), region: str(x.admin1, 80), country: str(x.country, 60), cc: str(x.country_code, 2),
-        lat: r2(x.latitude), lon: r2(x.longitude) })) };
+      const results = searchPlaces(await loadGeo(), name, 5).map((e) => ({ name: str(e.name, 80), region: str(e.region, 80), country: 'United States', cc: 'US', lat: r2(e.lat), lon: r2(e.lon) }));
+      return results.length ? { results } : { results: [], note: US_ONLY_NOTE };
     } },
   'fires.wfigs': {
-    label: 'US wildfire incidents (NIFC / WFIGS)', host: 'services3.arcgis.com', attribution: 'NIFC WFIGS', ttl: 15 * 60e3, perMin: 4,
+    label: 'US wildfire incidents (NIFC / WFIGS)', host: 'services3.arcgis.com', attribution: 'NIFC WFIGS', ttl: 15 * 60e3, perMin: 4, shared: WFIGS_CAP,
     async get(p, get) {
       const { lat, lon } = ll(p), mi = Math.max(5, Math.min(200, +p.radiusMi || 50)), dLat = mi / 69, dLon = mi / (69 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
       const q = new URLSearchParams({ where: "IncidentTypeCategory='WF'", geometry: [lon - dLon, lat - dLat, lon + dLon, lat + dLat].map((v) => v.toFixed(3)).join(','), geometryType: 'esriGeometryEnvelope',
@@ -57,7 +61,7 @@ export const SOURCES = {
         state: str(a.POOState, 8), lat: r2(g.y), lon: r2(g.x) }; }).filter((f) => Number.isFinite(f.lat) && Number.isFinite(f.lon)) };
     } },
   'prices.coingecko': {
-    label: 'CoinGecko crypto prices', host: 'api.coingecko.com', attribution: 'CoinGecko', ttl: 60e3, perMin: 4,
+    label: 'CoinGecko crypto prices', host: 'api.coingecko.com', attribution: 'CoinGecko', ttl: 60e3, perMin: 4, shared: COINGECKO_CAP,
     async get(p, get) {
       const ids = (Array.isArray(p.ids) ? p.ids : String(p.ids || '').split(',')).map((x) => String(x).trim().toLowerCase()).filter((x) => /^[a-z0-9-]{2,60}$/.test(x)).slice(0, 20);
       if (!ids.length) throw bad('ids: a list of CoinGecko coin ids');
@@ -69,7 +73,9 @@ export const SOURCES = {
         chg: { D: n(x.price_change_percentage_24h_in_currency), W: n(x.price_change_percentage_7d_in_currency), M: n(x.price_change_percentage_30d_in_currency), Y: n(x.price_change_percentage_1y_in_currency) } })) };
     } },
   'chain.snowtrace': SNOWTRACE,   // 3.9 (Wallet Watch): public Avalanche C-Chain activity of the addresses an app adds (makeapp/snowtrace.js)
+  'tokens.dexscreener': TOKENS,   // v4 (Token Watch): the new tokens on the chains an app picks, numbers from DEX Screener (makeapp/tokenwatch.js)
 };
+SOURCES['geocode.openmeteo'] = SOURCES['geocode.local'];   // v4: apps made before keep their permission, now answered on this phone
 export const SOURCE_IDS = Object.keys(SOURCES);
 
 /** the host side of p0.fetch: a cache + per-source rate limit around SOURCES[id].get. fetchJSON(url) does the network call
@@ -82,36 +88,63 @@ export const SOURCE_IDS = Object.keys(SOURCES);
  *  throws BUSY, DAILY_CAP, APP_CAP, RATE_LIMIT or BACKOFF (with `until`). A 429, or the source's own "rate limit" answer (S.rateLimited),
  *  rests the source: 1 minute, then 2, 4 ... up to an hour; the next answer that works ends the rest. Its answers carry `quota` (the
  *  day's usage, this app's share in it). store = where the day's count is kept (localStorage; injectable, null = this page only); sleep
- *  is injectable; a source's ttl may be a function. */
-export function createFetcher({ fetchJSON = defaultFetchJSON, now = () => Date.now(), store, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+ *  is injectable; a source's ttl may be a function.
+ *  v4 (Token Watch): a source may read several hosts (S.hosts) with a budget for each (S.budgets[host]: its own hourly cap too, HOUR_CAP),
+ *  may send at most S.perCall requests for one call (CALL_CAP: the 13th is never sent), and its get() has a third argument {scope, now,
+ *  store} (the asking app, the clock, the storage); S.rateLimited(answer, url). */
+/** v4 (security review): p0pc0rn opened from the Home Screen (installed: display-mode standalone, or iOS's navigator.standalone). A
+ *  source marked installedOnly (Snowtrace) is read only there: storage, and so its cap, is per browsing context, and an iPhone keeps a
+ *  Safari tab's apart from the Home Screen app's. Outside a browser (node tests) there is no tab: true */
+export function installedApp() {
+  try {
+    if (typeof matchMedia !== 'function') return true;
+    return matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || (typeof navigator !== 'undefined' && navigator.standalone === true);
+  } catch (e) { return false; }
+}
+export const NOT_INSTALLED_WHY = 'Snowtrace works only in p0pc0rn opened from your Home Screen (Share › Add to Home Screen, then open it from there)';
+export function createFetcher({ fetchJSON = defaultFetchJSON, now = () => Date.now(), store, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), installed = installedApp } = {}) {
   const cache = new Map(), calls = new Map(), budgets = new Map();
   const ls = store !== undefined ? store : (() => { try { return globalThis.localStorage || null; } catch (e) { return null; } })();
-  const budgetOf = (id, S) => { if (!S.budget) return null; if (!budgets.has(id)) budgets.set(id, createBudget(S.budget, { store: ls, now })); return budgets.get(id); };
-  const capErr = (S, r) => Object.assign(new Error(r.code === 'DAILY_CAP' ? `${S.budget.name}: today's requests are used up (p0pc0rn keeps to half of its free limit)`
-    : r.code === 'APP_CAP' ? `${S.budget.name}: this app's requests for today are used up (each app keeps to its share)`
-    : r.code === 'BACKOFF' ? `${S.budget.name} asked p0pc0rn to slow down` : `${S.budget.name}: one request at a time`), { code: r.code, until: r.until || 0 });
+  const budgetOf = (id, S, host) => {   // v4 (Token Watch): a source with several hosts has a budget for each (S.budgets[host]), else S.budget
+    const cfg = S.budgets && host && S.budgets[host] ? S.budgets[host] : S.budget || S.shared; if (!cfg) return null;   // v4 (scheduler): + a keyless source's shared budget
+    const k = cfg.key ? 'key ' + cfg.key : id; if (!budgets.has(k)) budgets.set(k, createBudget(cfg, { store: ls, now })); return budgets.get(k);   // v4 (scheduler): one per key, whichever source asks
+  };
+  const capErr = (C, r) => Object.assign(new Error(r.code === 'DAILY_CAP' ? `${C.name}: today's requests are used up (p0pc0rn keeps to ${C.freePerDay ? 'half of its free limit' : 'its own cap'})`
+    : r.code === 'APP_CAP' ? `${C.name}: this app's requests for today are used up (each app keeps to its share)`
+    : r.code === 'HOUR_CAP' ? `${C.name}: this hour's requests are used up (p0pc0rn keeps its own hourly cap)`   // v4 (Token Watch)
+    : r.code === 'CALL_CAP' ? `one look sends at most ${r.n} requests`   // v4 (Token Watch)
+    : r.code === 'SHARE' ? `${C.name}: another app is using it too, so each keeps to its part of the minute`   // v4 (share)
+    : r.code === 'BACKOFF' ? `${C.name} asked p0pc0rn to slow down` : `${C.name}: one request at a time`), { code: r.code, until: r.until || 0 });
   return async function fetchSource(id, params = {}, scope = '', o = {}) {
     const S = SOURCES[id]; if (!S) throw Object.assign(new Error('unknown source ' + id), { code: 'UNKNOWN_SOURCE' });
-    const B = budgetOf(id, S), ttl = typeof S.ttl === 'function' ? S.ttl(params || {}) : S.ttl;
+    if (S.installedOnly && !installed()) throw Object.assign(new Error(NOT_INSTALLED_WHY), { code: 'NOT_INSTALLED', until: 0 });   // v4: per device, not per tab: nothing is sent
+    const B = S.budget || (S.budgets && S.budgets[S.host]) ? budgetOf(id, S, S.host) : null, ttl = typeof S.ttl === 'function' ? S.ttl(params || {}) : S.ttl;
     const key = String(scope) + '\n' + id + ' ' + JSON.stringify(params || {}), hit = cache.get(key), t = now();
     if (hit && t - hit.t < ttl) { if (B) hit.v.quota = B.usage(scope); return hit.v; }
     const recent = (calls.get(id) || []).filter((x) => t - x < 60e3);
     if (recent.length >= S.perMin) { if (hit) return hit.v; throw Object.assign(new Error(`${S.label}: too many requests, try again in a minute`), { code: 'RATE_LIMIT' }); }
     recent.push(t); calls.set(id, recent);
     const gate = () => { const g = o && typeof o.gate === 'function' ? o.gate() : ''; if (g) throw Object.assign(new Error(`${S.label}: waiting for the phone to be idle (${String(g).slice(0, 80)})`), { code: 'BUSY', until: 0 }); };
+    let sent = 0;   // v4 (Token Watch): this call's requests (S.perCall)
     const net = async (url) => {
       gate();   // the phone got busy: nothing is sent; the rest waits for its next idle check
-      if (!B) return fetchJSON(url);
-      let r = B.take(scope);
-      if (!r.ok && r.code === 'RATE_LIMIT' && r.waitMs <= 1500) { await sleep(r.waitMs); gate(); r = B.take(scope); }   // paced: the next token, never a burst
-      if (!r.ok) throw capErr(S, r);   // nothing is sent
+      if (S.perCall && sent >= S.perCall) throw capErr({ name: S.label }, { code: 'CALL_CAP', n: S.perCall });   // v4 (Token Watch): never sent
+      const Bh = budgetOf(id, S, new URL(url).hostname);
+      if (!Bh) { sent++; return fetchJSON(url); }
+      const C = Bh.cfg;
+      let r = Bh.take(scope);
+      if (!r.ok && r.code === 'RATE_LIMIT' && r.waitMs <= Math.max(1500, 1000 / (C.perSec || 1) + 500)) { await sleep(r.waitMs); gate(); r = Bh.take(scope); }   // paced: the next token, never a burst (v4: one every 2 s waits up to 2.5 s)
+      if (!r.ok) throw capErr(C, r);   // nothing is sent
+      sent++;
       let d;
-      try { d = await fetchJSON(url); } catch (e) { if (e && e.code === 'HTTP_429') { B.note429(); throw capErr(S, { code: 'BACKOFF', until: B.usage().backoffUntil }); } throw e; }
-      if (S.rateLimited && S.rateLimited(d)) { B.note429(); throw capErr(S, { code: 'BACKOFF', until: B.usage().backoffUntil }); }
-      B.noteOk(); return d;
+      try { d = await fetchJSON(url); } catch (e) { if (e && e.code === 'HTTP_429') { Bh.note429(); throw capErr(C, { code: 'BACKOFF', until: Bh.usage().backoffUntil }); } throw e; }
+      if (S.rateLimited && S.rateLimited(d, url)) { Bh.note429(); throw capErr(C, { code: 'BACKOFF', until: Bh.usage().backoffUntil }); }
+      Bh.noteOk(); return d;
     };
-    const v = await S.get(params || {}, (url) => { if (new URL(url).hostname !== S.host) throw new Error('host not allowed'); return net(url); });
+    const okHost = (h) => (Array.isArray(S.hosts) ? S.hosts.includes(h) : h === S.host);   // v4 (Token Watch): + a source's several hosts
+    const v = await S.get(params || {}, (url) => { if (!okHost(new URL(url).hostname)) throw new Error('host not allowed'); return net(url); }, { scope: String(scope), now: t, store: ls });
     v.source = S.attribution; v.fetchedAt = t; if (B) v.quota = B.usage(scope);
+    if (S.budgets) v.quotas = Object.values(S.budgets).map((C) => Object.assign({ name: C.name }, budgetOf(id, S, Object.keys(S.budgets).find((h) => S.budgets[h] === C)).usage(scope)));   // v4 (Token Watch): each source's hour and day
     cache.set(key, { t, v }); if (cache.size > 200) cache.delete(cache.keys().next().value);
     return v;
   };

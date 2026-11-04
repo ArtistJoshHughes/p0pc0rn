@@ -441,6 +441,36 @@ html[data-busy] .ind, html[data-busy] .tab::after, html[data-busy] .chev { trans
 .seg.src button { min-height: 52px; padding: 7px 6px; }
 .seg.src b { font-size: 13px; line-height: 16px; text-wrap: balance; }
 .vpics { display: flex; flex-direction: column; gap: var(--s-2); }
+/* ---------- v4: Restyle a clip (ui/style_v2v.js): the fourth source, the clip, the 20 looks, the styled first frame's check ---------- */
+.seg.src.four { grid-template-columns: repeat(4, 1fr); }
+.seg.src.four button { padding: 7px 3px; }
+.seg.src.four b { font-size: 12.5px; }
+.vstyle { display: flex; flex-direction: column; gap: var(--s-3); }
+.vclip .vs-meta { font-variant-numeric: tabular-nums; }
+.vclip .vs-prep { height: 3px; border-radius: 2px; background: var(--surface-2); overflow: hidden; margin-top: var(--s-1); }
+.vclip .vs-prep i { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform var(--d-2) linear; }
+.looks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-3) var(--s-2); }
+.look { display: flex; flex-direction: column; gap: 4px; padding: 0; border: 0; background: none; color: var(--text-1); text-align: left; min-width: 0; font: inherit;
+  -webkit-tap-highlight-color: transparent; }
+.look img { width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; display: block; border-radius: var(--r-sm); background: var(--surface-2);
+  box-shadow: 0 0 0 0 var(--accent); transition: box-shadow var(--d-3), transform var(--d-4) var(--ease-spring); }
+.look:active img { transform: scale(.97); }
+.look[aria-checked="true"] img { box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 5px var(--accent); }
+.look .ln { font-size: 12px; line-height: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.look .lb { font-size: 11px; line-height: 13px; color: var(--text-3); font-weight: 500; }
+.look[aria-checked="true"] .ln { color: var(--accent); }
+.v-sty-need { padding: var(--s-3) var(--s-4); border-radius: var(--r-md); background: var(--accent-soft); font-size: 14px; line-height: 19px; }
+.v-sty-need .ic { color: var(--accent); flex: none; }
+.sty-review { padding: var(--s-3) 0 0; }
+/* v4: the whole video, in parts (Experimental) */
+.sty-whole { border-radius: var(--r-md); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--hairline); }
+.sty-whole .exp { display: inline-block; margin-left: 4px; padding: 0 7px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: 11px; line-height: 18px; font-weight: 600; vertical-align: 1px; white-space: nowrap; }
+.sty-whole .vs-prep { height: 3px; margin: 0 var(--s-4); border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.sty-whole .vs-prep i { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform var(--d-2) linear; }
+.sty-kept { padding: var(--s-3) var(--s-4); border-radius: var(--r-md); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--hairline); }
+.sty-kept .row-btns { margin-top: var(--s-2); }
+.sty-whole #sty-whole-read { padding: var(--s-2) var(--s-4) var(--s-3); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .look img { transition: none; } .look:active img { transform: none; } }
 .vslot { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: var(--s-3); border-radius: var(--r-md);
   background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--hairline); transition: box-shadow var(--d-3); }
 .vslot.need { box-shadow: inset 0 0 0 1.5px var(--accent); }
@@ -562,6 +592,20 @@ html[data-busy] .ind, html[data-busy] .tab::after, html[data-busy] .chev { trans
 .as-add { color: var(--text-2); cursor: pointer; }
 .as-send { background: var(--accent); color: #fff; width: 40px; height: 40px; margin: 2px; flex: none; }
 .as-send[aria-disabled="true"] { background: var(--surface-3); color: var(--text-3); }
+/* v4: voice input (ui/voicein.js): the mic beside Send; red while it listens (a soft pulse, still while html[data-busy]); the bar after you stop */
+.as-mic { color: var(--text-2); width: 40px; height: 40px; margin: 2px; flex: none; border-radius: 50%; }
+.as-mic.wait { opacity: .55; }
+.as-mic.on { background: var(--danger); color: #fff; animation: as-mic-pulse 1.6s var(--ease-inout) infinite; }
+@keyframes as-mic-pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--danger) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .as-mic.on { animation: none; } }
+.as-voicebar { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2) var(--s-2); }
+.as-voicebar > span { flex: 1; color: var(--text-2); font-size: 15px; }
+.as-wave { display: none; flex: 1; min-width: 0; height: 28px; color: var(--danger); }
+.as-voicebar[data-mode="mic"] .as-wave, .as-voicebar[data-mode="juli"] .as-wave { display: block; }
+.as-voicebar[data-mode="mic"] > span, .as-voicebar[data-mode="juli"] > span { flex: none; font-size: 13px; }
+.as-voicebar[data-mode="juli"] .as-wave { color: var(--accent); }
+#s-voice-lang { max-width: 46%; padding: 6px 8px; border-radius: var(--r-sm); background: var(--surface-2); color: inherit; font: inherit; font-size: 15px; box-shadow: inset 0 0 0 1px var(--hairline); }
+#s-homezip { flex: none; width: 5.6em; height: 40px; padding: 0 8px; text-align: center; font-size: 16px; letter-spacing: 0.04em; box-shadow: inset 0 0 0 1px var(--hairline); }   /* v4 (weather): the home ZIP in Settings › Juli */
 .as-photo { display: flex; flex-direction: column; gap: var(--s-2); }
 .as-photo-top { display: flex; }
 .as-photo .attest { padding-bottom: var(--s-3); }
@@ -716,3 +760,8 @@ html.app-open, html.app-open body { overflow: hidden; }
 .bench-row { justify-content: flex-start; flex-wrap: wrap; }
 .bench-out { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3) var(--s-4); }
 .bench-text { white-space: pre-wrap; margin: 0; }
+/* v4: the Voice in bench's own page (ui/voicebench.html) */
+body.vb-page { overflow: auto; }
+.vb { max-width: 680px; margin: 0 auto; padding: calc(var(--safe-t) + 16px) 16px calc(var(--safe-b) + 24px); display: flex; flex-direction: column; gap: var(--s-3); }
+.vb .bench-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.vb-actions { display: flex; gap: var(--s-2); }

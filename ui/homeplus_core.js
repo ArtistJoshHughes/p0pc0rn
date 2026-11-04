@@ -68,7 +68,7 @@ export function siteTile(url, title) {
 }
 
 // ---- the activity pill: an app working on its own (window event 'p0:apps', ui/storefront.js / makeapp/host.js)
-const SOURCE_WORDS = { 'weather.nws': 'the weather', 'alerts.nws': 'weather alerts', 'geocode.openmeteo': 'places', 'fires.wfigs': 'wildfires', 'prices.coingecko': 'prices', 'chain.snowtrace': 'Avalanche addresses on Snowtrace' };   // 3.9 Wallet Watch: + Snowtrace
+const SOURCE_WORDS = { 'weather.nws': 'the weather', 'alerts.nws': 'weather alerts', 'geocode.local': 'places', 'geocode.openmeteo': 'places', 'fires.wfigs': 'wildfires', 'prices.coingecko': 'prices', 'chain.snowtrace': 'Avalanche addresses on Snowtrace', 'tokens.dexscreener': 'new tokens on DEX Screener' };   // v4 Token Watch: + DEX Screener; 3.9 Wallet Watch: + Snowtrace
 /** what a fetch looked up: the event's label ('the weather'; a whole phrase 'looking up the weather' is taken apart), else the source's */
 const looked = (s) => String(s.label || SOURCE_WORDS[s.source] || 'something online').replace(/^looking up\s+/i, '') || 'something online';
 /** one step in plain words ('looking up the weather', 'asking Juli', ...), or '' for a step nobody needs to see */

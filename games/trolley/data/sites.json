@@ -1,0 +1,1220 @@
+{
+ "version": 1,
+ "rule": "salvage sites (static, stripped in place; a site's salvage comes back after `restock` days) and the loose supplies' spawn points; generated clear of every collider, route, gate, spawn point, lane and puddle (the tests check it)",
+ "sites": [
+  {
+   "id": "s1",
+   "item": "rusty_beam",
+   "x": 2.5,
+   "z": 15.86,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 3,
+   "area": "forest"
+  },
+  {
+   "id": "s2",
+   "item": "alternator",
+   "x": 12.94,
+   "z": 16.67,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s3",
+   "item": "alternator",
+   "x": 13.12,
+   "z": 15.52,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s4",
+   "item": "cctv_dome",
+   "x": 11.24,
+   "z": 13.12,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 2,
+   "area": "metro"
+  },
+  {
+   "id": "s5",
+   "item": "cctv_dome",
+   "x": 21.57,
+   "z": 9.08,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 2,
+   "area": "metro"
+  },
+  {
+   "id": "s6",
+   "item": "office_monitor",
+   "x": 13.7,
+   "z": 13.87,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s7",
+   "item": "office_monitor",
+   "x": 11.63,
+   "z": 11.84,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s8",
+   "item": "shop_fan",
+   "x": 23.4,
+   "z": 6.36,
+   "yawDeg": 270,
+   "yield": 1,
+   "restock": 3,
+   "area": "park"
+  },
+  {
+   "id": "s9",
+   "item": "shop_fan",
+   "x": 13.68,
+   "z": 12.55,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s10",
+   "item": "iv_pole",
+   "x": 14,
+   "z": 11.29,
+   "yawDeg": 270,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s11",
+   "item": "iv_pole",
+   "x": 23.28,
+   "z": 11.19,
+   "yawDeg": 270,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s12",
+   "item": "car_battery",
+   "x": 20.36,
+   "z": 10.35,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 2,
+   "area": "metro"
+  },
+  {
+   "id": "s13",
+   "item": "car_battery",
+   "x": -7.36,
+   "z": -0.19,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 2,
+   "area": "hall"
+  },
+  {
+   "id": "s14",
+   "item": "car_battery",
+   "x": 20.27,
+   "z": 11.3,
+   "yawDeg": 270,
+   "yield": 1,
+   "restock": 2,
+   "area": "metro"
+  },
+  {
+   "id": "s15",
+   "item": "extinguisher",
+   "x": -7.23,
+   "z": 0.57,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 3,
+   "area": "hall"
+  },
+  {
+   "id": "s16",
+   "item": "extinguisher",
+   "x": 12.8,
+   "z": 12.27,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s17",
+   "item": "multimeter_clamp",
+   "x": 7.36,
+   "z": 8.2,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 3,
+   "area": "yard"
+  },
+  {
+   "id": "s18",
+   "item": "jumper_clamps",
+   "x": 8.78,
+   "z": 17.49,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 2,
+   "area": "forest"
+  },
+  {
+   "id": "s19",
+   "item": "jumper_clamps",
+   "x": 13.98,
+   "z": 15.36,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 2,
+   "area": "metro"
+  },
+  {
+   "id": "s20",
+   "item": "work_light",
+   "x": -7.63,
+   "z": -0.92,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 3,
+   "area": "hall"
+  },
+  {
+   "id": "s21",
+   "item": "inspection_lamp",
+   "x": 5.21,
+   "z": 8.09,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 3,
+   "area": "yard"
+  },
+  {
+   "id": "s22",
+   "item": "fuel_jug",
+   "x": 7.04,
+   "z": 7.39,
+   "yawDeg": 270,
+   "yield": 1,
+   "restock": 2,
+   "area": "yard"
+  },
+  {
+   "id": "s23",
+   "item": "fuel_jug",
+   "x": 2.93,
+   "z": -5.62,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 2,
+   "area": "hall"
+  },
+  {
+   "id": "s24",
+   "item": "solar_panel",
+   "x": 23.47,
+   "z": 7.89,
+   "yawDeg": 180,
+   "yield": 2,
+   "restock": 3,
+   "area": "park"
+  },
+  {
+   "id": "s25",
+   "item": "solar_panel",
+   "x": 13.84,
+   "z": 14.55,
+   "yawDeg": 0,
+   "yield": 2,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s26",
+   "item": "solar_panel",
+   "x": 23.32,
+   "z": 5.21,
+   "yawDeg": 270,
+   "yield": 2,
+   "restock": 3,
+   "area": "park"
+  },
+  {
+   "id": "s27",
+   "item": "alarm_beacon",
+   "x": 14.74,
+   "z": 15.53,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 4,
+   "area": "metro"
+  },
+  {
+   "id": "s28",
+   "item": "leech_husk",
+   "x": 6.66,
+   "z": 17.72,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 3,
+   "area": "forest"
+  },
+  {
+   "id": "s29",
+   "item": "leech_husk",
+   "x": 5.86,
+   "z": 17.04,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 3,
+   "area": "forest"
+  },
+  {
+   "id": "s30",
+   "item": "dock_charger",
+   "x": -5.72,
+   "z": 1.08,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 4,
+   "area": "hall"
+  },
+  {
+   "id": "s31",
+   "item": "wire_wall",
+   "x": -2.05,
+   "z": 5.68,
+   "yawDeg": 180,
+   "yield": 4,
+   "restock": 3,
+   "area": "hall"
+  },
+  {
+   "id": "s32",
+   "item": "wire_wall",
+   "x": 19.09,
+   "z": 12.65,
+   "yawDeg": 90,
+   "yield": 4,
+   "restock": 3,
+   "area": "metro"
+  },
+  {
+   "id": "s33",
+   "item": "accordion_gate",
+   "x": -6.5,
+   "z": -0.93,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 3,
+   "area": "hall"
+  },
+  {
+   "id": "s34",
+   "item": "accordion_gate",
+   "x": -7.05,
+   "z": 1.43,
+   "yawDeg": 270,
+   "yield": 1,
+   "restock": 3,
+   "area": "hall"
+  },
+  {
+   "id": "s35",
+   "item": "roof_pallet",
+   "x": 0.08,
+   "z": 7.33,
+   "yawDeg": 0,
+   "yield": 6,
+   "restock": 3,
+   "area": "yard"
+  },
+  {
+   "id": "s36",
+   "item": "roof_pallet",
+   "x": 22.86,
+   "z": 3.84,
+   "yawDeg": 270,
+   "yield": 6,
+   "restock": 3,
+   "area": "park"
+  },
+  {
+   "id": "s37",
+   "item": "roof_pallet",
+   "x": 9.75,
+   "z": 5.13,
+   "yawDeg": 90,
+   "yield": 6,
+   "restock": 3,
+   "area": "yard"
+  },
+  {
+   "id": "s38",
+   "item": "hoop_guard",
+   "x": -4.25,
+   "z": 1.94,
+   "yawDeg": 0,
+   "yield": 2,
+   "restock": 3,
+   "area": "hall"
+  },
+  {
+   "id": "s39",
+   "item": "workbench",
+   "x": -6.55,
+   "z": -2.62,
+   "yawDeg": 180,
+   "yield": 1,
+   "restock": 4,
+   "area": "hall"
+  },
+  {
+   "id": "s40",
+   "item": "bedding",
+   "x": 20.04,
+   "z": 16,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 4,
+   "area": "metro"
+  },
+  {
+   "id": "s41",
+   "item": "plywood_crate",
+   "x": 4.3,
+   "z": 3.32,
+   "yawDeg": 270,
+   "yield": 3,
+   "restock": 3,
+   "area": "hall"
+  },
+  {
+   "id": "s42",
+   "item": "guard_panel",
+   "x": -4.97,
+   "z": -0.98,
+   "yawDeg": 0,
+   "yield": 6,
+   "restock": 3,
+   "area": "hall"
+  },
+  {
+   "id": "s43",
+   "item": "guard_panel",
+   "x": 22.89,
+   "z": 2.67,
+   "yawDeg": 180,
+   "yield": 6,
+   "restock": 3,
+   "area": "park"
+  },
+  {
+   "id": "s44",
+   "item": "tool_cabinet",
+   "x": 4.87,
+   "z": 0.42,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 4,
+   "area": "hall"
+  }
+ ],
+ "props": [
+  {
+   "id": "p0",
+   "item": "pallet_rack",
+   "prop": 0,
+   "x": 9.43,
+   "z": -4.1,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 4,
+   "area": "yard",
+   "bonus": {
+    "rusty_beam": 1
+   }
+  },
+  {
+   "id": "p1",
+   "item": "ibc_tank",
+   "prop": 1,
+   "x": 10,
+   "z": -1.45,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 4,
+   "area": "yard"
+  },
+  {
+   "id": "p2",
+   "item": "plywood_crate",
+   "prop": 2,
+   "x": 8.85,
+   "z": -1.55,
+   "yawDeg": 6,
+   "yield": 2,
+   "restock": 3,
+   "area": "yard"
+  },
+  {
+   "id": "p4",
+   "item": "pallet_jack",
+   "prop": 4,
+   "x": 8.6,
+   "z": 4.6,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 4,
+   "area": "yard",
+   "bonus": {
+    "copper_cable": 1,
+    "hydraulic_hose": 2
+   }
+  },
+  {
+   "id": "p5",
+   "item": "forklift",
+   "prop": 5,
+   "x": 6.4,
+   "z": 6.66,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 5,
+   "area": "yard",
+   "bonus": {
+    "copper_cable": 2
+   }
+  },
+  {
+   "id": "p6",
+   "item": "edge_rail",
+   "prop": 6,
+   "x": -2,
+   "z": 6.32,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 3,
+   "area": "yard"
+  },
+  {
+   "id": "p20",
+   "item": "car_frame",
+   "prop": 20,
+   "x": 13.3,
+   "z": 18.05,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 4,
+   "area": "metro",
+   "bonus": {
+    "copper_cable": 2,
+    "alternator": 1
+   }
+  },
+  {
+   "id": "p23",
+   "item": "vending_machine",
+   "prop": 23,
+   "x": 18,
+   "z": 14.3,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 4,
+   "area": "metro",
+   "bonus": {
+    "copper_cable": 1,
+    "light_bulb": 2
+   }
+  },
+  {
+   "id": "p25",
+   "item": "utility_cabinet",
+   "prop": 25,
+   "x": 19.73,
+   "z": 12.6,
+   "yawDeg": 90,
+   "yield": 1,
+   "restock": 4,
+   "area": "metro",
+   "bonus": {
+    "copper_cable": 3
+   }
+  },
+  {
+   "id": "p31",
+   "item": "hvac_duct",
+   "prop": 31,
+   "x": 19.5,
+   "z": 18.2,
+   "yawDeg": 20,
+   "yield": 1,
+   "restock": 3,
+   "area": "metro",
+   "bonus": {
+    "copper_cable": 1
+   }
+  },
+  {
+   "id": "p32",
+   "item": "wheelbarrow",
+   "prop": 32,
+   "x": -6.4,
+   "z": 13.6,
+   "yawDeg": 30,
+   "yield": 1,
+   "restock": 3,
+   "area": "forest"
+  },
+  {
+   "id": "d0",
+   "item": "drum_rusty",
+   "drum": 0,
+   "x": -7.4,
+   "z": 14.2,
+   "yawDeg": 20,
+   "yield": 1,
+   "restock": 3,
+   "area": "forest"
+  },
+  {
+   "id": "d1",
+   "item": "drum_rusty",
+   "drum": 1,
+   "x": -6.8,
+   "z": 10.9,
+   "yawDeg": 0,
+   "yield": 1,
+   "restock": 3,
+   "area": "forest"
+  },
+  {
+   "id": "d2",
+   "item": "drum_rusty",
+   "drum": 2,
+   "x": 2.6,
+   "z": 18.5,
+   "yawDeg": 60,
+   "yield": 1,
+   "restock": 3,
+   "area": "forest"
+  }
+ ],
+ "spawns": [
+  [
+   18.19,
+   3.55,
+   "park"
+  ],
+  [
+   22.74,
+   10.07,
+   "metro"
+  ],
+  [
+   7.29,
+   9.65,
+   "forest"
+  ],
+  [
+   16.79,
+   -4.7,
+   "park"
+  ],
+  [
+   15.58,
+   10.11,
+   "metro"
+  ],
+  [
+   20.52,
+   -3.86,
+   "park"
+  ],
+  [
+   14.54,
+   -3.37,
+   "park"
+  ],
+  [
+   15.47,
+   1.87,
+   "park"
+  ],
+  [
+   18.37,
+   -4.81,
+   "park"
+  ],
+  [
+   16.36,
+   6.44,
+   "park"
+  ],
+  [
+   1.51,
+   11.77,
+   "forest"
+  ],
+  [
+   6.07,
+   0.57,
+   "hall"
+  ],
+  [
+   -4.16,
+   12,
+   "forest"
+  ],
+  [
+   14.61,
+   6.34,
+   "park"
+  ],
+  [
+   17.63,
+   4.73,
+   "park"
+  ],
+  [
+   16.19,
+   3.91,
+   "park"
+  ],
+  [
+   21.85,
+   -3.7,
+   "park"
+  ],
+  [
+   12.66,
+   -0.63,
+   "park"
+  ],
+  [
+   23.02,
+   -1.32,
+   "park"
+  ],
+  [
+   17.53,
+   16.49,
+   "metro"
+  ],
+  [
+   16.63,
+   -2.71,
+   "park"
+  ],
+  [
+   21.94,
+   0.73,
+   "park"
+  ],
+  [
+   -3.99,
+   16.91,
+   "forest"
+  ],
+  [
+   19.29,
+   4.28,
+   "park"
+  ],
+  [
+   13.08,
+   5.23,
+   "park"
+  ],
+  [
+   15.03,
+   -4.92,
+   "park"
+  ],
+  [
+   8.58,
+   12.63,
+   "forest"
+  ],
+  [
+   4.88,
+   12.38,
+   "forest"
+  ],
+  [
+   8.79,
+   3.24,
+   "yard"
+  ],
+  [
+   -4.41,
+   14.75,
+   "forest"
+  ],
+  [
+   21.65,
+   6.35,
+   "park"
+  ],
+  [
+   -0.07,
+   10.91,
+   "forest"
+  ],
+  [
+   -5.95,
+   15.52,
+   "forest"
+  ],
+  [
+   19.24,
+   -2.05,
+   "park"
+  ],
+  [
+   7.34,
+   11.07,
+   "forest"
+  ],
+  [
+   11.36,
+   3.28,
+   "park"
+  ],
+  [
+   20.28,
+   2.14,
+   "park"
+  ],
+  [
+   14.45,
+   4.86,
+   "park"
+  ],
+  [
+   14.36,
+   0.15,
+   "park"
+  ],
+  [
+   -0.83,
+   17.19,
+   "forest"
+  ],
+  [
+   4.32,
+   17.55,
+   "forest"
+  ],
+  [
+   3.46,
+   14.89,
+   "forest"
+  ],
+  [
+   5.19,
+   10.13,
+   "forest"
+  ],
+  [
+   23.45,
+   -3.46,
+   "park"
+  ],
+  [
+   3.79,
+   1.86,
+   "hall"
+  ],
+  [
+   17.79,
+   -1.52,
+   "park"
+  ],
+  [
+   -6.59,
+   17.55,
+   "forest"
+  ],
+  [
+   7.49,
+   15.61,
+   "forest"
+  ],
+  [
+   5.1,
+   14.82,
+   "forest"
+  ],
+  [
+   -5.37,
+   9.84,
+   "forest"
+  ],
+  [
+   12.6,
+   -2.74,
+   "park"
+  ],
+  [
+   13.69,
+   3.44,
+   "park"
+  ],
+  [
+   13.23,
+   1.18,
+   "park"
+  ],
+  [
+   9.66,
+   11.06,
+   "forest"
+  ],
+  [
+   13.34,
+   -3.93,
+   "park"
+  ],
+  [
+   5.87,
+   2.3,
+   "hall"
+  ],
+  [
+   0.54,
+   14.83,
+   "forest"
+  ],
+  [
+   -2.42,
+   13.88,
+   "forest"
+  ],
+  [
+   -1.95,
+   9.27,
+   "forest"
+  ],
+  [
+   11.24,
+   -1.2,
+   "park"
+  ],
+  [
+   -5.62,
+   13.03,
+   "forest"
+  ],
+  [
+   15.61,
+   -0.54,
+   "park"
+  ],
+  [
+   7.19,
+   12.47,
+   "forest"
+  ],
+  [
+   19.95,
+   -0.44,
+   "park"
+  ],
+  [
+   -1.65,
+   12.45,
+   "forest"
+  ],
+  [
+   18.36,
+   10.57,
+   "metro"
+  ],
+  [
+   21.29,
+   14.9,
+   "metro"
+  ],
+  [
+   1.53,
+   17.24,
+   "forest"
+  ],
+  [
+   17.43,
+   7.71,
+   "park"
+  ],
+  [
+   -7.19,
+   2.55,
+   "hall"
+  ],
+  [
+   3.7,
+   -4.76,
+   "hall"
+  ],
+  [
+   -4.22,
+   3.44,
+   "hall"
+  ],
+  [
+   -3.08,
+   15.69,
+   "forest"
+  ],
+  [
+   -6.69,
+   9.26,
+   "forest"
+  ],
+  [
+   21.09,
+   -5.67,
+   "park"
+  ],
+  [
+   21.86,
+   7.81,
+   "park"
+  ],
+  [
+   12.82,
+   14.62,
+   "metro"
+  ],
+  [
+   18.95,
+   17,
+   "metro"
+  ],
+  [
+   -4.63,
+   0.24,
+   "hall"
+  ],
+  [
+   13.87,
+   10.08,
+   "metro"
+  ],
+  [
+   11.49,
+   5.77,
+   "park"
+  ],
+  [
+   8,
+   7.27,
+   "yard"
+  ],
+  [
+   3.68,
+   11.78,
+   "forest"
+  ],
+  [
+   20.65,
+   4.95,
+   "park"
+  ],
+  [
+   18.85,
+   6.18,
+   "park"
+  ],
+  [
+   6.01,
+   15.87,
+   "forest"
+  ],
+  [
+   14.65,
+   8.02,
+   "park"
+  ],
+  [
+   -2.67,
+   17.36,
+   "forest"
+  ],
+  [
+   11.2,
+   -2.69,
+   "park"
+  ],
+  [
+   4.68,
+   6.88,
+   "yard"
+  ],
+  [
+   16.79,
+   10.77,
+   "metro"
+  ],
+  [
+   -1.58,
+   15.01,
+   "forest"
+  ],
+  [
+   7.76,
+   13.74,
+   "forest"
+  ],
+  [
+   0.84,
+   9.24,
+   "forest"
+  ],
+  [
+   23.4,
+   1.3,
+   "park"
+  ],
+  [
+   -5.42,
+   16.82,
+   "forest"
+  ],
+  [
+   2.4,
+   12.91,
+   "forest"
+  ],
+  [
+   6.69,
+   -1.16,
+   "hall"
+  ],
+  [
+   0.83,
+   4.81,
+   "hall"
+  ],
+  [
+   -3.79,
+   4.92,
+   "hall"
+  ],
+  [
+   3.84,
+   0.25,
+   "hall"
+  ],
+  [
+   5.65,
+   -5.31,
+   "hall"
+  ],
+  [
+   18.78,
+   15.34,
+   "metro"
+  ],
+  [
+   23.37,
+   -0.05,
+   "park"
+  ],
+  [
+   -1.71,
+   4.91,
+   "hall"
+  ],
+  [
+   15.78,
+   5.15,
+   "park"
+  ],
+  [
+   0.69,
+   13.21,
+   "forest"
+  ],
+  [
+   3.51,
+   -3.36,
+   "hall"
+  ],
+  [
+   18.08,
+   12.39,
+   "metro"
+  ],
+  [
+   -7.72,
+   18.48,
+   "forest"
+  ]
+ ],
+ "buried": [
+  [
+   7.29,
+   9.65
+  ],
+  [
+   1.51,
+   11.77
+  ],
+  [
+   -4.16,
+   12
+  ],
+  [
+   -3.99,
+   16.91
+  ],
+  [
+   8.58,
+   12.63
+  ],
+  [
+   4.88,
+   12.38
+  ],
+  [
+   -4.41,
+   14.75
+  ],
+  [
+   -0.07,
+   10.91
+  ],
+  [
+   -5.95,
+   15.52
+  ],
+  [
+   7.34,
+   11.07
+  ]
+ ]
+}

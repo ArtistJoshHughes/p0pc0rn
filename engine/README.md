@@ -26,3 +26,8 @@
     (NVIDIA Nemotron 3.5 Bolt E4B, text only). `split` runs the first layers in a module SharedWorker (`llm/lworker.js`, served with
     COEP require-corp by the app's service worker; `llm/split.js` is the page's side): on iOS 27 a process of its own. Juli's E2B uses
     `split: true` with `splitFallback` (ENGINE_API.md section 9).
+18. A LoRA for the video model (v4, `lora/sana_lora.js` in the bundle): `createEngine({ model: 'sanavideo2-5b', ..., loras: { id: packUrl } })` adds
+    `loras()`, `loraStatus(id)`, `downloadLora(id, o)`, `deleteLora(id)`, and a job's `lora: { id, scale }` on `imageToVideo` / `framesToVideo` /
+    `textToVideo` (ENGINE_API.md section 6.1). Packs come from the lab's safetensors through `tools/sana_lora_pack.py`. Off = bit-identical.
+19. Style video to video (v4, `v2v/` in the bundle): `createEngine({ ..., videoEncoderPackUrl })` adds the clip reader (the LTX-2.3 video encoder,
+    `tools/ltx_video_enc_pack.py`) and `videoToVideo({ source: { read(i) }, first, prompt, startStep: 1, lowswap, lora })` (ENGINE_API.md section 8.1).

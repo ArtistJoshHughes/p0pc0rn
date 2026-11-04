@@ -19,6 +19,7 @@
 'use strict';
 import { P } from '../core/gpu.js';
 import { kxPick, gemvV5 } from './lopsx.js';   // 3.8 (bench v041): the phone's kernel picks
+import { adPick, attnDecH } from './lopsd.js';   // v4 (autotune Phase 2): decode attention by heads, where this device's tune chose it
 
 const bw = (b, off = 0, size = null) => ({ buffer: b, offset: off, size: Math.floor((size == null ? b._pf - off : size) / 4) * 4 });
 const dummy = (g, i) => { g._ldummies = g._ldummies || []; return g._ldummies[i] || (g._ldummies[i] = g.buffer(256, 'ldummy' + i)); };
@@ -108,7 +109,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
  *       y: {buf}, ldy, kPer, stat: {buf, off(floats)} (rms) | src: {n, ld} (sum/pleg partials), norm: {buf, off(floats)}, ev: {buf, off}, mx: {buf} }
  *  geglu: N = the gate rows (the up rows follow at N .. 2N); returns the number of splits written */
 export function gemv(g, a) {
-  { const o = kxPick(a); if (o) return gemvV5(g, a, o); }   // 3.8 (bench v041): this shape's pick (lopsx.js)
+  if (a.kx !== false) { const o = kxPick(a); if (o) return gemvV5(g, a, o); }   // 3.8 (bench v041): this shape's pick (lopsx.js); v4: a.kx false = this kernel (the tuner's reference)
   const enc = a.w.enc, w = enc === 'q4g32a.t64' ? 'q4' : enc === 'q8g64s.t64' ? 'q8' : null;
   if (!w) throw new Error('gemv: encoding ' + enc);
   const K = a.K, N = a.N, G = w === 'q4' ? 32 : 64;
@@ -303,10 +304,18 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) 
 }`;
 /** q: Q f32 [nh][D]; kc/vc: f16 cache [S][D]; keys [kStart, kEnd); part: scratch (>= nchunk * nh * (2 + D) floats); out: O f32 [nh][D] */
 export function attnDec(g, a) {
-  const nchunk = Math.ceil((a.kEnd - a.kStart) / ATT_CK);
-  if (nchunk > 256) throw new Error('attnDec: context too long for one combine (' + nchunk + ' chunks)');
-  g.runner.dispatch(g.pipeline('lattdecX', () => ATTDEC), [bw(a.q.buf), bw(a.kc.buf), bw(a.vc.buf), bw(a.part.buf)],
-    P().u32(a.D).u32(a.nh).u32(a.kStart).u32(a.kEnd).u32(nchunk).u32(a.ring || 0).u32(a.nkv || 1).u32(a.kvLen || 0).ab, [nchunk, 1], 3e-5 * nchunk);
+  // v4: a.ad = this call's choice (the tuner's checks: null = the engine's kernel, {name, CK, WG} = by heads); else this device's tune
+  let o = a.ad !== undefined ? (a.ad ? adPick(a, a.ad) : null) : adPick(a);
+  const fits = (ck) => Math.ceil((a.kEnd - a.kStart) / ck) * a.nh * (2 + a.D) * 4 <= (a.part.buf._pf || a.part.buf.size);   // scratch made before a re-tune
+  if (o && !fits(o.CK)) o = o.CK < 64 && fits(64) ? { name: o.name + '>64', CK: 64, WG: o.WG } : null;
+  let nchunk;
+  if (o) nchunk = attnDecH(g, a, o);
+  else {
+    nchunk = Math.ceil((a.kEnd - a.kStart) / ATT_CK);
+    if (nchunk > 256) throw new Error('attnDec: context too long for one combine (' + nchunk + ' chunks)');
+    g.runner.dispatch(g.pipeline('lattdecX', () => ATTDEC), [bw(a.q.buf), bw(a.kc.buf), bw(a.vc.buf), bw(a.part.buf)],
+      P().u32(a.D).u32(a.nh).u32(a.kStart).u32(a.kEnd).u32(nchunk).u32(a.ring || 0).u32(a.nkv || 1).u32(a.kvLen || 0).ab, [nchunk, 1], 3e-5 * nchunk);
+  }
   g.runner.dispatch(g.pipeline('lattcomb', () => ATTCOMB), [bw(a.part.buf), bw(a.out.buf)],
     P().u32(a.D).u32(a.nh).u32(nchunk).u32(0).ab, [a.nh, 1], 2e-5);
 }

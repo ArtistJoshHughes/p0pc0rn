@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <!-- v027.3 (security review M2): what this page may load and talk to: its own files, the model packs on Hugging Face (and its CDN), and the lookups on Wikipedia, Wikimedia and Fandom; inline scripts by hash (csp_hashes.py).
-     3.8: + the sources that apps made in p0pc0rn may read, only for an app the person allowed (makeapp/sources.js: NWS, Open-Meteo place search, NIFC wildfires, CoinGecko),
+     3.8: + the sources that apps made in p0pc0rn may read, only for an app the person allowed (makeapp/sources.js: NWS, NIFC wildfires, CoinGecko; v4: the place search runs on the phone),
      and frame-src 'self' for the apps' sandbox page (makeapp/frame.html, iframe sandbox="allow-scripts": no network of its own, no storage, no access to this page). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-UXv8gDTrR7EN2aBKhbQrFFcKzMY8/Wc9OaYoFQhDHp0='; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com https://api.weather.gov https://geocoding-api.open-meteo.com https://services3.arcgis.com https://api.coingecko.com https://api.routescan.io; frame-src 'self'; child-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-24yBKo0lCWhUOK0eXjNbV1aib7hBG9lBwJblIYLgm9c=' 'sha256-UXv8gDTrR7EN2aBKhbQrFFcKzMY8/Wc9OaYoFQhDHp0='; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://en.wikipedia.org https://wikimedia.org https://*.fandom.com https://api.weather.gov https://noaa-mrms-pds.s3.amazonaws.com https://gibs.earthdata.nasa.gov https://services3.arcgis.com https://api.coingecko.com https://api.routescan.io https://api.dexscreener.com https://api.geckoterminal.com https://api.gopluslabs.io https://api.rugcheck.xyz; frame-src 'self'; child-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
@@ -29,22 +29,24 @@
 <link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
 <title>p0pc0rn</title>
-<link rel="stylesheet" href="app.css?v=043">
+<link rel="stylesheet" href="app.css?v=054">
 <link rel="stylesheet" href="cast/cast.css">
 <!-- Engine bridge (classic script, exposes window.PF). Then the app (ES module, runs after parsing). -->
 <link rel="stylesheet" href="ui/memory.css">
 <link rel="stylesheet" href="ui/shell.css"><!-- 3.9: the phone-OS shell -->
 <link rel="stylesheet" href="ui/chat.css">
+<link rel="stylesheet" href="nowcast/nowcast.css"><!-- v4: the Nowcast (Experimental) -->
 <link rel="stylesheet" href="ui/music.css">
 <link rel="stylesheet" href="ui/appicon.css">
 <link rel="stylesheet" href="ui/storefront.css"><!-- 3.9 polish (A1): the Apps, Games and Skills screens; apps that work for you -->
 <link rel="stylesheet" href="ui/homeplus.css"><!-- 3.9 polish (A1): the Home button, the Browser start page, an icon's menu, the install ring, the activity pill -->
 <link rel="stylesheet" href="ui/settings.css"><!-- 3.9 polish: Settings in groups, the Cast screen -->
+<link rel="stylesheet" href="ui/hdr.css"><!-- v4: Make HDR (its sheet, the Library's HDR mark) -->
 <link rel="stylesheet" href="ui/clipthumbs.css"><!-- 3.9: the Library's clip posters -->
 <script src="gpuclamp.js"></script>
 <script src="config.js"></script>
 <script src="pocketflux.js"></script>
-<script type="module" src="app.js?v=043"></script>
+<script type="module" src="app.js?v=054"></script>
 </head>
 <body>
 <!-- Icon sprite: 24-unit grid, 1.5 stroke, round caps. -->
@@ -59,6 +61,7 @@
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5L8 5.5Z"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 11.2A2 2 0 0 0 9.3 20h5.4a2 2 0 0 0 2-1.8L17.5 7"/></symbol>
+    <symbol id="i-hdr" viewBox="0 0 24 24"><path d="M2.5 7.5v9M7 7.5v9M2.5 12H7M9.5 7.5v9h1.6a3.2 4.5 0 0 0 0-9Z M16.5 16.5v-9h2.4a2.3 2.3 0 0 1 0 4.6h-2.4M19 12.1l2.6 4.4"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3.5v11M8 7.5l4-4 4 4M8.5 11H7a2 2 0 0 0-2 2v5.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V13a2 2 0 0 0-2-2h-1.5"/></symbol>
     <symbol id="i-dice" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r=".9" fill="currentColor"/><circle cx="15" cy="15" r=".9" fill="currentColor"/><circle cx="15" cy="9" r=".9" fill="currentColor"/><circle cx="9" cy="15" r=".9" fill="currentColor"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
@@ -75,6 +78,7 @@
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7.5L7 21v-3.5H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><path d="M8 10.5h8M8 13.5h5"/></symbol>
     <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18.5V6l10-2v12.5"/><circle cx="6.5" cy="18.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19.5V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/></symbol>
     <symbol id="i-queue" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14.5 6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
@@ -146,7 +150,8 @@
       <div class="seg three src" id="vsrc" role="radiogroup" aria-label="Start the clip from" hidden><i class="ind"></i>
         <button type="button" role="radio" data-v="words"><b>From words</b></button>
         <button type="button" role="radio" data-v="pic"><b>From a picture</b></button>
-        <button type="button" role="radio" data-v="two"><b>Between two pictures</b></button></div>
+        <button type="button" role="radio" data-v="two"><b>Between two pictures</b></button>
+        <button type="button" role="radio" data-v="style" id="vsrc-style" hidden><b>Restyle a clip</b></button></div>
       <div id="b-killed" class="banner warn" hidden>
         <svg class="ic"><use href="#i-alert"/></svg>
         <div><p class="callout" id="b-killed-text"></p>
@@ -179,6 +184,15 @@
         <span id="st-dim" class="dim-label mono"></span>
         <span class="st-play" aria-hidden="true"><svg><use href="#i-play"/></svg></span>
         <div class="hair" aria-hidden="true"><i id="st-fill"></i><span class="lead" id="st-lead"><b class="progress-pulse"></b></span></div>
+      </div>
+      <div class="hq-review sty-review" id="sty-review" hidden>   <!-- v4: Restyle a clip: the styled first frame, checked before the clip is re-rendered -->
+        <p class="headline" id="sty-title">Check the first frame</p>
+        <div class="hq-frames"><figure><img id="sty-src" alt="The clip's first frame"><figcaption class="footnote dim">The clip's first frame</figcaption></figure>
+          <figure><img id="sty-new" alt="The first frame in the new look"><figcaption class="footnote dim" id="sty-cap">The new look · Klein 4B</figcaption></figure></div>
+        <p class="footnote dim" id="sty-tip">The whole clip takes this look and keeps the clip's motion. Anything Klein added stays in the clip too.</p>
+        <button class="btn cta" id="sty-go" type="button">Use this</button>
+        <div class="row-btns"><button class="btn sm" id="sty-re" type="button">Try again</button><button class="btn sm ghost" id="sty-x" type="button">Start over</button></div>
+        <p class="footnote dim num" id="sty-est"></p>
       </div>
       <div id="work" class="work" hidden aria-live="polite">
         <p class="headline" id="w-phase">Getting ready</p>
@@ -223,6 +237,27 @@
           </div>
         </div>
         <div class="vattests" id="vattests" hidden></div>
+        <div class="vstyle" id="vstyle" hidden>   <!-- v4: Restyle a clip: the clip, its own tick (a video from the phone), the look -->
+          <div class="note warn sty-kept" id="sty-kept" hidden><svg class="ic"><use href="#i-alert"/></svg><div><p id="sty-kept-text"></p>   <!-- v4: a whole-video restyle that stopped: carry on from its part -->
+            <div class="row-btns"><button class="btn sm" id="sty-kept-go" type="button">Carry on</button><button class="btn sm ghost" id="sty-kept-x" type="button">Stop</button></div></div></div>
+          <div class="vslot vclip" id="vclip"></div>
+          <div class="attest" id="sattest-box" hidden>
+            <label class="attest-row" for="sattest"><input type="checkbox" id="sattest"><span id="sattest-text"></span></label>
+            <details class="attest-more" id="sattest-more"><summary><span>What this means</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary>
+              <ul class="means" id="sattest-means"></ul><p class="footnote dim asof" id="sattest-asof"></p></details>
+          </div>
+          <div class="sty-whole" id="sty-whole-row" hidden>   <!-- v4: the whole video, in parts (Experimental): offered for a clip longer than 5 s -->
+            <label class="li sw-row" for="sty-whole"><span><span class="sw-name"><span id="sty-whole-name">Restyle the whole video</span> <span class="exp">Experimental</span></span><span class="footnote dim" id="sty-whole-note"></span></span><input type="checkbox" class="sw" id="sty-whole"></label>
+            <div class="vs-prep" id="sty-whole-bar" hidden><i></i></div><p class="footnote dim num" id="sty-whole-read" hidden></p>
+          </div>
+          <div class="group" id="g-look"><p class="label" id="l-look">Look</p>
+            <div class="looks" id="looks" role="radiogroup" aria-labelledby="l-look"></div></div>
+          <div class="group" id="g-follow"><p class="label" id="l-follow">Follow the motion</p>   <!-- v4 (Nov 3): Closely = from stage 2 (the default), Loosely = from stage 1 -->
+            <div class="seg" id="follow" role="radiogroup" aria-labelledby="l-follow" aria-describedby="follow-help"><i class="ind"></i>
+              <button type="button" role="radio" data-v="close"><b>Closely</b></button><button type="button" role="radio" data-v="loose"><b>Loosely</b></button></div>
+            <p class="footnote dim" id="follow-help"></p></div>
+          <p class="note v-sty-need" id="sty-need" hidden><svg class="ic"><use href="#i-download"/></svg><span id="sty-need-text"></span></p>
+        </div>
         <div class="prompt-box">
           <label class="vh" for="prompt">Prompt</label>
           <textarea id="prompt" rows="3" placeholder="Describe a picture…" enterkeyhint="done" autocapitalize="sentences"></textarea>
@@ -307,7 +342,7 @@
         <p class="title">Hi, I'm Juli</p>
         <p class="callout as-hello-what">I answer questions, look things up on Wikipedia and Fandom, and make songs, pictures and clips, all on this phone.</p>
         <div class="as-try" id="as-try"></div>
-        <p class="footnote as-hello-note">Only a lookup goes online: its words go to Wikipedia or Fandom. Songs, pictures and clips wait their turn in the queue.</p>
+        <p class="footnote as-hello-note">Only a lookup goes online: its words go to Wikipedia or Fandom, and a weather question sends the place's rounded coordinates to the US National Weather Service. Songs, pictures and clips wait their turn in the queue.</p>
       </div>
       <div id="as-log" class="as-log" role="log" aria-live="polite" aria-label="Conversation"></div>
     </section>
@@ -354,7 +389,7 @@
         </div>
         <input type="file" id="apps-import" accept=".json,application/json" class="vh" tabindex="-1">
         <p class="footnote dim pad">Give the guide to an AI helper such as Claude, with a sentence or two about the app you want: it writes one app design file for you to import here. Every app runs in a locked box on this phone and asks before it does anything.</p>
-        <p class="footnote dim pad">What apps can reach: only the sources an app you allowed asks for, read straight from this phone: the US National Weather Service (api.weather.gov), Open-Meteo place search, the national wildfire incident service (NIFC, on services3.arcgis.com), CoinGecko prices and Snowtrace, the public Avalanche explorer (api.routescan.io: only public addresses, the ones you add and a few they deal with, at most every 15 minutes and only when your phone is idle; Powered by Routescan.io APIs: <a href="https://routescan.io" target="_blank" rel="noopener noreferrer">routescan.io</a> · <a href="https://x.com/routescan_io" target="_blank" rel="noopener noreferrer">@routescan_io on X</a>). Apps never see your photos, Library, Cast or files. Prices and wallet activity are shown as facts, never as advice.</p>
+        <p class="footnote dim pad">What apps can reach: only the sources an app you allowed asks for, read straight from this phone: the US National Weather Service (api.weather.gov), the national wildfire incident service (NIFC, on services3.arcgis.com), CoinGecko prices and Snowtrace, the public Avalanche explorer (api.routescan.io: only public addresses, the ones you add and a few they deal with, at most every 15 minutes and only when your phone is idle, and in Token Watch an Avalanche token's contract only when you tap Check on Snowtrace, once per token; Powered by Routescan.io APIs: <a href="https://routescan.io" target="_blank" rel="noopener noreferrer">routescan.io</a> · <a href="https://x.com/routescan_io" target="_blank" rel="noopener noreferrer">@routescan_io on X</a>), and for Token Watch DEX Screener, GeckoTerminal, GoPlus and RugCheck (only the chains you pick and public token addresses, only when you open it or while it watches closely; data: <a href="https://dexscreener.com" target="_blank" rel="noopener noreferrer">DEX Screener</a> · new pools: <a href="https://www.geckoterminal.com" target="_blank" rel="noopener noreferrer">GeckoTerminal</a> by CoinGecko · Solana checks: <a href="https://rugcheck.xyz" target="_blank" rel="noopener noreferrer">RugCheck</a> · Powered by <a href="https://gopluslabs.io" target="_blank" rel="noopener noreferrer">GoPlus Security</a>). A town or ZIP code you type in an app is found on this phone and never sent. Apps never see your photos, Library, Cast or files. Prices and wallet activity are shown as facts, never as advice.</p>
       </div>
       <div class="sf-pane" id="sf-pane-games" data-pane="games" role="tabpanel" aria-labelledby="sf-tab-games" hidden>
         <div class="sf-arcade">
@@ -364,6 +399,11 @@
         </div>
         <div class="list sf-games" id="apps-games"></div>
         <p class="footnote dim pad" id="sf-games-none" hidden>No games on this phone yet.</p>
+        <div class="sf-arcade sf-solo-head">   <!-- v4: games on their own page (ui/storefront.js SOLO) -->
+          <p class="sf-hero-kicker">On your own</p>
+          <p class="footnote dim">A 3D game with real physics. It opens on its own page and p0pc0rn steps aside while you play; Back brings you home.</p>
+        </div>
+        <div class="list sf-games" id="sf-solo"></div>
       </div>
     </section>
 
@@ -390,6 +430,7 @@
       <div class="masonry" id="grid"><div class="col"></div><div class="col"></div></div>
     </section>
 
+    <section id="v-nowcast" class="view" aria-label="Nowcast" hidden></section>   <!-- v4: the Nowcast (Experimental): nowcast/view.js draws it -->
     <section id="v-music" class="view music" aria-label="Music" hidden>
       <div class="mu-head"><h2 class="mu-title">Music</h2><button class="mu-x" id="mu-close" type="button" aria-label="Close Music" hidden><svg class="ic"><use href="#i-x"/></svg></button></div>
       <div class="mu-seg" id="mu-seg" role="tablist" aria-label="Music">
@@ -419,6 +460,7 @@
       <p class="footnote pad warn-note" id="s-android" hidden>Android (Chrome): experimental. Prepared on a desktop with Android-like limits; not yet tested on a phone. Run <b>Settings › About › Device check</b> first and send Josh the report.</p>
       <div class="list" id="models"></div>
       <p class="footnote dim pad" id="s-models-why">Deleting is not available while something is being made.</p>
+      <div class="list" id="s-lora-list" hidden><label class="li sw-row" for="s-lora" id="s-lora-row"><span><span class="sw-name">Use the video LoRA</span><span class="footnote dim" id="s-lora-note">Clips from a picture and between two pictures run with it. LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0).</span></span><input type="checkbox" class="sw" id="s-lora"></label><label class="li sw-row" for="s-lora2" id="s-lora2-row" hidden><span><span class="sw-name">Use the looks LoRA</span><span class="footnote dim">Style video to video runs with it (one LoRA a clip). LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0).</span></span><input type="checkbox" class="sw" id="s-lora2"></label></div>   <!-- v4: the video LoRA (Settings › Models has its download) -->
       <p class="label" id="l-cast">Cast</p>   <!-- 3.9: Cast is a screen of its own (#v-cast, a home-screen icon); Settings keeps this link -->
       <div class="list"><button class="li link" id="s-cast" type="button"><span><span class="sw-name">Cast</span><span class="footnote dim">People who said yes: their voice and photos</span></span><span class="li-end"><span class="dim" id="s-cast-n"></span><svg class="ic"><use href="#i-chevron"/></svg></span></button></div>
       <p class="label" id="l-budget">Video decode memory</p>
@@ -429,9 +471,16 @@
       <p class="footnote dim pad">How much graphics memory a clip may use while it develops. 700 MB is the fastest; if a clip stops while developing, choose 450 MB.</p>
       <p class="label" id="l-assistant">Juli</p>
       <div class="list" id="s-assistant">
-        <label class="li sw-row" for="s-research"><span><span class="sw-name">Look things up on Wikipedia &amp; Fandom</span><span class="footnote dim">Answers and songs about real things, characters and franchises are written from what Juli looks up, with the sources shown. The words of a lookup are sent to Wikipedia or Fandom. Nothing else leaves the phone.</span></span><input type="checkbox" class="sw" id="s-research"></label>
+        <label class="li sw-row" for="s-research"><span><span class="sw-name">Look things up on Wikipedia &amp; Fandom</span><span class="footnote dim">Answers and songs about real things, characters and franchises are written from what Juli looks up, with the sources shown. The words of a lookup are sent to Wikipedia or Fandom; a weather question sends only the place's rounded coordinates to the US National Weather Service. Nothing else leaves the phone.</span></span><input type="checkbox" class="sw" id="s-research"></label>
+        <label class="li sw-row" for="s-homezip"><span><span class="sw-name">Home ZIP for weather</span><span class="footnote dim">When you ask about the weather without naming a place. Only on this phone; just the ZIP's rounded coordinates go to the US National Weather Service. You can also tell Juli: “my ZIP is 10001”.</span></span><input id="s-homezip" class="input num zip" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="none" autocomplete="postal-code" aria-label="Home ZIP for weather"></label>
         <label class="li sw-row" for="s-review"><span><span class="sw-name">Look at results and retry</span><span class="footnote dim">Juli checks each picture or clip and makes it again if something is clearly wrong (at most twice).</span></span><input type="checkbox" class="sw" id="s-review"></label>
         <label class="li sw-row" for="s-brain4" id="s-brain4-row" hidden><span><span class="sw-name">Bigger brain for writing and making</span><span class="footnote dim" id="s-brain4-note"></span></span><input type="checkbox" class="sw" id="s-brain4"></label>
+        <div id="s-voice-box" hidden>   <!-- v4: voice input (ui/voicein.js), once its model is on the phone -->
+          <label class="li sw-row" for="s-voice"><span><span class="sw-name">Voice input</span><span class="footnote dim">The mic in Juli’s chat: your words appear as you speak (NVIDIA Nemotron 3.5 ASR, on this phone). The microphone is asked for the first time you tap it. Your voice never leaves the phone and is never kept.</span></span><input type="checkbox" class="sw" id="s-voice"></label>
+          <label class="li sw-row" for="s-voice-auto"><span><span class="sw-name">Send when I stop talking</span><span class="footnote dim">It goes as soon as you stop; for a few seconds Undo or Edit takes it back. Off: your words wait in the message box.</span></span><input type="checkbox" class="sw" id="s-voice-auto"></label>
+          <label class="li sw-row" for="s-voice-speak"><span><span class="sw-name">Juli speaks her replies</span><span class="footnote dim">When you talk to her, she answers out loud too (her voice is made on this phone). Stop, over the message box, ends it; tapping the mic does too.</span></span><input type="checkbox" class="sw" id="s-voice-speak"></label>
+          <label class="li sw-row" for="s-voice-lang"><span><span class="sw-name">Language you speak</span><span class="footnote dim">Automatic works out the language each time; choosing yours is a little more accurate.</span></span><select id="s-voice-lang" class="sel"></select></label>
+        </div>
         <button class="li link" id="s-queue" type="button"><span>Queue</span><span class="li-end"><span class="dim" id="s-qstate">–</span><svg class="ic"><use href="#i-chevron"/></svg></span></button>
         <div class="li kb-row" id="s-kb"><span><span class="sw-name">Things Juli has looked up · <span id="s-kbn">0</span></span><span class="footnote dim">Kept on this phone for good, so asking again is instant, even offline. Private: never uploaded.</span></span><span class="li-end"><button class="btn sm" id="s-kbclear" type="button">Clear</button></span></div>
         <button class="li link" id="s-about" type="button"><span><span class="sw-name">About me</span><span class="footnote dim">A few lines about you that Juli reads when she plans. Only on this phone; never given to an app.</span></span><span class="li-end"><span class="dim" id="s-about-state">Not set</span><svg class="ic"><use href="#i-chevron"/></svg></span></button>
@@ -444,6 +493,9 @@
       <p class="footnote dim pad" id="s-brain-info"></p>
       <button class="btn" id="s-qclear" type="button"><svg class="ic"><use href="#i-trash"/></svg><span>Clear finished jobs</span></button>
       <p class="footnote dim pad" id="s-qclear-why"></p>
+      <p class="label" id="l-apps">Priority</p>   <!-- v4: Settings › Apps › Priority (ui/settings.js draws each app's control; makeapp/scheduler.js orders by it) -->
+      <div class="list" id="s-apps-prio" aria-labelledby="l-apps"></div>
+      <p class="footnote dim pad" id="s-apps-why">When several apps are due at once, High ones go first and Low ones wait, never for long; anything you ask Juli or make always goes first. Pause all is in Apps.</p>
       <p class="label">Storage</p>
       <div class="list">
         <div class="li"><span id="s-persist-label">Protected from iOS cleanup</span><span class="li-end"><span class="dim" id="s-persist">–</span><button class="btn sm" id="s-allow" type="button" hidden>Allow</button></span></div>
@@ -469,8 +521,8 @@
       <div class="list"><p class="li callout">A picture takes 2–3 minutes, a 5-second clip about 6 and a song a minute or two. After about a minute the phone warms and slows down. Plugged in, out of the sun, case off, and a short break between jobs all help.</p></div>
       <p class="label" id="l-bench">Benchmark</p>
       <div class="list">
-        <p class="li callout"><span>How fast this phone runs p0pc0rn, in one tap. <b>Quick</b> takes about 3 minutes: a heat reading, Juli’s chat speed, a long prompt and the apps (each one opens; then Trip Watch’s check runs with Juli on test data, nothing goes online); about 4 with the Bigger brain, whose chat speed and read-in it adds. <b>Full</b> takes about 30 minutes: it adds a long answer from each model, a picture, a short clip and a song for the models you have, and a pass or fail check of every feature (the home screen, Juli’s chat, skills, Music, routines, games, making and changing an app, an app icon), with test data it removes after. <b>Music check</b> plays three test tones: lock the phone during the first to see the lock screen work. Results stay on this phone.</span></p>
-        <div class="li bench-row"><button class="btn sm" id="s-bench-quick" type="button">Quick · ~3 min</button><button class="btn sm" id="s-bench-full" type="button">Full · ~30 min</button><button class="btn sm" id="s-bench-music" type="button">Music check</button></div>
+        <p class="li callout"><span>How fast this phone runs p0pc0rn, in one tap. <b>Quick</b> takes about 3 minutes: a heat reading, Juli’s chat speed, a long prompt and the apps (each one opens; then Trip Watch’s check runs with Juli on test data, nothing goes online); about 4 with the Bigger brain, whose chat speed and read-in it adds. <b>Full</b> takes about 30 minutes: it adds a long answer from each model, a picture, a short clip and a song for the models you have, and a pass or fail check of every feature (the home screen, Juli’s chat, skills, Music, routines, games, making and changing an app, an app icon), with test data it removes after. <b>Music check</b> plays three test tones: lock the phone during the first to see the lock screen work. <b>Video</b> takes about 13 minutes: 2-second clips of a test picture, from a picture and between two pictures with the video LoRA, the steps from the picture without it, and a test clip restyled (its first frame by the picture model, then the clip with the looks LoRA), each with its speed and memory. Results stay on this phone.</span></p>
+        <div class="li bench-row"><button class="btn sm" id="s-bench-quick" type="button">Quick · ~3 min</button><button class="btn sm" id="s-bench-full" type="button">Full · ~30 min</button><button class="btn sm" id="s-bench-music" type="button">Music check</button><button class="btn sm" id="s-bench-video" type="button">Video · ~14 min</button></div>
       </div>
       <div class="bench-out" id="s-bench-out" hidden></div>
       <p class="label">About</p>
@@ -483,7 +535,7 @@
         <div class="li" id="s-clamp" hidden><span>Test mode</span><span class="li-end"><span class="dim" id="s-clamp-mode">–</span><button class="btn sm" id="s-clamp-off" type="button">Turn off</button></span></div>
         <details class="li ref" id="s-diag"><summary><span>Diagnostics</span><svg class="ic chev"><use href="#i-chevron"/></svg></summary><div class="ref-body"><p class="footnote dim">The last 200 steps on this phone: what ran, its memory and any errors. Copy adds the app version, the browser's own description and, where the browser reports it, the phone's memory. Research and Cast steps keep kinds and counts, never a topic, title, quote or name. Nothing leaves the phone unless you copy it.</p><pre class="mono footnote" id="s-diagtext"></pre><button class="btn sm" type="button" id="s-diagcopy">Copy</button></div></details>
         <div class="li"><span>Built by</span><span class="dim">Josh Hughes</span></div>
-        <p class="li footnote dim">FLUX.2 [klein] 4B and FLUX.2 autoencoder © Black Forest Labs, Apache-2.0 · Qwen3-4B text encoder © 2024 Alibaba Cloud, Apache-2.0 · SANA-Video 2.0 5B © NVIDIA, Apache-2.0 · LTX-2.3 video decoder and picture reader (VAE decoder and encoder) © Lightricks, LTX-2 Community License Agreement · tokenizers.js © Hugging Face, Apache-2.0. The model files are modified (re-quantised) copies. The popcorn progress animation was generated with LTX-2.3 (Lightricks) from FLUX.2 [klein] stills.</p>
+        <p class="li footnote dim">FLUX.2 [klein] 4B and FLUX.2 autoencoder © Black Forest Labs, Apache-2.0 · Qwen3-4B text encoder © 2024 Alibaba Cloud, Apache-2.0 · SANA-Video 2.0 5B © NVIDIA, Apache-2.0 · LTX-2.3 video decoder, picture reader and clip reader (the VAE's decoder and encoder) © Lightricks, LTX-2 Community License Agreement · tokenizers.js © Hugging Face, Apache-2.0. The model files are modified (re-quantised) copies. The popcorn progress animation was generated with LTX-2.3 (Lightricks) from FLUX.2 [klein] stills.</p>
         <p class="li footnote dim">Juli: Gemma 4 E2B-it © Google, Apache-2.0 (not the Gemma Terms of Use). Songs: ACE-Step 1.5 turbo, its 5 Hz lyrics planner and its audio decoder © ACE Studio and StepFun, MIT; the Qwen3-Embedding-0.6B text encoder inside it © Alibaba Cloud, Apache-2.0. These model files are modified (re-quantised) copies too. Lookups use Wikipedia (CC BY-SA 4.0) and Fandom wikis (CC BY-SA, as each wiki states): Juli cites the pages it used.</p>
         <p class="li footnote dim">Cast voices: Qwen3-TTS-12Hz-0.6B-Base and its 12 Hz codec © Alibaba Cloud (Qwen), Apache-2.0 (re-quantised copies). Face finding for Cast photos: MediaPipe BlazeFace © Google, Apache-2.0 (engine/face/LICENSE-mediapipe.txt). Lip-sync (experimental): MuseTalk 1.5 UNet (MIT; experimental, for consented faces and voices only; its CreativeML Open RAIL-M use restrictions are part of your terms), sd-vae-ft-mse © Stability AI (MIT), whisper-tiny encoder © OpenAI (MIT), MediaPipe Face Landmarker © Google (Apache-2.0), re-quantised copies.</p>
         <p class="li footnote dim">Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms. The video model reads your words with Gemma-2-2B-it; using it is subject to the Gemma Prohibited Use Policy, and the use restrictions of the LTX-2 Community License (paragraph 4 and Attachment A). Both are part of p0pc0rn's terms of use.</p>
@@ -519,10 +571,12 @@
         <button id="as-photo-x" class="x" type="button" aria-label="Remove the photo"><svg><use href="#i-x"/></svg></button></span></div>
       <div class="attest" id="as-attest-box"><label class="attest-row" for="as-attest"><input type="checkbox" id="as-attest"><span id="as-attest-text"></span></label></div>
     </div>
+    <div class="as-voicebar" id="as-voicebar" role="status" hidden><canvas class="as-wave" id="as-wave" aria-hidden="true"></canvas><span id="as-voicebar-text">Sent</span><button class="btn sm" id="as-voice-undo" type="button">Undo</button><button class="btn sm" id="as-voice-edit" type="button">Edit</button><button class="btn sm" id="as-voice-stop" type="button" hidden>Stop</button></div>
     <div class="as-compose">
       <label for="as-file" class="icon-btn as-add" id="as-add" aria-label="Add a photo"><svg class="ic"><use href="#i-photo-plus"/></svg></label>
       <label class="vh" for="as-in">Message</label>
       <textarea id="as-in" rows="1" placeholder="Message Juli" enterkeyhint="send" autocapitalize="sentences"></textarea>
+      <button class="icon-btn as-mic" id="as-mic" type="button" aria-label="Speak to Juli" aria-pressed="false" hidden><svg class="ic"><use href="#i-mic"/></svg></button>   <!-- v4: voice input (ui/voicein.js) -->
       <button class="icon-btn as-send" id="as-send" type="button" aria-label="Send"><svg class="ic"><use href="#i-send"/></svg></button>
     </div>
   </div>
@@ -542,7 +596,9 @@
     <button class="act" id="v-anim" type="button"><svg><use href="#i-anim"/></svg><span>Animate</span></button>
     <button class="act" id="v-reuse" type="button"><svg><use href="#i-copy"/></svg><span>Reuse prompt</span></button>
     <button class="act" id="v-edit" type="button"><svg><use href="#i-photo-plus"/></svg><span>Edit this</span></button>
+    <button class="act" id="v-restyle" type="button" hidden><svg><use href="#i-sparkle"/></svg><span>Restyle</span></button>
     <button class="act" id="v-talk" type="button" hidden><svg><use href="#i-chat"/></svg><span>Lip-sync · experimental</span></button>
+    <button class="act" id="v-hdr" type="button" aria-haspopup="dialog" hidden><svg><use href="#i-hdr"/></svg><span>Make HDR</span></button>
     <button class="act" id="v-del" type="button"><svg><use href="#i-trash"/></svg><span>Delete</span></button>
     <button class="act" id="v-more" type="button" aria-haspopup="dialog"><svg><use href="#i-more"/></svg><span>More</span></button>
   </div>
@@ -609,7 +665,7 @@
   <div class="sheet docsheet" role="dialog" aria-modal="true" aria-labelledby="ltx-title">
     <div class="pk-top"><p class="title" id="ltx-title">The video model’s licence</p><button class="mini" type="button" data-close>Not now</button></div>
     <p class="callout" id="ltx-have" hidden></p>
-    <p class="callout">Clips are decoded with the LTX-2.3 video autoencoder by Lightricks (the video model and the picture reader). It comes under the <b>LTX-2 Community License Agreement</b> (January 5, 2026). Read it and accept it before p0pc0rn downloads it. In short:</p>
+    <p class="callout">Clips are decoded with the LTX-2.3 video autoencoder by Lightricks (the video model, the picture reader and the clip reader). It comes under the <b>LTX-2 Community License Agreement</b> (January 5, 2026). Read it and accept it before p0pc0rn downloads it. In short:</p>
     <ul class="footnote ltx-points" id="ltx-points"></ul>
     <p class="footnote dim">The video model also reads your words with Gemma 2 by Google. Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms. Its <a href="licenses/GEMMA_PROHIBITED_USE_POLICY.txt" target="_blank" rel="noopener noreferrer">Prohibited Use Policy</a> applies too.</p>
     <p class="label">The full licence, with Attachment A</p>
@@ -663,6 +719,7 @@
 <div id="toast" class="toast" role="status" aria-live="polite"><span id="toast-text"></span><button id="toast-btn" type="button" hidden>Undo</button></div>
 <input type="file" id="file" accept="image/*" class="vh" tabindex="-1">
 <input type="file" id="vfile" accept="image/*" class="vh" tabindex="-1">
+<input type="file" id="cfile" accept="video/*" class="vh" tabindex="-1">
 <input type="file" id="as-file" accept="image/*" class="vh" tabindex="-1">
 </body>
 </html>

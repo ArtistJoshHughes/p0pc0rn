@@ -1,0 +1,18 @@
+/* hdr.css - p0pc0rn v4 "Make HDR" (ui/hdr.js): the Library's HDR mark, and the sheet's before / after and the two looks. */
+.badgehdr { position: absolute; right: 6px; bottom: 6px; font-size: 11px; line-height: 16px; padding: 0 6px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff;
+  font-weight: 600; letter-spacing: .04em; }
+.hdr-sheet .hdr-pv { position: relative; width: 100%; max-height: 36dvh; display: grid; place-items: center; overflow: hidden; border-radius: var(--r-sm); background: #000;
+  touch-action: none; -webkit-user-select: none; user-select: none; }
+.hdr-sheet .hdr-pv canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: 36dvh; cursor: ew-resize; }
+.hdr-pv-l, .hdr-pv-r { position: absolute; top: 6px; padding: 0 6px; border-radius: 6px; background: rgba(0,0,0,.5); color: #fff; line-height: 18px; pointer-events: none; }
+.hdr-pv-l { left: 6px; }
+.hdr-pv-r { right: 6px; }
+.hdr-sheet .hdr-opts { display: grid; gap: var(--s-2); }
+.hdr-sheet .hdr-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; padding: 10px 14px; border-radius: var(--r-md); text-align: left;
+  background: var(--surface-2); color: var(--text-1); transition: transform var(--d-4) var(--ease-spring); }
+.hdr-sheet .hdr-opt[aria-checked="true"] { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); }
+.hdr-sheet .hdr-opt:active { transform: scale(.98); }
+.hdr-sheet .hdr-opt-t { display: flex; align-items: baseline; gap: 2px; }
+.hdr-sheet .hdr-opt .headline, .hdr-sheet .hdr-opt[aria-checked="true"] .headline { color: var(--text-1); }   /* app.css greys every span of a checked radio */
+.hdr-sheet .hdr-opt .footnote.dim, .hdr-sheet .hdr-opt[aria-checked="true"] .footnote.dim { color: var(--text-2); }
+@media (prefers-reduced-motion: reduce) { .hdr-sheet .hdr-opt { transition: none; } .hdr-sheet .hdr-opt:active { transform: none; } }

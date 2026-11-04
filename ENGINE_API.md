@@ -132,6 +132,40 @@ const clip = await eng.textToVideo({
   - Offer "Decode the last clip" when a checkpoint exists, since a kill during decode must not cost the steps again.
 - **Decoder memory.** Pass `decodeBudgetMB` to `createEngine`, or call `eng.tune({ decodeBudgetMB })`. The default is 450 on Apple GPUs and 1200 elsewhere. Frames are assembled in OPFS and encoded one frame at a time.
 
+### 6.1 A LoRA for the video model (v4, `lora/sana_lora.js` in the bundle)
+
+The video engine can run a LoRA (a low-rank adapter) on SANA-Video 2.0's DiT at run time. The video pack is not changed: no weight is
+dequantised, merged or requantised. Off unless a job asks for it; a job without one runs exactly as before (checked bit for bit).
+
+```js
+const eng = await createEngine({ model: 'sanavideo2-5b', packUrl, encoderPackUrl, loras: { 'sanavideo2-5b-lora': P0_CONFIG.packs['sanavideo2-5b-lora'] } });
+eng.loras();                                   // ['sanavideo2-5b-lora'] ([] without `loras`)
+await eng.loraStatus('sanavideo2-5b-lora');    // {id, complete, haveBytes, totalBytes, packVersion, name, rank, license, credit}
+await eng.downloadLora('sanavideo2-5b-lora', { onProgress, signal });   // ~64 MB, resumable per 16 MiB chunk, every chunk verified
+await eng.deleteLora('sanavideo2-5b-lora');    // not while a job runs (BUSY)
+const clip = await eng.imageToVideo({ image, prompt, attested, lora: { id: 'sanavideo2-5b-lora', scale: 1 } });   // also framesToVideo, textToVideo
+// clip.lora = {id, scale, packVersion, rank, applied: true, uploadMs, uploads} (null without one)
+```
+
+- **`lora`**: `{id, scale = 1}` or an id. `scale` 0..2 multiplies the LoRA (0 = off); outside that range `BAD_LORA`. An id the engine was
+  not created with: `UNSUPPORTED`. Not on this phone: `NOT_DOWNLOADED` ("Download the video LoRA first"). While it downloads: `BUSY`.
+- **What it does**: on `attn.qkv`, `attn.output_gate`, `attn.proj`, `cross_attn.q_linear` and `cross_attn.proj` of all 32 blocks and on
+  `t_block.1`, y = W x + s · B'(A x) with B' = (alpha / rank) B (folded into the pack). Two small GEMMs per linear: A on the base GEMM's own
+  input and prologue (so the frame-conditioned modulation of each segment is the same), then B added in the base GEMM's own epilogue form
+  (onto its f16 output, or gate × (.) onto its f32 residual). The As of qkv and the output gate run as one GEMM.
+- **Memory**: one ~2 MB shard per block streams beside the block's weight shard (`lora.block.NN`; `lora.global` = t_block.1, once a job);
+  while a job runs only the A outputs (tokens × 2r f16, ~1.3 MB at 1280 × 736) and a 61 KB zero vector stay. Measured on a desktop iGPU at
+  832 × 480, 33 frames: +3 % a step; peak +2 MB over the whole clip (the decode sets it), +22 MB during the steps.
+- **Resume**: a clip with the LoRA has its own checkpoint key (id, scale, the LoRA's pack version), so it never resumes a clip made without
+  it or the other way. `resumeVideo()` runs with the LoRA its checkpoint was made with (the record keeps `lora: {id, scale}`).
+- **The pack** (`tools/sana_lora_pack.py`, from the lab's `svcore.save_lora` safetensors): `pocketflux.pack/1`, model `arch:
+  'sana-video2-lora'`, `for: {arch: 'sana-video2', depth: 32, hidden: 2560}`, fp16 A `[r, 2560]` and B `[out, r]` named after the engine's
+  tensors (`blocks.0.attn.qkv.lora_A` / `.lora_B` for `blocks.0.attn.qkv.weight`), rank padded to a multiple of 32, 256-byte aligned, the A
+  of qkv directly followed by the A of the output gate. Its own OPFS folder `engine/sana-lora/<id>/pack` (`LORA` module export: `root`,
+  `dir(id)`, `wipe(id)`); downloaded and checked like any pack (the manifest pinned in `config.js`).
+- **Licence**: Apache-2.0 ("LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0)"); it runs with the separately licensed
+  LTX-2.3 decoder and picture reader.
+
 ## 7. The user agreement (engine 0.3.4, p0pc0rn)
 
 - `textToImage`, `imageToImage` and `textToVideo` reject with `code: 'NO_CONSENT'` until this browser holds the person's agreement to the current terms: `localStorage['p0pc0rn:consent'] = {"terms": "2026-10-12", "agreedAt": "<ISO time>"}`.
@@ -179,6 +213,48 @@ agreement check. **Text-to-video keeps its own path** (`pipelines/sana_video.js`
 - **i2v 0.2.0 fix**: a fresh picture job now drops an older picture checkpoint record before it overwrites the pinned-picture files (0.1.0 could
   have resumed an old latent with new pins after a cancel during the next job's first step).
 
+### 8.1 Style video to video (v4: `v2v/video_encoder.js`, `v2v/v2v_sampler.js` in the bundle)
+
+With the clip reader's pack (`createEngine({..., videoEncoderPackUrl})`: the LTX-2.3 video encoder, `tools/ltx_video_enc_pack.py`, 638 MB
+f16, its own OPFS folder `engine/ltx23-video-enc/pack`, the `VIDEO_ENCODER` export) the video engine re-renders a clip from a restyled first
+frame, the lab's `svcore.dmd_sample_v2v`:
+
+```js
+const clip = await eng.videoToVideo({ source: { frames: 33, read: async (i) => imageOrRGBA, hash }, first /* frame 0, restyled */, prompt,
+  width: 832, height: 480, frames: 33, seed, follow: 'close' /* or 'loose' */, lowswap: null /* or {cell: 2, until: 2, delta: true} */,
+  lora: { id: 'sanavideo2-5b-style-lora', scale: 1 }, attested, onProgress, signal });
+```
+
+- **What runs**: the clip's frames -> the video encoder (causal, the lab's own tiling: 512-px tiles every 448 px, blended in place, so the
+  latent is the lab's; inside a tile stage by stage, a few frames at a time, each causal conv keeping its last 2 input frames) -> the source
+  latent, re-noised to the schedule's start with that stage's draw; frame 0 pinned to `first` (the still encoder); the DMD stages from
+  there with the job's LoRA (`lora`: one a job; the app gives style jobs the looks LoRA). `lowswap` (optional): through
+  stage `until` each estimate keeps the model's detail and takes the source's `cell` x `cell` layout (`delta`: the source's change since its
+  frame 0, on the pinned picture's layout). The stage update runs in JS on the CPU (the DiT's step returns its velocity: `velocityOnly`).
+- **The schedule** ("Follow the motion", Nov 3): `follow: 'close'` (the default) starts at stage 2 (sigma 0.857) of 0.9998 / 0.947 /
+  0.857 / **0.76** / 0.666: one stage added at 0.76 (its timestep 760 = 1000 sigma, as the lab; the DiT takes a job's own timestep rows,
+  `prepare(..., {sigmas, timesteps})`, the pinned frames' t = 0 row after them). The source is ~14 % of the start instead of ~5 %, so a
+  clip's moves (arms, hands) come through; the look is a little lighter. `follow: 'loose'` is stage 1 (0.947) of the model's own four,
+  the strongest look. Both are 3 transformer calls: the same time. A bench may give `startStep` (+ `sigmas`, else the model's own four)
+  instead. The schedule is in the checkpoint's key and record (`sigmas`): a clip never resumes into another schedule, and
+  `resumeVideo()` finishes one on its own (a record without `sigmas`, from before Nov 3: the model's own four).
+- **`source.read(i)`** returns frame i: any image `createImageBitmap` takes (scaled to the clip like a picture), or RGBA already
+  `width` x `height`. The engine reads the frames in order, once per tile. The app reads an MP4 with `ui/clipframes.js` (WebCodecs).
+- **Result**: as a picture clip + `startStep`, `sigmas`, `follow` (null when `startStep` was given), `timesteps` (an added stage's
+  schedule), `lowswap`, `timings.clip` (reading the clip), `clipPeakMB`; progress carries `startStep` (its `step` / `steps` count the
+  schedule's stages: 3 to 5 of 5 for close); `mode: 'v2v'` in the picture checkpoint slot, whose record keeps the stage, the schedule, the
+  swap and the LoRA: `resumeVideo()` finishes it without the clip or the picture (the
+  pin and the source latent are checkpointed too).
+- **Errors**: as `imageToVideo`, + `BAD_VIDEO` (no clip, or fewer frames than asked) and `NOT_DOWNLOADED` "Download the clip reader first".
+- **The clip reader**: `videoEncoderStatus()`, `downloadVideoEncoder({onProgress, signal})`, `deleteVideoEncoder()`, `hasVideoEncoder()`.
+  The LTX-2 Community License covers it like the decoder and the picture reader.
+- **Parity** (the lab's code on the CPU in fp32, the pack's DiT weights, the c20 LoRA; 832 x 256, 17 frames, desktop iGPU): the source latent
+  rel 4.6e-3 (cos 0.999997; the decoder's f16 partials) against the lab's tiled `encode_video` (untiled differs by 3.5e-2: the tiling
+  is the lab's); the stages from the lab's own source and pin: rel 4.1e-3 (plain), 9.3e-3 (lowswap 2, 2, delta); end to end on the
+  phone's own encoders: rel 3.5e-2, cos 0.9994. Memory (usage, the desktop iGPU): reading the clip 352 MB at 832 x 256; the encoder
+  keeps none of it for the steps.
+- **Steps only** (`_noDecode`, the Video benchmark's LoRA-off clip): `imageToVideo` / `framesToVideo` stop after the steps: no frames, no file.
+
 
 ## 9. The assistant (`model: 'gemma4-e2b'`, p0pc0rn v019)
 
@@ -193,13 +269,33 @@ const brain = await PF.createEngine({ model: 'gemma4-e2b' });   // packUrl + OPF
 |---|---|
 | `status()` / `download({onProgress, signal})` / `deleteModel()` | as the other models (3.09 GB at 4-bit, resumable, SHA-256 per chunk). OPFS folder `pocketllm/pack` (the probe's folder: a phone that downloaded it in the probe already has it) |
 | `load({ mode })` | `'resident'` (default; 1,426 MB of weights on the GPU, fastest) or `'lean'` (<= 1.2 GB resident, the largest MLP shards re-read from OPFS per token). Returns `{residentMB, mode}` |
-| `unload()` | frees every GPU buffer. The queue calls it before any render and when the queue is idle |
-| `chat(messages, { tools, images, maxTokens, prefix, signal, onToken })` | -> `{ text (with the special tokens), reply, tokens, stopped, timings: {prefill, firstToken, decode}, tokPerS, prefillTokPerS, peakMB, promptTokens }` |
+| `unload()` | frees every GPU buffer. The queue calls it before any render and when the queue is idle. v4: returns a Promise that resolves when the second process (if any) confirms its end: its GPU buffers and device destroyed and it is exiting (`{ closed, device, ms, waitMs }`; split.js closeAsync, lworker.js op `closing`); it rejects with code `SPLIT_CLOSE_TIMEOUT` after 15 s without an answer. A caller may ignore it: the next split load (any engine's: Juli's, the Bigger brain's) waits for it first, up to 15 s (llm.js _startWorker; the load's `split.before` says how long) |
+| `splitAlive()` / `splitHelpers()` / `splitSettled({ timeoutMs })` | v4: is a second process this page started still not confirmed ended (any engine's) / the list `[{ name, state, ageS }]` (state `starting`, `open`, `closing`, `unconfirmed`: its close had no answer, `gone`: it stopped answering) / waits for the ones closing (rejects `SPLIT_CLOSE_TIMEOUT`). A page cannot list shared workers itself: this list is the page's own |
+| `chat(messages, { tools, images, maxTokens, prefix, keepPrefix, prefixOnly, signal, onToken })` | -> `{ text (with the special tokens), reply, tokens, stopped, timings: {prefill, firstToken, decode}, tokPerS, prefillTokPerS, peakMB, promptTokens, snapshot }` (snapshot with keepPrefix) |
 | `cancel()` | stops the answer (AbortError) |
+| `prefixMB()` / `dropPrefix()` | v4: the MB the kept prefixes take on each side (`{ page, helper }`, null when not loaded) / lets them all go (false while an answer runs) |
 
 - **`prefix` (new in v019, `engine/llm/llm.js`, 3 lines):** a forced start of the answer, e.g. `'<|tool_call>call:write_song{'`. It is appended to the
   rendered prompt and put back in front of `text`, so the agent's focused calls (write_song, look_at_result, plan_shots, review_shots) always
   come back as a tool call. Without `prefix` nothing changes (the probe's parity tests stand).
+- **`keepPrefix` (v4, the prefix snapshot; `engine/llm/llm.js`, `gemma4.js` snapshotPrefix / restorePrefix / prefixReuseFrom, worker ops
+  restorePrefix / dropPrefix):** the K and V rows of the prompt's fixed start are copied aside after its read-in and put back for the next
+  answer. `keepPrefix: true` = the start is the system turn; `{ messages: n }` = the first n turns. The same start again = a hit: only
+  what follows it is read in. A start that shares most of a kept one (on Gemma 4 E2B down to 192 tokens before the kept start's end: a
+  ring keeps its last 768 positions and the first query read in needs its 512-token window) = a partial hit: the kept rows go back, the
+  read-in starts where the tokens part, and the new start replaces the kept one. So a prompt should put what changes last (agent.js
+  voiceSystem: the answer's note after the fixed rules). Anything else = a miss that reads in everything and keeps it. Per side: `page` /
+  `helper` (default true), `pageCapMB` / `helperCapMB` (that side's GPU memory with the snapshot at most; 0 = no limit; the helper's
+  default is `SNAP_CAP_MB`, 1,200 MB, split.js; the least recently used start goes first, then none is kept), `max` starts kept per side
+  (default 2). In a split each process keeps its own caches' rows (Juli's voice layout: the page its mirrors of 13 and 14, about 3 MB;
+  the second process the caches of its layers 0-14, about 15 MB for a 1,074-token start). A page with only mirrors may keep nothing
+  (`page: false`, or its cap): on a hit the second process sends their rows (`snapshot.pageFrom: 'helper'`); a page that runs layers of
+  its own must keep its part, and the helper is never optional in a split (it runs the first layers). A start's key is its token count
+  plus a 53-bit hash of its tokens; the page also compares the tokens before any reuse. A picture, a reload or a KV cache made again
+  means a miss; a read-in that would start past 0 on caches made again stops with an error, so rows that are not there never feed a turn.
+  `prefixOnly: true` reads in and keeps only the start (a warm-up, no answer). The result carries `snapshot: { hit, partial, P, readIn,
+  kept, pageMB, helperMB, pageFrom, why }` (MB = every start that side keeps). The engine's `prefixMB()` says what they take now,
+  `dropPrefix()` lets them all go. The app asks for it on spoken turns only (agent.js: the voice prompt and the lookup planner).
 - Messages: `{type: 'image'}` parts consume `images` in order (the app's adapter moves `{type:'image', image: Blob}` parts there).
 - Decoding is greedy in v019 (no temperature / topK / topP): what the phone measured (17.8 tok/s, TTFT 0.4 s); the engine's CPU sampler reads
   all 262k logits per token and was not measured on the phone.
@@ -1173,10 +1269,11 @@ SHELL.on('open' | 'close' | 'home', fn)
 
 - `window.SHELL` is the same object; the event `p0:shell-ready` fires at start.
 - Ids: the 3.8 views (`create`, `assistant`, `apps`, `library`, `settings`), `home`, `music`, `browser`, `games` (the Apps shelf's
-  Games group), `skills` and `connection` (a placeholder: a tap shows "Coming soon" only).
-- The dock: Juli, Create, Music, Settings. The home screen: cards of agentic apps with news on top (at most 3; one swiped away stays away
+  Games group), `skills`, and `connection` and `messages` (placeholders: a tap shows "Coming soon" only; a screen registered with
+  `grayed: false` under one of these ids opens instead).
+- The dock (v4): Juli, Create, Music, Messages (grayed). Settings is on the home screen. The home screen: cards of agentic apps with news on top (at most 3; one swiped away stays away
   until that app's news is newer), then Library, Apps, Browser,
-  Games, Skills, Connection, then pinned apps. A new install starts in Juli's chat; every other start opens the home screen.
+  Games, Skills, Connection, Settings (v4: in a saved order it lands right after Connection, `orderHome` in `shell_core.js`), then pinned apps. A new install starts in Juli's chat; every other start opens the home screen.
 
 ### Conversations (`ui/threads.js`, `ui/chatactions.js`, `ui/chat.js`)
 
@@ -1275,8 +1372,10 @@ The body: plain Markdown, up to 900 tokens and 6 KB (600 tokens advised), no lin
   - Rows: `{h, b, t, f, to, v, fn, err}`, tokens `+ {c, sym, dec}` (a symbol that is a message or a web address is dropped: `cleanSym`).
 - The hard cap (`createBudget(cfg, {store, now})`): before every request the fetcher calls `take(scope)` (scope = the app's id):
   per-second and per-minute token buckets (in memory) and a per-day counter in `localStorage` (`p0pc0rn:quota:<key>`, UTC day) for every
-  app together and per app. Snowtrace: `SNOWTRACE_CAP` = 1 a second, 60 a minute, 5,000 a day, 1,600 a day for one app (the free tier:
-  2 a second, 10,000 a day). A refusal throws `DAILY_CAP`, `APP_CAP`, `RATE_LIMIT` or `BACKOFF` (with `until`) and nothing is sent;
+  app together and per app. Snowtrace: `SNOWTRACE_CAP` = one every 2 s, 30 a minute, 2,500 a day, 1,600 a day for one app (v4: per
+  copy of p0pc0rn, a quarter of the free tier of 2 a second and 10,000 a day, so two copies on one device stay within half; read only
+  when opened from the Home Screen: `installedOnly`, else `NOT_INSTALLED` and nothing sent, and the host does not check its apps in a
+  tab: `capOf`). A refusal throws `DAILY_CAP`, `APP_CAP`, `RATE_LIMIT` or `BACKOFF` (with `until`) and nothing is sent;
   `watch` answers with what came back and `stopped`. A 429, or the API's own "rate limit" answer (`S.rateLimited`), calls `note429()`:
   1 minute, then 2, 4 ... 1 hour, kept in storage; a working answer ends it. Answers carry `quota` (`{used, cap, left, appUsed, appCap,
   n429, resetAt, backoffUntil, paused}`). `pausedFor` / `pauseLine` / `quotaRow` are the host's words.
@@ -1295,6 +1394,87 @@ The body: plain Markdown, up to 900 tokens and 6 KB (600 tokens advised), no lin
   the `appask` job when it is on (`appSkill`, cut to 500 tokens, framed by `skillHead`).
 - Icons: a design that comes with p0pc0rn may ship `icons/apps/<id>-180.png` / `-120.png` (`designArt`, `ART_DESIGNS` in
   `ui/storefront_core.js`): its card, its made apps and their home tiles use it; an icon Juli makes for one app still wins.
+
+### Token Watch: the new-tokens source and its hard caps (`makeapp/tokenwatch.js`, `makeapp/budget.js`; v4)
+
+- Source `tokens.dexscreener` (`SOURCES`; hosts `api.dexscreener.com`, `api.geckoterminal.com`, `api.gopluslabs.io`, `api.rugcheck.xyz`;
+  all keyless). `p0.fetch('tokens.dexscreener', {op: 'top', chains, hours})`: `chains` = up to 3 of `avalanche`, `solana`, `base`,
+  `ethereum`, `bsc`, `arbitrum` (none = `avalanche`), `hours` = 1 or 6 -> `{top: [token], chains: {chain: {status: 'ok' | 'soon' |
+  'error', looked, launched, floorOut, kept, cover, lookedAt}}, hours, floor, at, calls, reused, stopped, quota, quotas}`.
+  - Discovery: GeckoTerminal `networks/{avax|solana|base|eth|bsc|arbitrum}/new_pools` (page 1) merged in turn with DEX Screener's
+    `token-profiles/latest/v1` and `token-boosts/latest/v1` for the chain (`mergeCandidates`). Numbers: `tokens/v1/{chain}/{up to 30
+    addresses}` (one main pair a token: a first sort), then `token-pairs/v1/{chain}/{address}` for each token that may be shown (all its
+    pairs: its launch = its FIRST pair's `pairCreatedAt`, the bonding curve's included; its most liquid real pool stands for it).
+  - Graduated only (`pairKind`, `CURVE_DEXES`, `CURVE_LABELS`, `AMM_DEXES`): a pair on a launchpad's bonding curve (DEX Screener dexIds
+    pumpfun, meteoradbc, bags, moonshot, launchlab, believe, boop, fourmeme, arenatrade; or labelled DBC / LaunchLab) never counts; a
+    token whose most liquid market is a curve, or with no real pool, is `curve` and never shown; one on a pool we do not know is
+    `other` and never shown. `graduated` (a curve and a pool) and `direct` (pools only) count.
+  - Ranking, in code (`judge`, `rank`): launched within the window, its pool with at least `FLOOR_USD` ($5,000) of liquidity, RISEN
+    (`moveOf`: `h1` under an hour old, `h6` under 6 hours, else `h24`; `since: 'graduation'` when the pool came more than 2 minutes after
+    the launch), biggest rise first, then liquidity; the top 5 across the chains. A token is shown only when its own check and its
+    safety check both fit the look's 12 requests (`unchecked` counts the rest).
+  - A token: `{chain, address, pair, symbol, name, dex, launchedAt, ageMin, liquidity, fdv, marketCap, change: {m5, h1, h6, h24},
+    volume, txns: {h1: {buys, sells}, h24}, socials, websites, profile, boosted, pump, move: {pct, window}, flags, safety, label}`
+    (symbols and names cleaned: `cleanSym`, `cleanName`).
+  - Safety, the top 5 only: GoPlus `token_security/{43114|8453|1|56|42161}?contract_addresses=a,b,c` once per EVM chain (`goplusOf`:
+    honeypot, mintable, hidden owner, owner can take back ownership, a buy or sell tax over 10 %, the creator or owner with 20 % or
+    more of the supply, not open source), RugCheck `tokens/{mint}/report/summary` per Solana token (`rugOf`: its own `danger` and
+    `warn` risks, `score_normalised`, `lpLockedPct`), and the data's own (`dataFlags`: an address ending in `pump`, a DEX Screener
+    boost or profile; where it graduated from). `safety = {by, status: 'checked' | 'unavailable', why, flags: [{id, text, level, by}], score,
+    lpLockedPct}`: a failed, skipped or capped check is `unavailable`, never "safe". p0pc0rn takes no responsibility for security or safety. It only relays the information GoPlus, RugCheck and Routescan report. Juli does not check contracts and cannot provide any safety information.
+  - `page({chain, pair})` -> the token's DEX Screener page (`https://dexscreener.com/<chain>/<pair>`) for the host's link.
+- The hard caps (`TOKENWATCH_RULES` in `budget.js`): each chain is looked at most every 5 minutes for one app (`createSpacing`, kept in
+  `localStorage` `p0pc0rn:looks:tokenwatch`; a look within those 5 minutes is used again from this page's memory, so "look back 6
+  hours" costs no new discovery, else the chain is `soon`); one call sends at most 12 requests (`S.perCall`, enforced by the
+  fetcher: `CALL_CAP`, never sent); each host has its own budget (`S.budgets`) with an hourly cap (`perHour`, the UTC clock hour,
+  `HOUR_CAP`): DEX Screener 2 a second, 20 a minute, 120 an hour, 1,200 a day (it documents 60 a minute for its lists, 300 for its
+  token lookups); GeckoTerminal 1 / 4 / 36 / 300 (it answered 429 at about 24 a minute); GoPlus 1 / 6 / 36 / 300; RugCheck 1 / 6 / 60 /
+  500. GoPlus' code 4029 counts as a 429.
+  `idleOnly`: its checks wait for an idle phone; it looks only when the open app asks or Watch closely is on.
+- `p0.open(source, {chain, pair, label})` (frame.html; `deny` 'open': a source in the app's permissions with a `page()`, only from the
+  open app): the host makes the address and shows a real link under the app (`#app-link`, above `#app-credit`); the app holds none.
+- `p0.visit`: this visit of p0pc0rn (`visitId()` in `host.js`: sessionStorage `p0pc0rn:visit`, kept by planned reloads, new when
+  p0pc0rn opens again): Watch closely stops when it changes.
+- Chat: `apps.command(text)` (`tokenCommand` in `tokenwatch.js`: "watch closely", "watch Avalanche closely", "stop watching closely")
+  leaves `{cmd, chains, at, visit}` in the person's Token Watch's storage (`p0kit:tw.cmd`) and answers in code (`ui/chat.js` before
+  the agent; never a model turn); the app's next check acts on it.
+- Name references (v4, Josh Nov 1): `permissions.juli: ['ask', 'big']`. The app's own switch (`p0.juli.setBig`, `app.bigOn`, off by
+  default, never automatic; Settings › Apps › Priority mirrors it read-only); not downloaded = "Download the Bigger brain (free, about
+  4.7 GB)" (`p0.juli.download` -> app.js `downloadBig` -> `e4bTap`: NVIDIA's licence screen first, accepted by the person). In a check,
+  `p0.juli.refer` -> host `referJuli` (modelPlan: the switch, downloaded, its second process; yields to the person; a day's cache per
+  name) -> queue job `appref` on the Bigger brain only (`refRunner`, no fallback) -> `makeapp/reference.js runRef`: `sanitize` (NFKC; no
+  control, invisible, bidi or markup character, web address, template token or instruction word), Wikipedia then Fandom through the
+  research lane (its quarantined reader = this job's model; lookups under `REFLOOKUP_CAP`), the model sees only the quoted name and symbol
+  and the fact lines, answers `{reference, franchise, character_or_thing}`, `validateRef` (labels in the fact lines), `refSentence` and
+  `citeOf`. The app gets `{status, line, cite: {id, title, site, license}}`; the link stays in the host (`p0.juli.cite(id)`).
+- Snowtrace (v4, Josh Nov 1: "a one time call ... manual by the user at human speed"): `permissions.tap: ['chain.snowtrace']`. An
+  Avalanche token's card has "Check on Snowtrace": one tap = `p0.fetch('chain.snowtrace', {op: 'token', address, parts})` (holders,
+  verified source, newest 100 transactions; `parts` = the ones not kept yet), kept in `K.save('tw.rs')` and never asked again. The host
+  refuses a `tap` source, and op `token` for any app, outside the open app (`deny`), and a capped `tap` source never rests the app's
+  checks (`capOf`). Red flag (`TW.FAIL`): at least 10 AND at least 20 % of those transactions failed ("Routescan shows 34 of the last 100
+  transactions failed"). Routescan's cap is Wallet Watch's (`SNOWTRACE_CAP`), its minute shared while both use it (`share`: equal parts
+  between the apps that sent a request in the last minute; alone: the whole minute; a refusal is `SHARE`, nothing sent); a refused tap
+  says "Routescan is busy, try in a minute" and queues nothing.
+- Credit (`SOURCE_CREDITS['tokens.dexscreener']`, `inline: true`, drawn by `creditParts`): "Data: DEX Screener · New pools: GeckoTerminal by CoinGecko · Solana checks: RugCheck · Powered by GoPlus Security", each name a link (4.0: GoPlus asks for "Powered by GoPlus Security" with a link wherever its data is shown; the app's safety note carries the line too).
+
+### The apps scheduler (`makeapp/scheduler.js`; v4)
+
+- `host.js tick()` asks `schedule(due, now)`: `rankDue` (priority from Settings › Apps › Priority, `p0pc0rn:apps:priority`, only
+  `high` / `low` kept; then the most overdue; a check `SCHED.starveFactor` (3) x its interval late is "starving" and goes first; an app
+  whose last check said `active` gets `SCHED.boost`, never above High), `batchByModel` (the checks that ask Juli grouped by model: the
+  loaded one first, never a lower tier first; swaps counted) and `batchWait` (the head check waits up to `SCHED.batchWindowMs` for more
+  questions of its model due within a minute; never High, starving, loaded or twice). A tick runs checks for at most
+  `SCHED.tickBudgetMs`; `A.batch` makes `holdFor` keep the model `SCHED.batchHoldMs` for the batch's next check (`ownHold`: that hold is
+  not "busy" for it; `openApp` ends the batch first). Every check's `juli.ask` yields to the person. A check's request refused by a cap
+  (`capWatch`/`noteCap`) runs the check again when the window opens (`app.nextCheck`), never sooner.
+- One budget per source for every app: `S.budget` (a hard cap that rests checks: Snowtrace, Token Watch's hosts), `S.shared` (v4:
+  NWS forecast + alerts, CoinGecko, NIFC WFIGS (v4: the place search runs on the phone, no budget); a key shared by sources of one host; no quota, no settings row). Snowtrace's
+  `share`: its minute split equally between the apps that used it in the last minute.
+- The log (`createSchedLog`): ran / wait / load (swap) / yield / call / refused / switch / priority; `apps.schedLines()` in Diagnostics.
+- The bench: `makeapp/schedbench.js` (`MIX`: 12 apps, 3 hours, the person, one render; `runMix({policy: 'sched' | 'naive', engine})`,
+  `card`). Node: `node tools/schedsim.mjs <out>` (a fake model). Browser: `schedbench.html?bench=scheduler&autostart=1&pack=/pack/`
+  (the real E2B and E4B from the packs, read-only; fixtures for every source; only real model time is added to the virtual clock;
+  `window.__schedBench`), driven by `node tools/sched_drive.mjs --cdp 127.0.0.1:9333 --url <url> --out <path>`.
 
 ### Changing an app (`makeapp/edit.js`; the `appedit` job)
 
@@ -1381,3 +1561,381 @@ The body: plain Markdown, up to 900 tokens and 6 KB (600 tokens advised), no lin
   `safe: { top, bottom }`, a window resize or a change of the frame's own size sends `{ t: 'safe', top, bottom }`, the frame keeps
   them as `p0.safe` (`{ top, bottom, host: true }`) and fires `p0:safe`; the Kit's `K.safe.top` / `K.safe.bottom` = the host's
   (inside a frame, env() reports the screen's insets wherever the frame sits).
+
+### The video LoRA and Settings › Benchmark › Video (v4: `app.js`, `pocketflux.js`, `ui/bench_video.js`, `ui/bench.js`)
+
+- **The model piece**: Settings › Models › Video LoRA (`MODELS.lora`, an add-on of the video engine like the picture reader:
+  `loraStatus` / `downloadLora` / `deleteLora`). Its row shows only when `config.js` lists a pack for `'sanavideo2-5b-lora'` (`pocketflux.js`
+  passes it to the video engine as `loras`); deleting the video model takes it too. Its switch "Use the video LoRA" (`pf.app.loraOn`, on by
+  default) shows once it is downloaded. Credit: "LoRA by Josh Hughes, trained on SANA-Video 2.0 (NVIDIA, Apache-2.0)" (also in Licences).
+- **Which jobs use it**: picture clips (`imageToVideo`, `framesToVideo`: Create, the chat, the music video's shots) when it is downloaded and
+  on (`videoAdapter` adds `lora: {id, scale: 1}`); a caller that passes `lora` itself decides (the benchmark). Text-to-video runs without it
+  (the LoRA was trained on pinned-frame clips only); the engine accepts it there too.
+- **Phase 3: the looks LoRA and the clip reader** (`MODELS.lora2` = 'sanavideo2-5b-style-lora', c20; `MODELS.venc` = 'ltx23-video-enc'): two
+  more add-ons of the video engine with their rows (the clip reader behind the LTX-2 licence sheet, like the decoder). One LoRA a job, never
+  stacked: picture clips the video LoRA, style video to video (`videoAdapter.videoToVideo`) the looks LoRA, each with its own switch
+  (`pf.app.loraOn`, `pf.app.lora2On`). `pocketflux.js` passes `videoEncoderPackUrl` and both LoRAs when `config.js` lists them.
+  Phase 4 gives it its Create screen (below).
+- **Phase 4: Create › Video › Restyle a clip** (`ui/style_v2v.js` the looks, sizes, prompts and jobs; `ui/clipprep.js` the clip's frames;
+  `ui/style_run.js` the queue's `restyle` runner). The fourth source shows when this build carries the clip reader and the looks LoRA.
+  1. **The clip**: a finished clip from the Library (its viewer's **Restyle**, or the clip slot's Library) or a video from the phone (the
+     slot's Video: its own unticked box, `rights.ATTEST`, like a photo). It is read once, at pick time, into a frames pack: its first n s
+     (n = 1..5, at most what it has; `STYLE_CAP_S` = 5 = 81 frames, the model's training length), 16 frames a second (frame i = the one shown
+     at (i + 0.25) / 16 s), scaled to fit (below), each a JPEG (q 0.92) in one Blob; frame 0 also a PNG. A p0pc0rn MP4 goes through WebCodecs (desk: 0.2 s for 2 s); anything else (an iPhone's HEVC .mov, a rotated track) through a
+     hidden inline `<video>`, seeked frame by frame (desk: 27 s for 5 s of a 30 fps 720p rotated clip, drawn upright). The slot shows the
+     clip's length and size and what is used; Length offers 1 s up to that.
+     **The size** (`styleSize`, `fitOf`; never a hard centre crop): the SANA-Video 2.0 480p bucket nearest the clip's shape (SANA's own
+     `ASPECT_RATIO_VIDEO_480_MS_DIV32`: 896 × 448 … 832 × 480, 768 × 512, 704 × 544, 640 × 640, 608 × 672, 544 × 704, 512 × 768,
+     480 × 832 … 448 × 896), at the largest of its sizes (multiples of 32, an even latent token count, within 4 % of its shape) with no
+     more latent tokens a frame than 832 × 480 (390: where the phone's clip read, stages and decode were measured) and no bigger than the
+     clip; when that would fill more than 5 % of a side, an unfilled size of the bucket with at least 70 % of its pixels. The whole frame
+     is scaled into it: a shape up to 2.5 % off is trimmed (half each end: 16:9 and 9:16 lose 1.25 % at each end), further off the whole
+     frame goes in and its edge pixels are repeated into the rest (4:3 into 704 × 544: 1.5 % top and bottom). 1:1 runs at 576 × 576,
+     21:9 at 864 × 448 with 9 % bands. The slot says it: "Restyles its first 5 s at 704 × 544 (the whole frame, its edges extended
+     1.5 % top and bottom)". Klein's first frame, every part of a whole video and its frames pack use the one size. The looks LoRA was
+     trained at 832 × 480 / 480 × 832 only; on the desk (the phone's engine on a desktop integrated GPU, two test clips, 1:1 and 4:3 crops of each, the
+     new size against the old crop) it keeps its look at 576 × 576 and 704 × 544 as at the trained size: the saturation over 2 s stays
+     at 0.56-0.77 against the clips' 0.22-0.42 (the old crop 0.64-0.76), no new artifacts, late frames a little grainier at every size
+     alike; and the whole frame stays in (the old crop cut a 1:1 clip's top and bottom by 42 %). Memory there: 455 MB at most against
+     439 MB at 832 × 480 (the clip read's 512-pixel tiles), the stages and the decode lower.
+  2. **The look**: a grid of the 20 (thumbnails `ui/looks/<id>.jpg`: frames of the published example clips' styled rows), the steadier
+     ones first; clay, marble, origami, graffiti, blueprint, plush and puppet marked beta (the plain word).
+  3. **Make**: what is missing first (the clip, its tick, a look, the words; then one download at a time: the picture model, the picture
+     reader, the clip reader (its LTX-2 licence sheet first), the looks LoRA), the agreement and the LTX licence like every video job,
+     then an `edit` job: Klein 4B restyles frame 0 with the look's edit words at the clip's size. Its picture is checked on Create
+     (**Use this / Try again / Start over**, one job at a time), never saved to the Library.
+  4. **Use this**: a `restyle` job (`videoToVideo`, the looks LoRA by default, no low-pass swap: the lab's `lowswap` builds only its
+     training pairs' photo twins). **Follow the motion** (under the looks): **Closely** (`follow: 'close'`: "Keeps the moves of your
+     clip. The look is a little lighter.") or **Loosely** (`'loose'`, stage 1, c20's training start: "The strongest look. Quick moves,
+     like hands, can come out stiff."); the same time either way, so it shows none. Nov 3: from stage 1 the source is only ~5 % of the
+     start, and quick moves (hands) froze. **Each look has its own default** (`LOOK_FOLLOW`, beside the looks list): Loosely for
+     puppet, blueprint and origami, which lost their look from stage 2 on the 200 held-out restyles (CLIP style-hold 3, 6 and 6 of 10
+     against 9, 10 and 7), Closely for the other 17 ("Puppet starts here: its look holds better this way." when the look chose).
+     A tap is the person's own pick and wins over any look's (the draft's `followPick`); the Library item keeps the setting and
+     whose it was (`follow`, `followBy` 'you' | 'look'), and Reuse brings back only the person's own pick. The whole video's
+     parts all follow its one setting. The prompt is the look's words (the lab's `WORDS` = looks.json
+     `sana_prompt_prefix`), then the person's words (prefilled with a Library clip's own prompt); nothing else writes the look part.
+     Progress: 7 stages (Reading the styled frame, Reading your clip, Reading your words, Filming 1..3 of 3, Developing, Saving the clip).
+  5. The new clip lands in the Library beside its source (`vmode` 'v2v', `look`, `description`, `sources` = the clip it came from); its
+     viewer says "Restyled (look) from" + the source, and Reuse brings the look, the words and the source clip back.
+  6. **The clip's own sound** (`ui/clipsound.js`): read once at pick time from the sound track only (`engine/audio/mp4av.js`
+     `readAudioTrack` on the moov box, then the sound's own samples: never the picture, so a long 4K camera video is never read whole),
+     decoded (WebCodecs `AudioDecoder`; else a small audio-only MP4 through `decodeAudioData`), placed by the track's edit list (a later
+     start, the encoder's priming), made 48 kHz stereo and kept as a WAV beside the frames (store slot `style`, `sound`). The restyle cuts
+     it to EXACTLY the new clip's length (frames / 16 s: 81 frames = 5.0625 s; a shorter clip its own), fades its last 6 ms so the cut
+     does not click, encodes it (AAC, else Opus: `engine/media/m4a.js`) and muxes it under the picture (`remuxWithAudio(vt, audio,
+     {exact: true})`: the picture's samples untouched, the sound's edit exactly the picture's length). No sound track: no sound; no sound
+     encoder: the clip stays silent and a toast says so. MP4 and QuickTime .mov (AAC or Opus; sound descriptions v0 / v1 / v2, the esds
+     inside `wave`); any other file only when small (48 MB), decoded whole.
+  7. **The whole video, in parts** (Experimental; offered only for a clip longer than 5 s). Otherwise a longer video is restyled as its
+     first 5 s, and the slot says so. "Restyle the whole video" reads the other parts' windows (`partsOf`: 5 s a part, the last at least
+     1 s, up to `STYLE_LONG_CAP_S` = 20 s = 4 parts; part k + 1's window starts on the frame part k's ends on; `prepareParts` opens the
+     clip once; store slot `style-parts`). Use this shows a notice first (the estimate per part times the parts), then queues ONE
+     `restylelong` job (`restyleLongRunner`, no model): it queues one `restyle` job a part (tag `p<part>.<try>`, seed `partSeed`), part 1
+     on Klein's checked frame, part k + 1 on part k's LAST frame (`keepLast`: the engine's own frame as a PNG, pinned at latent slot 0
+     like Klein's; no new Klein frame), and when the last part is done joins them (`joinParts`: `concatVideo`, every part but the last
+     without its last frame: no re-encode, no frame twice) and puts the sound under the whole. Each part is its own job (a phone gets a
+     fresh page before each one). A part that fails, or the page ending three times in it, stops the job with `PART_FAILED`
+     (`state.failed`); the job and its finished parts are kept for 3 days and Create says which part and why: **Carry on from part N**
+     retries the job, which queues a new try of THAT part (the parts before are never made again; the part's engine checkpoint carries it
+     on from its last stage), **Stop** forgets it. Progress: "Part 2 of 3 · Stage 5 of 7 · Filming · step 2/3", the bar and the time left
+     over all the parts. The Library item has `parts` (its viewer: "Restyled · look · 3 parts, Experimental"); each part's own time
+     teaches the phone's estimate.
+  State: `S.sty` (`pf.app.sty`) + its blobs in the Library store's `inputs` slot `style` (store.js `putStyleInput`), so a reload or a
+  planned fresh page keeps the clip and the picture under review; the queue keeps each job's own blobs (`sourceKey`, `firstKey`) and the
+  engine's checkpoint carries a stopped restyle on from its last stage (the source's hash is its queue key). Phone estimate
+  (`styleSeconds`, until the phone has its own times): about 4.2 min for 2 s, 8.9 min for 5 s at 832 × 480, plus the first frame.
+  Desk (a desktop integrated GPU, 832 × 480, 5 s): reading the clip 475 s / 574 MB, 3 stages 87 s each / 618 MB, decode 235 s / 596 MB (usage, the
+  engine's count).
+- **The Video benchmark** (its own button; never part of Quick or Full): Quick = picture to video with the LoRA, first + last frame with
+  it, the same picture to video without it; 832 × 480, 2 s (33 frames), one seed, the bundled pictures `ui/bench_video/fox-first.jpg` /
+  `fox-last.jpg` (Sorrel the clay fox, an original character made with FLUX.2 [klein] 4B for p0pc0rn). Each runs as a `bench` job through
+  the queue (a planned fresh page per clip on a phone carries the run on). The card: one line a clip (pass / fail, seconds a step, decode,
+  total, peak graphics memory as the engine measured it, whether the LoRA was applied), the LoRA's cost a step, a summary; Copy shares it,
+  nothing is sent. Phase 3 adds style video to video: FIRST frame 0 of the bundled clip (`ui/bench_video/fox-move.mp4`, a 2 s SANA-Video
+  clip of the same fox) restyled by Klein 4B (a `bench` job on the picture model, on a cool phone: Josh's Nov 2 run ended in it when it came
+  4th; its picture waits in the queue's blob store), LAST the clip re-rendered with the looks LoRA as the app does (Follow the motion
+  closely: from stage 2, 3 stages). Every Video step is watched
+  (ui/bench.js `watched`): its heartbeat (`pf.app.benchBeat`: the step, its message, the engine's memory) is kept while it runs, so a page
+  the phone ends says how far the step got and how long it was quiet; a step silent for 240 s (or 4x its longest gap) is aborted and fails
+  as "stalled", and the run goes on. The LoRA-off picture clip runs its steps only (no decode), so the whole
+  run stays near 14 minutes.
+
+### Voice input (v4: `engine/stt/`, `ui/voicein.js`, `ui/voicebench.html`, `ui/bench_voice.js`; the pack: `tools/stt_pack.py`)
+
+- **The model**: NVIDIA Nemotron 3.5 ASR Streaming 0.6B (`nvidia/nemotron-3.5-asr-streaming-0.6b`, OpenMDW-1.1): a cache-aware
+  FastConformer-RNNT (24 layers, 80 ms frames, 128 mels) with a language prompt (40 locales or `auto`), punctuation and capitals.
+  `MODELS.stt` = 'nemotron35-asr-0.6b'; its Models row shows once `config.js` lists its pack, and only where it fits beside Juli
+  (`voiceHere`: not WebKit without the second process). The OpenMDW sheet shows once before its download (`MDW_KEYS.stt`).
+- **Engine** (`engine/stt/stt_engine.js`): `createSttEngine({ packUrl })` -> `status()`, `download({ onProgress, signal })`, `deleteModel()`,
+  `load()` (the agreement first: `NO_CONSENT`; every weight resident, about 0.65 GB of GPU memory; the kernels compiled by a silent chunk),
+  `unload()`, and `stream({ lang, lookahead: 3, eouMs: 900, onText({ text, lang }), onEnd({ text, reason }) })` -> `push(Float32Array 16 kHz)`,
+  `finish()` -> `{ text, lang, tokens, stats }`, `cancel()`. One stream at a time. `lookahead` 0 / 1 / 3 / 6 / 13 = chunks of 80 / 160 / 320
+  / 560 / 1120 ms (the model card's settings; 3 is the default). `stats`: real-time factor, ms a chunk, first word and end-of-speech times.
+- **End of speech**: the model has no end-of-utterance token (it writes a sentence's full stop only once the next sentence starts), so a
+  turn ends on silence: no new word for `eouMs` of processed audio and no voice in the audio for `eouMs` (`stt_stream.js`).
+- **The algorithm** (`stt.js`, `sk.js`, `mel.js`): the reference's, chunk for chunk: the JS mel front end (frame for frame the Hugging Face
+  feature extractor's), the causal subsampling with one-frame caches, a 56 + C frame K/V ring and an 8-frame conv history per layer, the
+  relative-position term from a table made by the packer, greedy RNN-T with the joint for every remaining frame of a chunk in one pass
+  (one read-back per token, the LSTM only after a token). All activations fp32, weights int8 (q8g64r) dequantised in the kernels. Desk
+  check (headless Edge on a desktop integrated GPU against Hugging Face Transformers 5.22, CPU fp32): the same tokens on 40 of 42 test lines at 320 ms
+  (the two others are the int8 weights' doing: an int8 reference in torch gives the same two), every greedy step the same as the int8
+  reference on all 42.
+- **The chat** (`ui/voicein.js`): the mic beside Send (`#as-mic`), shown when voice input is on the phone and switched on. A tap asks
+  for the microphone the first time (`engine/stt/mic.js`: an AudioWorklet resamples to 16 kHz, `mic_worklet.js`), the words go into the
+  message box as they are spoken, and on silence the message is sent after 2.2 s with Undo and Edit (`#as-voicebar`), unless Settings ›
+  Juli › "Send when I stop talking" is off. Settings › Juli also has the switch and the language (`localStorage p0pc0rn:voice`). The
+  audio is never stored or sent. The recogniser unloads after a minute unused, when the page is hidden, and before any model other than
+  Juli loads (`app.js hostCreate` -> `release()`).
+- **Juli's layout with voice input** (`app.js voiceLayout`, `brainOpts`): on iOS 27 with voice input on, Juli loads as Troll-E's layout
+  (all 35 layers in the second process, the KV of 13 and 14 mirrored back for her drafter), so the recogniser fits in the page. When Juli
+  is held in the chat layout, the mic waits for the queue to let her go (`voiceRoom`).
+- **Settings › Benchmark › Voice in** (`ui/bench_voice.js` -> `ui/voicebench.html`): its own page, a fresh page a step (a page the phone
+  ends is a reading): the recogniser alone, beside Juli's chat layout, beside her all-in-helper layout; each: load, the page's GPU memory,
+  the 18 bundled lines (`ui/voicebench/`, Qwen3-TTS speech voice-cloned from a Flite cmu_us_slt clip) as fast as it goes (real-time factor, word error rate), three
+  of them in real time (first word on screen, end of speech noticed), and Juli's speed before and beside it. Its own key only
+  (`p0pc0rn:voicein:bench`).
+- **The voice loop in the bench's layouts** (Josh's phone, Nov 2: every layout kept all three alive): after "alone", the whole loop (Juli,
+  the recogniser and her voice loaded together; one answer, then five bundled lines spoken in real time, each answered in voice mode) with
+  Juli 0-28 in the helper (the chat's voice layout) and 0-20, the recogniser on the page, loaded after and before her. The card: every
+  process's memory, the latencies from the end of the speech, her speed, both real-time factors, whether a process ended.
+- **Voice mode in the chat** (Josh, Nov 2: "Yes lock it in"): Juli's layout with voice input on is 0-28 in the second process
+  (`app.js VOICE_SPLIT`). A message that came from the mic (`ui/voicein.js takeVoice`, `ui/chat.js` -> `agent.ask({ voice })` -> the chat
+  job's `params.voice`) is answered in voice mode: the streamed plan call gets `VOICE_NOTE` (a mood tag first, short spoken sentences),
+  `brainChat` strips the tag from what is shown and kept, and each complete sentence is spoken while the rest is written
+  (`ui/voicetalk.js` through `ui/voiceout.js`); an answer that did not stream is spoken whole when it lands. Settings › Juli › "Juli speaks
+  her replies"; Stop over the message box (or a mic tap) ends her voice. Juli stays loaded 45 s between voice turns (`holdMs`). Her voice
+  (p0voice on WebGPU, Flite as the fallback; below) loads on the first mic tap and is let go with the recogniser.
+- **Voice mode, safe and quick** (Josh's phone, Nov 2: in a real chat the second process ended during the lookup planner's read-in, Juli
+  went on in one process, and the page ended when her voice loaded on top; her first word took 12 s): a spoken turn gets a slim prompt
+  (`agent.js` `voiceSystem`: the core rules, the always-on safety notes, `VOICE_NOTE`; no tools unless it asks to make something, no skill,
+  About me or summary, the last two turns at 300 characters, 200 tokens; desk: 1,090 prompt tokens instead of 2,476), lookups only for a
+  question that names something or asks if something is safe, one topic. The message goes as soon as you stop (Undo / Edit cancel her
+  answer). Her second process failing in voice mode: a fresh engine once with the same layout (`juliSplitFailed`), then voice paused for
+  the page (`pauseVoice`: the recogniser and her voice let go, a note; she answers in text); Juli in one process on WebKit is never
+  spoken for, and the mic waits.
+- **The waveform** (`ui/voicewave.js`): while you speak, the level of each 40 ms of your voice as bars on a small canvas over the message box
+  (from the AudioWorklet's blocks, drawn only when a block comes); while Juli speaks, a quieter one from her audio's analyser; one level bar
+  with prefers-reduced-motion. No GPU, no model.
+- **Her name** (`ui/voicein.js fixName`): the recogniser writes "Juli" as "Julie"; it is put right where it is said to her (the start, after
+  hey / hi / ok / thanks, or a last ", Julie"), never a Julie in the middle of a sentence or Julie's.
+- **Her voice** (`ui/voiceout.js`; v4, Nov 3, Josh: "Juli sounds good. Maybe better than tts."): ONE small interface, `createVoiceOut()` ->
+  `load()`, `speak(text)` -> a Promise of `{ pcm, sampleRate, moods, text, ms, voice }`, `memoryBytes()`, `unload()`, plus `name`, `kind`
+  ('p0voice' | 'flite') and `why` (why the fallback speaks); `splitMood()` / `wordsSoFar()` read the voice-mode mood tag (`[calm and
+  cheerful]: ...`, never spoken or shown), and `wordsSoFar` keeps the streaming reply's moods for her voice (`setMood(null)` at a reply's
+  start). Her voice is p0pc0rn's own text-to-speech, p0voice v3 (`engine/p0voice/`, Josh's engine and weights): speaker 0 (Juli), 4
+  steps on WebGPU (her own GPUDevice, made once and kept), her pace from the pack, the mood words as her style; desk: 37.5 MB of GPU
+  memory and 11 MB of ArrayBuffers on the page, a 2.5 s sentence in about 80 ms. Its pack (`p0voice-juli`, 25 MB, `tools/p0voice_pack.py`,
+  speaker 0 only; OPFS `engine/p0voice-juli/pack`) downloads by itself the first time voice mode speaks; Settings › Models has its row
+  ("Juli's voice": size, Download, Delete; `createVoicePackEngine`). Flite's cmu_us_slt (games/trolley/voice/, in a module Worker: no
+  WebAssembly on the page) is only the fallback, chosen by itself: no WebGPU, no pack in this build, the pack still downloading (she takes
+  over at the next sentence once it lands) or her voice did not load. Troll-E keeps Flite.
+- **Room for other GPU work**: the recogniser lets go before any model but Juli loads, before Make HDR runs (`RUN.hdr`) and before the
+  kernel tune (`ui/tune.js` `before`); the mic waits while any of them runs (`voiceBusy`). Its FAQ section answers voice-input questions
+  only (`voice input`, `microphone`, `dictate`, `talk to you`, `my voice` ...), never a plan about a song's voice or a clip's sound.
+
+## 26. Make HDR (v4: `engine/hdr/`, `ui/hdr.js`)
+
+Josh, Nov 1: "Make the hdr button with both profiles as options"; "video and images will use it". A finished picture or clip (music videos
+and lip-sync included; never a song, never an HDR copy) gets **Make HDR** in the Library viewer. The result is a NEW Library item beside
+the original (`createdAt` = the original's + 1 ms), marked HDR; the original is never touched.
+
+### The looks (`engine/hdr/hdr_core.js`, pure)
+
+One curve family, p0pc0rn's own (never ITU-R BT.2446 Method A's formulas), five numbers a look, peak P = 1000 nits:
+l = BT.2020 linear light of the SDR code value (BT.709 primaries, BT.1886 gamma 2.4); Y = dot(l, K2020); Yg = Y^g;
+ramp = ((Yg - k) / (1 - k))_+^p; N = W Yg (1 + (P / W - 1) ramp); rgb = l N / Y; chroma x sat around the new luminance; then HLG
+(BT.2100, 1000-nit display, system gamma 1.2) and BT.2020 NCL Y'CbCr, limited range.
+
+| `LOOKS` | name | curve | W | g | k | p | sat | what it does |
+|---|---|---|---|---|---|---|---|---|
+| `vivid` (default) | Vivid | R250 (fitted to Josh's reference HDR clip, Oct 31) | 249.379 | 1.0511 | 0.0179 | 2.1014 | 1.0774 | bright highlights, richer colour, mid tones kept (mid grey 43 nits) |
+| `bright` | Bright | W550 (Oct 30) | 550 | 1.0432 | 0.019 | 1.5654 | 1.0363 | lifts everything (mid grey 96 nits) |
+
+SDR white reaches 1000 nits in both. HLG only (royalty-free: BBC / NHK); no PQ. `HLG_CICP` = 9 / 18 / 9, limited range.
+
+### A clip (`engine/hdr/hdr.js` `makeHdrVideo(blob, {look, onProgress, signal, vui = true})`)
+
+1. `mp4hdr.demux`: the video track (and the sound track, if any, copied sample for sample at the end).
+2. WebCodecs decodes each frame (a `<video>` element where it can't); `hdr_gpu.FramePass` copies it into a texture (a frame whose display
+   size is not the track's is scaled, never cropped) and two compute kernels write I420 straight from it: `luma` (4 Y samples a thread)
+   and `chroma` (4 Cb + 4 Cr, each the mean of its 2x2 block), pixels read with `textureLoad`, any even size.
+3. The still blue-noise dither (64x64 void-and-cluster, `blueNoise()`, made once a page): triangular, peak 1 code value, on Y, Cb and Cr
+   (each with its own offset into the tile) before the 8-bit rounding. Safari can't build 10-bit VideoFrames, so the stream is 8-bit;
+   probe v002 showed the dither survives Apple's HEVC encoder (highlight-ramp steps 27.9 px -> 2.3 px).
+4. `VideoEncoder`: the first of HEVC Main, HEVC Main 10 (an iPhone writes 8-bit Main for it), VP9 profile 0, AV1 main 8-bit that the
+   browser supports; 8 Mb/s at 832 x 480 x 16 fps, by pixels (3-16 Mb/s); a key frame every 48 frames; the frames keep the source's times.
+5. HEVC: the HLG colour is written into every SPS (the hvcC's and any in band) by `hevc_vui.rewriteSpsColour`: the old SPS bits up to the
+   VUI's signal-type block (or, with no VUI, up to vui_parameters_present_flag), the new block (video_format kept or 5, limited range,
+   colour description 9 / 18 / 9), every later bit unchanged, emulation prevention again. Byte for byte what FFmpeg's `hevc_metadata` writes
+   (checked on libx265 streams with and without a VUI). The first two frames are decoded back with the new setup; if this browser's decoder refuses
+   them the stream stays as the encoder wrote it (`vui.why`). `localStorage['p0pc0rn:hdr:vui'] = '0'` turns the rewrite off. VP9 carries
+   the colour in vpcC.
+6. `mp4hdr.mux`: ftyp | moov | mdat, colr nclx 9 / 18 / 9 + pasp in the sample entry, ctts + an edit list when the encoder reorders
+   frames, the sound track's own boxes with only its chunk offsets moved (track 2).
+
+Result: `{blob (video/mp4), width, height, frames, fps, codec, kind ('hevc' | 'vp9' | 'av1'), vui: {asked, written, read, why}, sound,
+look, curve, timings}`. Errors (`code`): `UNSUPPORTED` (no WebGPU / no encoder), `BAD_MP4`, `DECODE`, `ENCODE`, `GPU`.
+
+### A picture (`makeHdrPicture(blob, {look, route = 'both', quality = 0.95})`, `engine/hdr/gainmap.js` pure)
+
+The SDR base is the picture as a JPEG (the browser's encoder); the gain map is one channel, log2((HDR + 1/64) / (SDR + 1/64)) on luminance
+with the look's curve at SDR white = 203 nits, 2x2 blocks, gamma 1, a grayscale baseline JPEG (quality 95) from p0pc0rn's own writer.
+Container: MPF points at the gain map; `route` 'both' = hdrgm XMP (+ the GContainer directory) and ISO 21496-1 (version-only in the
+primary, the full block, explicit fractions, in the gain map), 'xmp' or 'iso' alone. Which route iPhone Photos badges is still to be seen
+on the phone: `localStorage['p0pc0rn:hdr:route']` switches it. The file carries the AI label (a COM segment + the XMP's dc:description) and
+nothing else; `export.js` sends such a file out unchanged (re-writing its header would break the MPF offsets; one with anything else in
+its header is labelled like any JPEG). File names end `-hdr` (`.jpg` / `.mp4`).
+
+### In the app (`ui/hdr.js`)
+
+- The viewer's **Make HDR** (`#v-hdr`, before Delete) opens a sheet: the two looks (Vivid checked), a live before / after on an
+  extended-range WebGPU canvas (rgba16float, toneMapping 'extended'; drawn only when no model is or is about to be in memory; drag to
+  compare), and one plain line when `(dynamic-range: high)` is false (the file can still be made).
+- **Make the HDR copy** checks the agreement first (the lesson opens without it) and adds an `hdr` job to the one queue: no model, so the
+  queue frees the last model first and the job never runs beside a render; WebKit waits `settle()` after an unload. The runner checks the
+  agreement again (`NO_CONSENT` blocks the job like any other) and fails `GONE` when the original was deleted.
+- A finished job lands once as Library item `hdr-<job id>` (the original's words, size, thumbnail and poster; never a music video's
+  storyboard id or version) with `meta.hdr = {look, curve, from, codec, route, vui, made, v}`; the tile shows HDR (bottom right), the
+  viewer's info line "· HDR · Vivid", a toast offers Show; a done job found at start-up lands then.
+- Measured: Josh's iPhone (probe v002) 0.09-0.2 ms a frame on the GPU, 0.12 s an 81-frame clip end to end, 31-51 ms a picture.
+
+## 27. v4: the kernel tune (engine/tune/, ui/tune.js)
+
+Josh, Oct 29: "Autotune has to be a pop up in v4 to tune their phone/laptop to the most effective kernels known+measured". The chat
+kernels were tuned on one iPhone; the tune picks this device's own, and only kernels that give the engine's numbers.
+
+- **What it tunes.** The assistant's decode: the 4-bit matrix-vector products (lopsx.js v5 options per shape, keyed
+  `prologue.epilogue.NxK` as PICK) and the decode attention (lopsd.js: one workgroup per key chunk and query head instead of one per
+  chunk for all 8 heads; off as shipped). 8-bit shapes keep the engine's kernel (timed only for the estimate).
+- **How** (engine/tune/autotune.js `runTune`): its own GPU device, made-up weights in the packs' encodings (nothing downloaded or
+  sent), the real shapes (a huge head on a slice of its rows). Each candidate runs once into a NaN-filled output and must match the
+  engine's own kernel (relative L2 <= 1e-5; the head's argmax per tile); the engine's kernel is checked against a CPU dot product first.
+  Then timing: 1.5 s of copies first (a laptop GPU idles at a low clock), a ring of weight copies, GPU timestamps where they are
+  trustworthy (not Safari: wall clock), medians of rounds in turn, and a re-check of every switch. A switch needs 3% or more over
+  what ships (tunecore.js GAIN). About 25 s on a desk GPU; it stops at 85 s and then changes nothing.
+- **What applies** (engine/tune/apply.js `applyFor`, called by llm_engine.js when it makes its GPU, before the model's scratch):
+  measured on this device (the same key: the GPU's info, the limits the kernels use, its features, the browser and its major version,
+  the OS, the app and kernel versions; `p0pc0rn:tune`) -> the known table for this GPU family (tune/family.js, from measured runs) ->
+  what ships. The split's worker gets the page's choice in its init. `p0pc0rn:test:tune` = '0' turns it off (as shipped).
+- **Phase 0 guards** (lopsx.js): 'direct' binds 9 (gemv) / 10 (gemvM) storage buffers: below that the call runs staged (the same
+  values); 'u8' needs WGSL's packed_4x8_integer_dot_product, else 'shift'. The Device check (kcheck.js -> tune/kshipped.js) runs
+  every shipped shape through the same call the engine makes, the 8-bit paths and the decode attention, against a CPU reference.
+- **The pop-up** (ui/tune.js): asks on a first run once the agreement is in, again when the key changes (an update, a new browser),
+  and from Settings › Benchmark › Speed. The card says per feature "Runs well / Runs, slowly / Won't run here" and why, in plain
+  words; never a memory figure. No shader-f16 (Linux Chrome with an NVIDIA card today): it says nothing runs here.
+  `p0pc0rn:test:tunepop` = '1' lets it ask under automation.
+- **Which graphics chip** (a laptop with two graphics chips can run p0pc0rn on its built-in one). Every engine asks for
+  `powerPreference: 'high-performance'`, its start-up probe (`caps`, Settings › About › Graphics) as well as its device (an explicit
+  `opts.powerPreference` still wins). Edge, Safari on a dual-GPU Mac and a future Chrome honour it; Chrome on Windows ignores it
+  (crbug 369219127), so a hybrid laptop gets its built-in chip unless Windows' per-app Graphics setting says High performance.
+  tunecore.js `gpuKind(info)` ('integrated' | 'discrete' | ''; Intel by architecture, gen-* / *-lp* built in, *-hp* cards, or name;
+  AMD by name only; NVIDIA a card), `gpuLine(info)`, `integratedHint(info, os, browser)` (Windows on built-in graphics only: the
+  Settings › System › Display › Graphics path, naming the browser). The results card says "Ran on: <description> (<vendor>,
+  <architecture>)" and always has the tip when it applies; the pop-up and Settings › Benchmark (a row under Speed, "Got it") show it
+  until dismissed on this device (`p0pc0rn:gpuTip` = {id: tipId(info, ua): the chip and the browser's name}). Diagnostics: the
+  header names the chip (`caps.gpu`), and each page logs one "graphics adapter" step (vendor, architecture, description, kind, OS,
+  browser); a computer asks at start-up, a phone or tablet only when the pop-up looks.
+
+## 28. v4: the Nowcast (Experimental: `nowcast/`)
+
+One phone, NOAA's public radar, a model on the phone.
+Nothing goes from one person to another; the place's coordinates go only to NOAA / NWS services (rounded to 0.01 degree for the NWS).
+
+- **The model** (`nowcast/model.js`: the interface every nowcast model fills - input product, grid, frames and cadence; output frames;
+  credit and licence; `run(inputs) -> frames`): DeepMind's DGMR, the 256 x 256 TF-Hub snapshot (CC BY 4.0, modified). 4 frames of MRMS
+  rain rate (t0-15, -10, -5, 0 min) on a 256 km box at 1 km centred on the place -> 18 frames, +5 to +90 min. A GAN: each member is one
+  possible future, so a nowcast is an ensemble (4 runs by default, seed 1, members 0-3) and the app shows its mean and its chances.
+- **The engine** (`nowcast/engine.js`, `nowcast/dgmr/`): `createNowcastEngine({ packUrl })` -> `status()`, `download({ onProgress, signal })`,
+  `deleteModel()`, `load({ precision })`, `unload()`, `nowcast(inputs, { members, seed, onFrames, keep })`. Two precisions on one op
+  list (455 ops, 274 GMAC a run): **float** (the default: f32 activations and sums, 16-bit float weights two to a u32 through
+  `unpack2x16float`, no shader-f16 needed; split-K sums in a fixed order) and **int8** (the reference integer model: exact
+  integer arithmetic, the same bytes on every GPU and the CPU reference). Tensors share GPU buffers when their lives do not overlap
+  (`dgmr/plan.js`; the radar frames and the latent live from the start): float 443 MB on the GPU, int8 147 MB (the reference run kept every
+  tensor: 399 MB). The device picks float unless it cannot bind its 123 MB weight buffer; a float load that runs out of memory falls
+  back to int8 through the queue (`runner.fallback`) when the int8 pack is on the phone.
+- **The packs** (`tools/nowcast_pack.py`): one pocketflux pack per precision, the 8-bit at `<pack>` (71 MB) and the float one at
+  `<pack>f16/` (136 MB), each `dgmr_<p>.json` (the op list and parameters), `dgmr_<p>.bin` (the GPU weights), `dgmr_<p>_host.bin` (the
+  latent-conditioning tables read on the CPU), LICENSE (CC BY 4.0), NOTICE.md, README.md; config.js pins both manifests
+  (`'dgmr-nowcast': [<address>, <int8 sha256>, { 'f16/': <f16 sha256> }]`). The Nowcast shows only when config.js lists the pack.
+- **Desk** (Edge, a desktop integrated GPU, the reference run's recorded Tennessee case, seed 1): int8 members 0-3 bit-identical to the reference run (19abf33b,
+  b9555706, d15a998e, d28217bd), 3.79 s a run; float against TensorFlow: relative L2 1.1e-3, CSI against TF 0.9997 at 1 mm/h, the same
+  CSI against the radar as TF to 4 digits, 3.80 s a run.
+- **The radar** (`nowcast/mrms.js`, `grib2.js`, `regrid.js`, `radar.js`, `radar_worker.js`): NOAA MRMS PrecipRate (16-bit) and
+  PrecipFlag (8-bit, 3 = snow) from NOAA's bucket `noaa-mrms-pds.s3.amazonaws.com` (public, CORS *). No NOAA service gives raw rain-rate
+  values for a box (mapservices.weather.noaa.gov serves coloured reflectivity pictures and hourly QPE totals in Web Mercator), so a frame
+  is the whole CONUS file (about 1.1 MB, + 0.25 MB for the type) and the box is cut on the phone in a module worker: our own GRIB2
+  reader (template 3.0 + 5.41), gzip and zlib through DecompressionStream, our own 16-bit / 8-bit PNG unfilter, one pass per frame for
+  the map's CONUS picture (one byte a 4 x 4 block), the native 1 km crop and the model boxes. The box regrid is the reference tool's
+  arithmetic step for step: the same files give the reference run's own inputs (sha256 ee76f912...). The newest complete frame set (2-minute
+  frames; an odd input minute = the mean of the frames either side), never more than 15 minutes old: older or missing = it says so and
+  does not run.
+- **A run** (`nowcast/run.js`, the queue's `nowcast` job; one at a time, the model loaded for the job, every buffer let go after):
+  `runNowcast({ engine, radar, lat, lon, wide, members })` -> the ensemble mean (1/64 mm/h) and the chance of rain over 1, 4 and 8 mm/h
+  on the box, the radar at t0, the snow share; "wider area" = 3 x 3 boxes 128 km apart blended by distance from each box's centre on a
+  512 km grid at 2 km. Kept in IndexedDB `p0pc0rn-nowcast` (the 3 newest).
+- **The words** (`nowcast/summary.js`): from the members x the pixels within 3 km of the place: "Moderate rain likely starting in about 25
+  minutes, heaviest around 10:15, ending by 10:50. 70% chance of heavy rain by 10:20." (likely >= 70%, possible >= 45%; light < 4 mm/h,
+  moderate < 8, heavy); "Rain is unlikely here in the next 90 minutes." Snow on the radar: "the nowcast shows it as rain".
+- **The screen** (`nowcast/view.js`, `map.js`, `nws.js`, `icons.js`, `nowcast.css`; the home screen's Nowcast icon, `#v-nowcast`): a full-screen
+  Web Mercator map (NASA GIBS Blue Marble shaded relief tiles, level 8, scaled beyond; the bundled Census coast / state / county lines,
+  `nowcast/data/us_lines.bin`; city names from the on-phone Census table, more as you zoom in), the radar loop (30 / 60 / 90 min at 10-min
+  steps, its size in Layers) left of Now and the nowcast's 18 frames right of it on one timeline (ticks every 10 min, bigger every 30;
+  future frames dashed and labelled "Nowcast · Experimental"), the nowcast area's outline, NWS storm warnings' own polygons and a
+  banner for any warning at the place, Layers (radar, nowcast, rain or snow, warnings; rate or chance over 1 / 4 / 8 mm/h; 4 or 1 runs;
+  a wider area), Search (the on-phone places and ZIP table) and Locate (the location prompt only on that tap). A tap on a city name or a
+  long press anywhere opens that place's sheet: the next 90 minutes, the NWS alerts there first, the NWS 7-day forecast (14 periods
+  through `assistant/weather.js` nwsSource, unchanged; each period's detail on a tap). "How accurate is this?" shows only measured scores
+  (`nowcast/skill.js`). Credit: "Radar: NOAA MRMS · Basemap: NASA GIBS · Places: US Census · Nowcast: DeepMind DGMR (CC BY 4.0), modified".
+- **v4.1 (the phone test, Nov 3: float, 1.99 s a run, 11-14 s a nowcast)**:
+  - *The future no longer looks dimmer than the radar for nothing.* The radar was drawn twice (the whole-US one-byte picture, its 4 km
+    blocks' maxima, under the 1 km crop: two see-through layers, wider edges); now the crop alone where it is, the whole-US picture
+    outside it (`map.js` `drawGrid(..., hole)`). The future layer has the radar's colours and opacity. Its default picture is the
+    **probability-matched mean** of the runs (`nowcast/ensemble.js` `pmm`: the average's pattern with the runs' own pooled intensities;
+    a plain average of misplaced showers is a faint smear); Layers › "One possible future" shows run 1 as it came; the summary's rates
+    come from the PMM, its chances from the runs, and rain counts from 0.2 mm/h (drizzle: a run keeps that chance too). The model's own fading is measured, not corrected (`skill.js`): on the 12 cases its
+    95th percentile is 0.81 / 0.69 / 0.57 of the radar's at +30 / +60 / +90 min, its rain area 1.16-1.19 times too wide.
+  - *Clouds* (`nowcast/clouds.js`, Layers, off by default): NOAA GOES-West (west of 105 W) / GOES-East through NASA GIBS: band 13 clean
+    infrared (day and night, its rainbow turned back into temperatures with NASA's colour table and drawn as white clouds) or GeoColor
+    when the sun is up; each past radar frame gets the newest image at or before it (GIBS has them 25-60 min late; the label says
+    "clouds 9:50 PM"); the future frames have none. Credit "Clouds: NOAA GOES via NASA GIBS".
+  - *1 km where you look, honest blocks elsewhere, quality marks* (the phone test, Nov 3: a hard yellow and red square near Detroit, OR
+    = three 1 km pixels of 21 mm/h in ~0-1 mm/h rain, drawn as two 4 km blocks): the whole-US picture's 4 km blocks are now the block's
+    MEAN rate (never its strongest pixel; snow when at least half its wet pixels are snow), the 1 km crop is the only radar inside it
+    and follows the map's centre when you zoom in elsewhere (read again from this page's copies), and `nowcast/qc.js` marks isolated
+    speckle (at most 6 pixels over 4 mm/h, at least 4 times the median within 5 km: a dashed ring, "low radar confidence" in the legend;
+    the pixels are drawn as they are) and low MRMS RadarQualityIndex under rain (below 0.5: hatching; the newest RQI file, 0.74 MB, once a
+    loop). The model's inputs lose only heavy specks (8 mm/h and up, 8 times their surroundings), set to the surroundings' median (Phase
+    0's Tennessee inputs have none: unchanged); a run keeps how many pixels that touched (`qc`).
+  - *No reload between nowcasts*: the model stays loaded while the screen is open (the queue's hold, 2 min after a run; it goes when the
+    screen closes); a nowcast's load never asks for a fresh page after the nowcast itself (only after a big model); a tap while a
+    nowcast for the same place is queued or running waits for that one, and a nowcast from the newest radar is not run again; the
+    screen follows a run that carried on after a fresh page. Radar downloads stop when the page leaves (`radar.abort()`), not logged.
+- **v4.1, the card cleaned up** (the phone test): the fine print is behind a small round "?" in the card's top row (`openInfo`): the
+  label, "For warnings, follow the National Weather Service...", "How accurate is this?", and the credits in full (with Clouds' when it
+  is on, the DGMR licence link and what was changed, NWS for warnings and forecasts). The card holds the place, the radar's age
+  ("radar 4 min old"; the time in its accessible name), the summary, "Nowcast here" and the timeline; with a nowcast or clouds its label
+  is two lines at phone width (the time, then what the frame is), one height for every frame. City names and dots never draw under
+  the back button, the legend, Layers, Search, Locate or the card (`createMap({ avoid })`, `placeLabel`): a name that would is put
+  left of its dot, else left out (a dot under one is left out). Cloud tiles meet on whole device pixels (no light seams).
+- **Juli** (`nowcast/juli.js`, `nowcast/nowcast_app.js`; hooks: `agent.ask` -> `hooks.nowcastTurn`, `chat.js` -> `api.nowcastCard` /
+  `api.forecastCard`): "will it rain in the next hour", "when does the rain start / stop" with the model on the phone and lookups on ->
+  a `nowcast` job instead of a chat turn (no language model); its answer is the summary, made through weather.js's source interface
+  (`nowcastSource`), with a small rain-map card that opens the screen; a spoken question is spoken. Outside the lower 48 she says so
+  and the NWS answers. Her NWS weather answers get a card that opens the place's week and map.
+
+## 29. 4.0: Troll-E, Messages and Connection, and the 4.0 packs
+
+- **Troll-E** (`games/trolley/`, its own page: `games/trolley/index.html`; Games › On your own lists it, `ui/storefront.js` SOLO). Play
+  leaves p0pc0rn's page, so no model or job of the app is in memory while it runs; Play waits while a job is queued or running. Juli
+  joins as the hall's AI through the app's own engine and agreement (`games/trolley/juli_link.js`: her own layout of the second process
+  on iOS 27); the Bigger brain only plans her shift in the loading screen (`plot.js`, `plan.js`) and is closed before play. The game
+  never writes the agreement. Its README has the physics, the rules, the bench and the credits; its licences are in NOTICE.md
+  ("Troll-E") and `licenses/NOTICE-trolley-*.md`.
+- **Messages and Connection** (`ui/shell_core.js` DOCK, GRAYED, SOON): Messages is a greyed dock icon and Connection a greyed home
+  icon; either opens only a "Coming soon" sheet. Connection's code is not in this release (`app.js` CONNECT_ON is off).
+- **The 4.0 packs** (`config.js`; `p0pc0rn.config.json` describes each): `p0voice-juli` (Juli's voice), `dgmr-nowcast` (with the float
+  model as the sub-pack `f16/`), `sanavideo2-5b-lora` (the video LoRA), `sanavideo2-5b-style-lora` (the looks LoRA), `ltx23-video-enc`
+  (the clip reader) and `nemotron35-asr-0.6b` (voice input), each a JoshHughes/p0pc0rn-* Hugging Face repository read at its upload
+  commit, its manifest pinned by sha256 like every other pack (`engine/core/pin.js`). A feature shows only when `config.js` lists its
+  pack.

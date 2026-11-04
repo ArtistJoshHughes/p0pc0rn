@@ -11,10 +11,11 @@
 import { createGpu } from '../core/gpu.js';
 import { WeightStore } from '../core/store.js';
 import { LLMPipeline } from './llm.js';
-import { ensureServiceWorker, connectWorker, hiddenSince, splitFailure } from './split.js';   // 3.8 port: + what an ended second process means
+import { ensureServiceWorker, connectWorker, hiddenSince, splitFailure, splitHelpers, splitSettled } from './split.js';   // v4: + the second processes' confirmed ends   // 3.8 port: + what an ended second process means
 import { GemmaTokenizer } from './tokenizer.js';
 import { renderChat } from './chat_template.js';
 import { setKX } from './lopsx.js';   // 3.8 (bench v041)
+import { applyFor } from '../tune/apply.js';   // v4: this device's kernel tune (measured here, else its GPU family's, else as shipped)
 import { dropAB } from './gemma4.js';   // 3.9 (E4B room)
 /** 3.9 (E4B room): a weight store's idle upload staging, given back at once (not left for the garbage collector) */
 const dropStaging = (st) => { if (st && Array.isArray(st.pool)) { for (const b of st.pool) dropAB(b); st.pool.length = 0; } };
@@ -77,7 +78,7 @@ class LLMEngine {
     try {
       if (!navigator.gpu) c.reason = 'needs iOS 26 Safari (or another browser) with WebGPU';
       else {
-        const ad = await navigator.gpu.requestAdapter(this.opts.powerPreference ? { powerPreference: this.opts.powerPreference } : undefined);
+        const ad = await navigator.gpu.requestAdapter({ powerPreference: this.opts.powerPreference || 'high-performance' });   // v4: the adapter its device asks for (a laptop's card where the browser honours it)
         if (!ad) c.reason = 'no WebGPU adapter';
         else {
           const i = ad.info || {}; c.gpu = [i.vendor, i.architecture, i.description].filter(Boolean).join(' '); c.subgroups = ad.features.has('subgroups');
@@ -164,6 +165,7 @@ class LLMEngine {
     if (this.gpu && !this.gpu.lost) return this.gpu;
     this.gpu = await createGpu({ powerPreference: this.opts.powerPreference || 'high-performance', onLost: () => this.emit('gpu-lost', {}) });
     this.gpu.rate = { mm: 0.2e12, attn: 0.08e12, mem: 20e9 };
+    this.tune = applyFor(this.gpu).source;   // v4 (autotune): before the model's scratch is made (the decode attention's partials)
     return this.gpu;
   }
   /** load the brain (resident by default). onProgress fires during the weight upload. */
@@ -180,7 +182,7 @@ class LLMEngine {
     let split = null;
     if (this.opts.split && reg.split > 0) {
       const why = this.store.http ? "the split reads the pack from this device's storage" : (await ensureServiceWorker(SW_URL, SW_SCOPE)).why;
-      if (!why) split = { at: this.opts.splitAt || reg.split, chunk, workerUrl: WORKER_URL };   // splitAt: tests
+      if (!why) split = { at: this.opts.splitAt || reg.split, chunk, workerUrl: WORKER_URL, mirror: this.opts.splitMirror || null };   // splitAt: tests, and Troll-E's own layout (v4: + splitMirror, the KV layers the drafter reads when the page runs none of their readers)
       else if (this.opts.split === 'required' || !this.opts.splitFallback) throw err(this.opts.split === 'required' ? 'SPLIT_UNAVAILABLE' : 'SPLIT_FAILED', `no second process here: ${why}`);
       else this._oneProcess(`no second process here: ${why}`);   // Juli: one process, no faster replies
     }
@@ -224,8 +226,23 @@ class LLMEngine {
     if (this.pipe.split) { const i = this.pipe.split.info || {}; r.split = { at: this.pipe.model.l0, mirror: this.pipe.model.mirrorKV(), pageMB: Math.round(g.alive / 1e6), workerMB: i.aliveMB, coep: i.coep, isolated: !!i.isolated, workerS: +((i.ms || 0) / 1000).toFixed(2) }; }
     this._loaded = true; return Object.assign(r, { gpu: g.describe() });
   }
+  /** v4 (the prefix snapshot: chat keepPrefix / prefixOnly, ENGINE_API.md): the MB the kept prefixes take on each side ({ page, helper }),
+   *  or null when the model is not loaded */
+  prefixMB() { return this.pipe && this._loaded ? this.pipe.prefixMB() : null; }
+  /** lets every kept prefix go on both sides (false while an answer runs) */
+  async dropPrefix() { if (this.job) return false; if (this.pipe && this._loaded) await this.pipe.dropPrefix(); return true; }
+  /** -> a Promise that resolves when Juli's (or the Bigger brain's) second process has confirmed its end (its GPU buffers and device
+   *  destroyed, exiting: split.js closeAsync), at once without one; rejects SPLIT_CLOSE_TIMEOUT. Callers that do not wait may ignore it:
+   *  the next split load waits for it anyway (llm.js _startWorker) */
   unload() { dropStaging(this.store); dropStaging(this.dstore);   // 3.9 (E4B room): + after a load that failed
-    if (this.pipe) { this._unloadedAt = performance.now(); if (this.pipe.model && this.pipe.model.releaseDrafter) this.pipe.model.releaseDrafter(); this.pipe.unload(); } this.pipe = null; this._loaded = false; }
+    let closing = null;
+    if (this.pipe) { this._unloadedAt = performance.now(); if (this.pipe.model && this.pipe.model.releaseDrafter) this.pipe.model.releaseDrafter(); closing = this.pipe.unload(); } this.pipe = null; this._loaded = false;
+    return closing || Promise.resolve({ closed: false, why: 'no second process' }); }
+  /** v4: is a second process this page started still not confirmed ended (any engine's: Juli's, the Bigger brain's)? splitHelpers() lists
+   *  them ({ name, state, ageS }); splitSettled() waits for the ones closing */
+  splitAlive() { return splitHelpers().length > 0; }
+  splitHelpers() { return splitHelpers(); }
+  splitSettled(o) { return splitSettled(o); }
 
   /** chat(messages, {tools, images, maxTokens, temperature, topK, topP, seed, thinking, onToken, signal}) */
   async chat(messages, o = {}) {

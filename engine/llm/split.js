@@ -33,7 +33,28 @@ export async function ensureServiceWorker(swUrl, scope) {
   } catch (e) { return { ok: false, why: 'the service worker could not register: ' + String((e && e.message) || e).slice(0, 160) }; }
 }
 
-export const SPLIT_PROTO = 3;   // the page and the worker part speak the same version of these messages (lworker.js PROTO)
+export const SPLIT_PROTO = 5;   // the page and the worker part speak the same version of these messages (lworker.js PROTO; v4: 4 = + restorePrefix, dropPrefix, prefill snapKey; 5 = + closing)
+// v4 (Josh's phone, Nov 2: the Bigger brain's helper did not start after Juli's split, "the worker part stopped answering (init, 30 s)",
+// even after a 40-60 s wait: a page cannot list a shared worker, so it cannot tell whether the one before has gone): every worker part
+// this page starts is listed here until it confirms its end (closeAsync: lworker.js 'closing' answers after its GPU buffers and device are
+// destroyed, then it closes itself). splitHelpers() lists them; splitSettled() waits for the ones closing (llm.js waits before a new one)
+const HELPERS = new Set();
+export const CLOSE_MS = 15000;
+/** the worker parts this page started that have not confirmed their end -> [{ name, state ('starting' | 'open' | 'closing' |
+ *  'unconfirmed': its close got no answer | 'gone': it stopped answering), ageS }] */
+export function splitHelpers() { const t = now(); return [...HELPERS].map((h) => ({ name: h.name, state: h.state, ageS: Math.round((t - h.t0) / 1000) })); }
+/** waits for every worker part that is closing to confirm its end -> { waited, ms }; rejects SPLIT_CLOSE_TIMEOUT after timeoutMs */
+export async function splitSettled({ timeoutMs = CLOSE_MS } = {}) {
+  const l = [...HELPERS].filter((h) => h.state === 'closing' && h.closing).map((h) => h.closing.catch(() => {}));
+  if (!l.length) return { waited: 0, ms: 0 };
+  const t0 = now(); let timer = null;
+  try {
+    await Promise.race([Promise.all(l), new Promise((res, rej) => { timer = setTimeout(() => rej(Object.assign(new Error(`a worker part before this one did not confirm its end in ${Math.round(timeoutMs / 1000)} s`), { code: 'SPLIT_CLOSE_TIMEOUT' })), timeoutMs); })]);
+  } finally { clearTimeout(timer); }
+  return { waited: l.length, ms: Math.round(now() - t0) };
+}
+/** v4 (the prefix snapshot): by default the helper keeps a prefix only while its GPU memory stays at or under this cap */
+export const SNAP_CAP_MB = 1200;
 let HIDDEN_AT = 0;   // the last time this page was hidden: its timers stop, and a worker's answer can come late after it
 try { document.addEventListener('visibilitychange', () => { if (document.hidden) HIDDEN_AT = now(); }); } catch (e) { /* no document */ }
 /** 3.8 port: was this page in the background at any time since t (performance.now())? (iOS may end a background process; for the log) */
@@ -57,8 +78,9 @@ export function connectWorker(url, name, { timeoutMs = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     let w = null, settled = false, helloT = null;
     const pend = new Map(); let seq = 0, tail = Promise.resolve();
+    const entry = { name, state: 'starting', t0: now(), closing: null }; HELPERS.add(entry);   // v4: listed until it confirms its end
     const api = {
-      hello: null, gone: false, closed: false,
+      hello: null, gone: false, closed: false, entry,
       call(op, args = {}, transfer = [], ms = 120000, signal = null) {
         if (api.gone || api.closed) return Promise.reject(gone('the worker part is gone'));
         if (signal && signal.aborted) return Promise.reject(abortErr());
@@ -72,7 +94,7 @@ export function connectWorker(url, name, { timeoutMs = 20000 } = {}) {
               // 3.8 port: back from the background: a live worker part beats again within a second; a silent one gets 4 s, not the limit
               if (HIDDEN_AT > since) { const alive = api.lastHb > HIDDEN_AT; arm(now(), alive ? ms : 4000, !alive); return; }
               if (quick && api.lastHb > since) { arm(now()); return; }   // it beat after all: the full limit
-              pend.delete(id); api.gone = true;
+              pend.delete(id); api.gone = true; if (entry.state !== 'closing') entry.state = 'gone';
               rej(gone(`the worker part stopped answering (${op}, ${Math.round(wait / 1000)} s): its process may have ended`));
             }, wait);
           };
@@ -88,25 +110,42 @@ export function connectWorker(url, name, { timeoutMs = 20000 } = {}) {
           run.then((v) => { signal.removeEventListener('abort', ab); res(v); }, (e) => { signal.removeEventListener('abort', ab); rej(e); });
         });
       },
-      /** frees the worker's GPU memory and ends it (lworker.js 'free' closes the worker after it): ALWAYS sent, also after a timeout (a
-       *  worker that was only late frees its memory instead of lingering beside the next one) */
-      close() {
-        if (api.closed) return; api.closed = true;
-        try { if (w) w.port.postMessage({ [TAG]: 1, op: 'free', id: 0 }); } catch (e) { /* */ }
-        setTimeout(() => { try { if (w) w.port.close(); } catch (e) { /* */ } }, 500);
+      /** frees the worker's GPU memory and ends it: ALWAYS sent, also after a timeout (a worker that was only late frees its memory instead
+       *  of lingering beside the next one). v4: closeAsync() without waiting */
+      close() { api.closeAsync().catch(() => {}); },
+      /** v4: ends the worker part and resolves only when it confirms its GPU buffers and device are destroyed and it is exiting
+       *  (lworker.js 'closing') -> { closed, device, ms }; rejects SPLIT_CLOSE_TIMEOUT when no answer comes in ms (it stays in splitHelpers()
+       *  as 'unconfirmed'). Sent at once, ahead of any op still running there (the worker is ending); every pending call is rejected */
+      closeAsync(ms = CLOSE_MS) {
+        if (entry.closing) return entry.closing;
+        api.closed = true;
         for (const p of pend.values()) { clearTimeout(p.timer); p.rej(gone('the worker part was closed')); } pend.clear();
+        const portClose = () => { try { if (w) w.port.close(); } catch (e) { /* */ } };
+        if (!w || !api.hello) {   // it never said hello (so it never loaded anything): told to end, not waited for
+          try { if (w) w.port.postMessage({ [TAG]: 1, op: 'closing', id: 0 }); } catch (e) { /* */ }
+          entry.state = 'gone'; HELPERS.delete(entry); setTimeout(portClose, 500); return (entry.closing = Promise.resolve({ closed: false, why: 'it never started' }));
+        }
+        entry.state = 'closing';
+        const t0 = now(), id = ++seq;
+        entry.closing = new Promise((res, rej) => {
+          const timer = setTimeout(() => { pend.delete(id); entry.state = 'unconfirmed'; portClose(); rej(Object.assign(new Error(`the worker part did not confirm its end in ${Math.round(ms / 1000)} s`), { code: 'SPLIT_CLOSE_TIMEOUT' })); }, ms);
+          pend.set(id, { timer, res: (r) => { clearTimeout(timer); entry.state = 'closed'; HELPERS.delete(entry); portClose(); res(Object.assign({}, r, { waitMs: Math.round(now() - t0) })); },
+            rej: (e) => { clearTimeout(timer); entry.state = 'unconfirmed'; portClose(); rej(Object.assign(e, { code: e.code || 'SPLIT_CLOSE_FAILED' })); } });
+          try { w.port.postMessage({ [TAG]: 1, op: 'closing', id }); } catch (e) { pend.delete(id); clearTimeout(timer); entry.state = 'unconfirmed'; portClose(); rej(Object.assign(e, { code: 'SPLIT_CLOSE_FAILED' })); }
+        });
+        return entry.closing;
       },
     };
     const fail = (e) => { if (settled) return; settled = true; clearTimeout(helloT); api.close(); reject(e); };   // a late worker is told to end too
     try { w = new SharedWorker(String(url), { type: 'module', name }); } catch (e) { fail(e); return; }
     w.port.onmessage = (ev) => {
       const d = ev.data || {}; if (d[TAG] !== 1) return;
-      if (d.hello) { api.hello = d; if (!settled) { settled = true; clearTimeout(helloT); resolve(api); } return; }
+      if (d.hello) { api.hello = d; if (entry.state === 'starting') entry.state = 'open'; if (!settled) { settled = true; clearTimeout(helloT); resolve(api); } return; }
       if (d.hb) { api.lastHb = now(); return; }   // 3.8 port: the worker part's heartbeat
       const p = pend.get(d.id); if (!p) return; pend.delete(d.id); clearTimeout(p.timer);
       if (d.ok) p.res(d.r); else p.rej(Object.assign(new Error('worker: ' + (d.error || 'failed')), { code: d.code || 'SPLIT_WORKER' }));
     };
-    w.onerror = (e) => { api.gone = true; fail(new Error('the worker part failed to start: ' + ((e && e.message) || 'error'))); };
+    w.onerror = (e) => { api.gone = true; if (entry.state === 'starting' || entry.state === 'open') entry.state = 'gone'; fail(new Error('the worker part failed to start: ' + ((e && e.message) || 'error'))); };
     w.port.start();
     helloT = setTimeout(() => fail(new Error(`the worker part did not answer in ${timeoutMs / 1000} s`)), timeoutMs);
   });
@@ -146,25 +185,57 @@ export class SplitModel {
   release() { const k = this._drs; this._drs = null; if (k) { k.F.destroy().catch(() => {}); k.B.destroy().catch(() => {}); } }
   /** the worker's memory now (diagnostics; null when it does not answer) */
   async stats() { try { return await this.wk.call('stats', {}, [], 10000); } catch (e) { return null; } }
-  close() { try { this.wk.close(); } catch (e) { /* */ } }
+  /** v4: the worker part's end, confirmed (connectWorker closeAsync) -> Promise */
+  close(ms) { try { return this.wk.closeAsync ? this.wk.closeAsync(ms) : (this.wk.close(), Promise.resolve({ closed: false })); } catch (e) { return Promise.reject(e); } }
 
   /** the prompt read-in: each chunk's front here, its first S layers in the worker, the rest here (the page model's own loop, with a hook) */
   async prefill(ids, o = {}) {
     const m = this.m, g = this.g, D = m.D, NT = m.NL * 256, M = ids.length, C = Math.min(M, o.chunk || (m.opts && m.opts.chunk) || 256), T = this.T, wk = this.wk;
-    const onLayer = async (l, p0) => {
+    const from = o.from || 0, snapAt = o.snapKey ? o.snapAt : 0;   // v4: the prefix snapshot (gemma4.js snapshotPrefix: each part keeps its own rows)
+    let wsnap = null;
+    const onLayer = async (l, p0, rows) => {
       if (l !== -1) return;   // -1 = after this chunk's embedding + per-layer inputs, before the page's own layers
-      const s = m._dbg, MC = Math.min(C, M - p0), t0 = now();
+      const s = m._dbg, MC = rows || Math.min(C, M - p0), t0 = now(), snap = snapAt && p0 + MC === snapAt;
       const x = new Float32Array(await g.read(s.x, 0, MC * D * 4)), ple = new Float32Array(await g.read(s.ple, 0, MC * NT * 4)), t1 = now();
       // the first chunk builds the worker's pipelines (up to 2 min); a chunk after it takes about a second on an iPhone
-      const r = await wk.call('prefill', { p0, M: MC, Mtot: M, chunk: C, x, ple, first: p0 === 0, last: p0 + C >= M }, [x.buffer, ple.buffer], p0 === 0 ? 45000 : 30000, o.signal);   // 3.8 port: a chunk takes well under 2 s; a stalled one cost 120 s
+      const r = await wk.call('prefill', Object.assign({ p0, M: MC, Mtot: M, chunk: C, x, ple, first: p0 === from, last: p0 + MC >= M }, snap ? { snapKey: o.snapKey, snapAt, capMB: o.helperCapMB != null ? o.helperCapMB : SNAP_CAP_MB, max: o.snapMax || 2 } : {}),
+        [x.buffer, ple.buffer], p0 === from ? 45000 : 30000, o.signal);   // 3.8 port: a chunk takes well under 2 s; a stalled one cost 120 s
+      if (snap) { wsnap = r.snap || { bytes: 0, why: 'it kept nothing' }; if (wsnap.MB != null) this.helperMB = wsnap.MB; }
       const t2 = now();
       g.device.queue.writeBuffer(s.x, 0, r.x.buffer, r.x.byteOffset, MC * D * 4); this._mirrorIn(p0, MC, r.kv);
       dropAB(r.x.buffer);   // 3.9 (E4B room): the chunk's rows and mirror rows are on the GPU now
       T.hops++; T.readMs += t1 - t0; T.postMs += Math.max(0, t2 - t1 - r.ms); T.wkMs += r.ms; T.bytes += MC * (2 * D + NT) * 4;
       if (o.check) o.check();
     };
-    return m.prefill(ids, Object.assign({}, o, { onLayer, chunk: C }));
+    const pr = await m.prefill(ids, Object.assign({}, o, { onLayer, chunk: C }));   // o.snapSelf / snapCapMB / snapMax: the page's side
+    if (snapAt) {   // kept only when both parts can give it back: the helper its rows, the page its own or its mirrors' from the helper
+      const helper = !!(wsnap && wsnap.bytes > 0), page = m.hasPrefix(o.snapKey) || this.mirrorsOnly();
+      this.last = { kept: helper && page, why: !helper ? 'the helper: ' + (wsnap ? wsnap.why : 'no answer') : !page ? 'the page: ' + ((m._pfxLast && m._pfxLast.why) || 'none') : null };
+      if (!this.last.kept) { m.dropPrefix(o.snapKey); if (helper) await this.dropPrefix(o.snapKey, true); }
+    }
+    return pr;
   }
+  /** v4: the page keeps no KV of its own layers (every cache here is a mirror of the worker part's): a prefix's rows can come from there */
+  mirrorsOnly() { return (this.m.kv || []).every((c, l) => !c || this.mirror.includes(l)); }
+  /** v4 (the prefix snapshot): each part puts its own rows back (its own check of the key); a page without them takes its mirrors' rows
+   *  from the worker part -> P, or 0 (then the page lets its copy go: the read-in starts at 0 and keeps it again). this.from = 'page' |
+   *  'helper' (where the page's rows came from) */
+  async restorePrefix(key, o = {}) {
+    const P = this.m.restorePrefix(key), viaHelper = !P && this.mirrorsOnly();
+    let w = null;
+    try { w = await this.wk.call('restorePrefix', { key, mirrors: viaHelper }, [], 15000, o.signal); } catch (e) { if (e && e.name === 'AbortError') throw e; w = null; }
+    if (w && w.MB != null) this.helperMB = w.MB;
+    if (w && w.P && (P === w.P || (viaHelper && (!w.rows || this.m.writePrefixRows(w.rows, w.ab))))) { this.from = P ? 'page' : 'helper'; return w.P; }
+    this.m.dropPrefix(key);
+    return 0;
+  }
+  /** one prefix (key) or every one, in both parts (helperOnly: the worker part's) */
+  async dropPrefix(key, helperOnly = false) {
+    if (!helperOnly) this.m.dropPrefix(key);
+    try { const r = await this.wk.call('dropPrefix', { key: key == null ? null : key }, [], 10000); if (r && r.MB != null) this.helperMB = r.MB; } catch (e) { /* the worker part is gone: nothing kept there */ }
+  }
+  /** the MB each part's prefixes take */
+  prefixMB() { return { page: this.m.prefixMB(), helper: this.helperMB || 0 }; }
 
   /** decode: the same contract as Gemma4.decodeLoop -> { ids, stopped }. Greedy with the drafter = specLoop; anything else (greedy without
    *  it, or the caller's sampler: o.pick reads r.logitsBuf) = one token at a time across the two parts */

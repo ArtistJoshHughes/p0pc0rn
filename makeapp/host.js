@@ -10,9 +10,12 @@ import { createSkills, makeSkillFor, SKILL } from '../assistant/skills.js';   //
 import { aboutWith, ABOUT } from '../assistant/memory.js';   // 3.9: About me in the make and change prompts (<= 80 tokens, where it fits)
 import { share, saveFile } from '../util.js';   // H39: a skill's export (the share sheet, else a download)
 import { checkBundle } from './check.js';
-import { SOURCES, createFetcher } from './sources.js';
-import { pausedFor, pauseLine, quotaRow } from './budget.js';   // 3.9 Wallet Watch: a free tier's cap, in the host's checks and on the settings page
-import { creditsOf } from '../ui/storefront_core.js';   // 3.9 Wallet Watch: a source's credit with its links (Routescan's)
+import { SOURCES, createFetcher, installedApp, NOT_INSTALLED_WHY } from './sources.js';
+import { pausedFor, pauseLine, quotaRow, createBudget, REFLOOKUP_CAP } from './budget.js';
+import { runRef, refKey, REF } from './reference.js';   // v4 (Token Watch): name references, the Bigger brain through the airlocked research lane
+import { SCHED, readPriorities, priorityOf, setPriority, modelPlan, rankDue, batchByModel, batchWait, createSchedLog, logLines } from './scheduler.js';   // v4: ONE scheduler for every app's checks   // 3.9 Wallet Watch: a free tier's cap, in the host's checks and on the settings page
+import { creditsOf, creditParts, yoursOf } from '../ui/storefront_core.js';   // 3.9 Wallet Watch: a source's credit with its links (Routescan's); v4: + its parts, the person's app of a design
+import { tokenCommand, CHAINS as TOKEN_CHAINS } from './tokenwatch.js';   // v4 (Token Watch): the chat's "watch closely", in code
 import { makeApp, fillMessages } from './fill.js';
 import { estTokens, promptTokens, EST_LOW } from '../assistant/fit.js';   // 3.8 (v040): the Bigger brain's context
 import { EDIT, workspace, oneSlot, planPhase, workPhase, reviewPhase, finish, lookMessages } from './edit.js';   // H39: changing an app by chat
@@ -36,14 +39,24 @@ export const permKey = (m) => JSON.stringify({ s: !!(m.permissions || {}).storag
 export function deny(m, granted, fn, args, mode) {
   if (!granted) return 'the person has not allowed this app yet';
   const P = m.permissions || {};
-  if (fn === 'fetch') { const src = args && args[0]; return (P.online || []).includes(src) && SOURCES[src] ? null : `this app may not read ${src}`; }
+  if (fn === 'fetch') { const src = args && args[0]; return !((P.online || []).includes(src) && SOURCES[src]) ? `this app may not read ${src}`
+    : mode !== 'run' && ((P.tap || []).includes(src) || (src === 'chain.snowtrace' && ((args && args[1]) || {}).op === 'token')) ? `this app reads ${src} only at the person’s tap in the open app` : null; }   // v4 (Josh, Nov 1): permissions.tap, and a token's Snowtrace check: one time, by hand
   if (fn === 'chat.post') return P['chat.post'] ? null : 'this app may not post to the chat';
   if (fn === 'juli.ask') return !(P.juli || []).includes('ask') ? 'this app may not ask Juli' : m.category !== 'agentic' ? 'only an agentic app has Juli in it'
     : mode !== 'check' ? 'Juli works in the app\'s checks, after it closes (the open app keeps the phone\'s memory)' : null;   // never Juli next to an open app
+  // v4 (Token Watch): the Bigger brain for an app's own work (permissions.juli "big"): its switch and the download offer only at the
+  // person's tap in the open app; its questions only in the app's checks (never next to an open app)
+  if (fn === 'juli.big' || fn === 'juli.setBig' || fn === 'juli.download' || fn === 'juli.refer' || fn === 'juli.cite') {
+    if (!(P.juli || []).includes('big')) return 'this app may not use the Bigger brain';
+    if (fn === 'juli.refer') return mode !== 'check' ? 'the Bigger brain works in the app’s checks, after it closes' : null;
+    return fn !== 'juli.big' && mode !== 'run' ? 'only at the person’s tap in the open app' : null;
+  }
   if (fn === 'juli.choose') return !(P.juli || []).includes('choose') ? 'this app may not ask Juli to choose' : m.category === 'agentic' ? 'Juli chooses only in an app the person has open'
     : mode !== 'run' ? 'Juli chooses only while the person has the app open' : null;   // 3.9: a game's move, next to the open game (the game hold)
   if (fn === 'juli.models') return !(P.juli || []).includes('choose') ? 'this app may not ask Juli to choose' : mode !== 'run' ? 'Juli chooses only while the person has the app open' : null;   // 3.9 polish: which of her models can answer
   if (fn === 'location.get') return P.location === 'device' ? null : 'this app may not read the phone’s location';
+  if (fn === 'open') { const src = args && args[0]; return !((P.online || []).includes(src) && SOURCES[src] && typeof SOURCES[src].page === 'function') ? `this app may not open pages of ${src}`   // v4 (Token Watch): a source's own page (a token on DEX Screener)
+    : mode !== 'run' ? 'a page opens only from the open app, at the person’s tap' : null; }
   if (fn === 'app.badge') return null;
   return 'unknown call ' + fn;
 }
@@ -76,8 +89,44 @@ export function askMessages(app, prompt, json, skill = '') {   // 3.9 Wallet Wat
     opts: json ? { maxTokens: 300 } : { maxTokens: 220, temperature: 0.3 } };   // data: exact (no temperature)
 }
 
+// ------------------------------------------------------------------------------------------------ an app frame in flight
+// v4 (security review): an app can freeze or end the page (a loop, too much memory). On a phone a frame shares the page's process, so
+// p0pc0rn froze or closed, and opened into the same app again at its next start: its check soon after opening, or the app itself after a
+// planned fresh page. Before an app's frame starts (opened, or checking on its own) a small marker goes into localStorage; it goes when
+// that frame closes, and while p0pc0rn is in the background. A marker still there when p0pc0rn starts = the page ended while that app
+// ran: the Apps host holds the app (no check, no open on its own) and asks the person what to do.
+export const INFLIGHT_KEY = 'p0pc0rn:apps:inflight';
+const INFLIGHT_KINDS = new Set(['open', 'check']);
+/** the marker as it is kept -> {appId, kind, at} | null (anything else: null) */
+export function inflightRead(storage) {
+  try {
+    const v = JSON.parse((storage && storage.getItem(INFLIGHT_KEY)) || 'null');
+    return v && typeof v.appId === 'string' && v.appId && INFLIGHT_KINDS.has(v.kind) && Number.isFinite(v.at) ? { appId: v.appId.slice(0, 80), kind: v.kind, at: v.at } : null;
+  } catch (e) { return null; }
+}
+/** write the marker for one frame -> the marker written, or null (no storage) */
+export function inflightWrite(storage, mark) {
+  try { storage.setItem(INFLIGHT_KEY, JSON.stringify(mark)); return mark; } catch (e) { return null; }
+}
+/** remove the marker, only when it is still this one (a newer frame's stays) -> true when removed */
+export function inflightClear(storage, mark) {
+  const v = inflightRead(storage);
+  if (!v || !mark || v.appId !== mark.appId || v.kind !== mark.kind || v.at !== mark.at) return false;
+  try { storage.removeItem(INFLIGHT_KEY); return true; } catch (e) { return false; }
+}
+const pageStorage = () => { try { return globalThis.localStorage || null; } catch (e) { return null; } };
+/** v4 (Token Watch): this visit of p0pc0rn, for an app that does something "until p0pc0rn closes" (Watch closely): kept in sessionStorage,
+ *  so p0pc0rn's own planned reloads keep it and opening p0pc0rn again makes a new one. Read only for the app (p0.visit) */
+const VISIT_PAGE = 'v' + Date.now().toString(36) + 'p';   // no sessionStorage: this page only
+export function visitId(ss) {
+  try { const S = ss || globalThis.sessionStorage; let v = S.getItem('p0pc0rn:visit'); if (!/^v[a-z0-9]{6,20}$/.test(v || '')) { v = 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); S.setItem('p0pc0rn:visit', v); } return v; }
+  catch (e) { return VISIT_PAGE; }
+}
+
 // ------------------------------------------------------------------------------------------------ the frame
 /** startFrame: one app in a sandboxed iframe. calls = {name: async (args) => value} (already permission-checked by the caller). */
+/** v4: inflight = {appId, kind: 'open' | 'check'} for the person's own app opened or checking on its own: the in-flight marker (above)
+ *  from before the frame starts until it closes */
 /** H39: custom = the app's added part (an edit by chat; its errors come to onCustomError(message, line), never stop the app); ctl.snap({png})
  *  -> {png (a PNG data URL <= 1 MB, when asked), w, h, scene, buttons, texts} for the edit loop's test runs */
 /** 3.9 platform: how far an app's frame reaches into the screen's bottom unsafe area (the home indicator), in CSS pixels, 0 = not at
@@ -111,21 +160,29 @@ export function frameSafeTop(f) {
   } catch (e) { return 0; }
 }
 
-export function startFrame({ parent, frameUrl = 'makeapp/frame.html', libs, bundle, slots, store, mode = 'run', name = '', onSave = () => {}, onCall, onError = () => {}, onBreach = () => {}, hidden = false, custom = '', onCustomError = () => {} }) {
+export function startFrame({ parent, frameUrl = 'makeapp/frame.html', libs, bundle, slots, store, mode = 'run', name = '', onSave = () => {}, onCall, onError = () => {}, onBreach = () => {}, hidden = false, custom = '', onCustomError = () => {}, inflight = null }) {
+  // v4: the in-flight marker, written before the frame exists; it leaves with the frame (close), and while the page is hidden or gone
+  // (the person left p0pc0rn: a kill in the background is not the app's doing) and comes back when the page shows again
+  const ST = inflight ? pageStorage() : null, mark = ST ? { appId: String(inflight.appId), kind: inflight.kind === 'check' ? 'check' : 'open', at: Date.now() } : null;
+  const onVis = () => { if (document.visibilityState === 'hidden') inflightClear(ST, mark); else inflightWrite(ST, mark); };
+  const onHide = () => inflightClear(ST, mark), onShow = () => inflightWrite(ST, mark);
+  if (mark) { inflightWrite(ST, mark); document.addEventListener('visibilitychange', onVis); addEventListener('pagehide', onHide); addEventListener('pageshow', onShow); }
   const f = document.createElement('iframe');
   f.setAttribute('sandbox', 'allow-scripts');
   f.setAttribute('allow', '');
   f.setAttribute('referrerpolicy', 'no-referrer');
   f.title = name || 'App'; f.className = hidden ? 'app-frame hidden' : 'app-frame';
   f.src = frameUrl;
-  let readyRes, bootRes, bootRej; const pend = new Map(); let seq = 0, closed = false, errs = [], cerrs = 0;
+  let readyRes, bootRes, bootRej; const pend = new Map(); let seq = 0, closed = false, errs = [], cerrs = 0, answered = false;
   let safeSent = 0, safeTopSent = 0;   // 3.9 platform: the insets the frame was last told (frameSafeBottom, frameSafeTop)
   const ready = new Promise((r) => { readyRes = r; }), booted = new Promise((r, j) => { bootRes = r; bootRej = j; });
   const post = (m) => { try { f.contentWindow.postMessage(m, '*'); } catch (e) { /* gone */ } };
   const onMsg = async (ev) => {
     if (closed || ev.source !== f.contentWindow) return;
     const m = ev.data || {};
-    if (m.t === 'ready') { readyRes(); post({ t: 'boot', p5: mode === 'check' ? '' : libs.p5, kit: libs.kit, code: bundle.files['sketch.js'], slots, store, mode, name, custom: String(custom || '').slice(0, 4096), safe: { bottom: (safeSent = frameSafeBottom(f)), top: (safeTopSent = frameSafeTop(f)) } }); return; }
+    // v4: the frame's page says 'ready' once; ONE boot answers it. Every later 'ready' (an app posting it to the page) gets nothing: each
+    // answer was the whole boot message again (p5 and the Kit, ~1.3 MB), and a loop of them filled the page's memory
+    if (m.t === 'ready') { if (answered) return; answered = true; readyRes(); post({ t: 'boot', p5: mode === 'check' ? '' : libs.p5, kit: libs.kit, code: bundle.files['sketch.js'], slots, store, mode, name, visit: visitId(), custom: String(custom || '').slice(0, 4096), safe: { bottom: (safeSent = frameSafeBottom(f)), top: (safeTopSent = frameSafeTop(f)) } }); return; }
     if (m.t === 'booted') { bootRes(m); return; }
     if (m.t === 'breach') { ctl.close(); onBreach(String(m.message || '').slice(0, 200)); return; }   // the sandbox caught the app reaching out: it stops now
     if (m.t === 'error') {
@@ -159,20 +216,33 @@ export function startFrame({ parent, frameUrl = 'makeapp/frame.html', libs, bund
       const id = ++seq;
       return new Promise((res, rej) => { pend.set(id, { res, rej }); post({ t: 'check', id }); setTimeout(() => { if (pend.delete(id)) rej(Object.assign(new Error('the check took too long'), { code: 'TIMEOUT' })); }, ms); });
     },
-    close() { if (closed) return; closed = true; removeEventListener('message', onMsg); removeEventListener('resize', onSafe); if (safeRO) safeRO.disconnect(); for (const p of pend.values()) p.rej(new Error('closed')); pend.clear(); try { f.src = 'about:blank'; } catch (e) { /* */ } f.remove(); },
+    close() { if (closed) return; closed = true; removeEventListener('message', onMsg); removeEventListener('resize', onSafe); if (safeRO) safeRO.disconnect(); for (const p of pend.values()) p.rej(new Error('closed')); pend.clear(); try { f.src = 'about:blank'; } catch (e) { /* */ } f.remove();
+      if (mark) { document.removeEventListener('visibilitychange', onVis); removeEventListener('pagehide', onHide); removeEventListener('pageshow', onShow); inflightClear(ST, mark); } },   // v4: it closed cleanly
   };
   return ctl;
 }
 
 // ------------------------------------------------------------------------------------------------ the Apps tab
-export function createApps(api) {
-  const A = { db: null, skels: new Map(), bundled: new Set(), apps: [], grants: new Map(), libs: null, open: null, checking: false, making: null, fetcher: createFetcher(), rate: new Map(), lastErr: null, checkJobs: new Set() };
+export function createApps(api0) {
+  // v4 (scheduler): while a tick runs a BATCH of checks on one model load, the queue's hold on that model (holdFor) is the batch's own:
+  // it is not "busy" for the batch's next check. Anything else (a job of the person's, a render, an app opening: it ends the batch
+  // first) sees the model as busy, as before
+  const api = Object.assign(Object.create(api0), { modelBusy: () => !!(api0.modelBusy && api0.modelBusy()) && !ownHold() });
+  const A = { db: null, skels: new Map(), bundled: new Set(), apps: [], grants: new Map(), libs: null, open: null, checking: false, making: null, fetcher: createFetcher(), rate: new Map(), lastErr: null, checkJobs: new Set(),
+    sched: createSchedLog(), batch: null, waited: new Map(), capWait: new Map(), refCache: new Map(), cites: new Map(), refBudget: null };   // v4: + name references   // v4 (scheduler): its log, the batch now, a batch wait per app, a refused source's window per app
+  function ownHold() { if (!A.batch) return false; const Q = api0.Q && api0.Q(); return !!(Q && Q.holding && !Q.active && !(Q.next && Q.next())); }
+  const SL = (ev, d) => { try { A.sched.push(Object.assign({ ev }, d || {})); } catch (e) { /* the log only */ } };
+  const lsSafe = () => { try { return globalThis.localStorage || null; } catch (e) { return null; } };
+  const loadedModel = () => { try { return api0.loadedModel ? api0.loadedModel() : null; } catch (e) { return null; } };   // 'e2b' | 'big' | 'other' | null
+  // v4: an app frame's marker left by the page before = that page ended while the app ran (read now, before anything can start a frame)
+  A.bootMark = inflightRead(pageStorage()); A.brokeNotice = null; A.uiReady = false;
+  const safeMode = () => { try { return !!(api.safe && api.safe()); } catch (e) { return false; } };   // v4: ?safe=1: no app checks on its own
   const $ = (id) => document.getElementById(id);
   const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
   const btn = (label, cls, onClick) => { const b = mk('button', cls || 'btn sm', label); b.type = 'button'; b.onclick = onClick; return b; };
   // 3.9 polish (A1): what an app does on its own goes out as a 'p0:apps' event (ui/works.js keeps the activity log; the home screen's
   // pill shows a running check); the person's pauses hold every check (one app: app.youPaused; all: localStorage 'p0pc0rn:apps:pause')
-  const PLAIN_SRC = { 'weather.nws': 'the weather', 'alerts.nws': 'weather alerts', 'geocode.openmeteo': 'places', 'fires.wfigs': 'wildfires', 'prices.coingecko': 'prices', 'chain.snowtrace': 'Avalanche addresses on Snowtrace' };   // 3.9 Wallet Watch: + Snowtrace
+  const PLAIN_SRC = { 'weather.nws': 'the weather', 'alerts.nws': 'weather alerts', 'geocode.local': 'places', 'geocode.openmeteo': 'places', 'fires.wfigs': 'wildfires', 'prices.coingecko': 'prices', 'chain.snowtrace': 'Avalanche addresses on Snowtrace', 'tokens.dexscreener': 'new tokens on DEX Screener' };   // 3.9 Wallet Watch: + Snowtrace; v4: + Token Watch
   const tell = (type, app, d) => { try { dispatchEvent(new CustomEvent('p0:apps', { detail: Object.assign({ type, appId: app.id, name: app.name, skel: app.skel, at: Date.now() }, d || {}) })); } catch (e) { /* not a page */ } };
   const pausedAll = () => { try { return localStorage.getItem('p0pc0rn:apps:pause') === 'all'; } catch (e) { return false; } };
   const UI = () => globalThis.P0STORE || null;   // the Apps screen's own parts (ui/storefront.js): the first-open intro, the icons
@@ -181,13 +251,16 @@ export function createApps(api) {
   // 3.9 Wallet Watch: a source with a free tier (Snowtrace) rests when the day's cap (every app together, or this app's share) is used up
   // or after a 429 (makeapp/budget.js, the fetcher's hard cap): an app that reads it is not checked then (no frame starts, nothing is
   // sent), and its card says until when. -> {code, until, line} | null
-  const capOf = (skel, appId = '') => { try { for (const s of ((skel && skel.manifest.permissions) || {}).online || []) { const S = SOURCES[s]; if (S && S.budget) { const p = pausedFor(S.budget, localStorage, Date.now(), appId); if (p) return Object.assign(p, { line: pauseLine(S.budget, p) }); } } } catch (e) { /* no storage: the fetcher still caps */ } return null; };
+  const tapOnly = (skel) => new Set(((skel && skel.manifest.permissions) || {}).tap || []);   // v4 (Token Watch): sources it reads only at the person's tap: never in its checks
+  const capOf = (skel, appId = '') => { try { const tap = tapOnly(skel);
+    // v4 (security review): a source read only in p0pc0rn opened from the Home Screen: in a tab its app is not checked, and its card says so
+    if ((((skel && skel.manifest.permissions) || {}).online || []).some((s) => !tap.has(s) && SOURCES[s] && SOURCES[s].installedOnly) && !installedApp()) return { code: 'NOT_INSTALLED', until: 0, line: NOT_INSTALLED_WHY }; for (const s of ((skel && skel.manifest.permissions) || {}).online || []) { const S = SOURCES[s]; if (S && S.budget && !tap.has(s)) { const p = pausedFor(S.budget, localStorage, Date.now(), appId); if (p) return Object.assign(p, { line: pauseLine(S.budget, p) }); } } } catch (e) { /* no storage: the fetcher still caps */ } return null; };
   // 3.9 Wallet Watch (Josh, Oct-27: "Users don't need to be pinging routescan api every second ... when other jobs will require on device
   // time"): an app that reads a source marked idleOnly (Snowtrace) is checked at most every minMinutes of its interval trigger (15 at the
   // least), whatever asks for the check (p0pc0rn opening, the app just closed), and only when the phone is idle (phoneBusy): its check
   // waits for the next idle tick and never goes first. Once its check runs, a job of the person's that arrives stops its requests (BUSY:
   // nothing more is sent) and its question to Juli (cancelled: the app's own words go).
-  const idleOnly = (skel) => { try { return (((skel && skel.manifest.permissions) || {}).online || []).some((s) => SOURCES[s] && SOURCES[s].idleOnly); } catch (e) { return false; } };
+  const idleOnly = (skel) => { try { const tap = tapOnly(skel); return (((skel && skel.manifest.permissions) || {}).online || []).some((s) => !tap.has(s) && SOURCES[s] && SOURCES[s].idleOnly); } catch (e) { return false; } };
   const busyNow = () => phoneBusy(api.Q && api.Q(), () => !!(api.modelBusy && api.modelBusy()), A.checkJobs);
   const floorOf = (skel) => { const iv = ((skel && skel.manifest.triggers) || []).find((t) => t && t.type === 'interval'); return Math.max(15, (iv && iv.minMinutes) || 15); };
   const tooSoon = (app, skel) => Date.now() - ((app && app.lastCheck) || 0) < floorOf(skel) * 60e3;
@@ -196,15 +269,30 @@ export function createApps(api) {
   const quotaRows = (skelId, appId = '') => {
     const s = A.skels.get(skelId), out = [];
     try {
-      if (s && idleOnly(s)) out.push({ text: `Checks at most every ${floorOf(s)} minutes, only when your phone is idle`, sub: 'It waits while Juli answers you or something is being made (a picture, a song, a clip), and never goes first.', icon: '#i-sf-clock' });
-      for (const id of ((s && s.manifest.permissions) || {}).online || []) { const S = SOURCES[id]; if (S && S.budget) out.push(quotaRow(S.budget, localStorage, Date.now(), appId)); }
+      const asked = s && (((s.manifest.permissions) || {}).online || []).some((x) => SOURCES[x] && SOURCES[x].budgets);   // v4 (Token Watch): it looks only when asked
+      if (asked) out.push({ text: 'Looks only when you open it, or while it watches closely', sub: 'Each chain at most every 5 minutes. Watching closely: every 15 minutes for 2 hours at most, only while p0pc0rn is open and your phone is idle.', icon: '#i-sf-clock' });
+      else if (s && idleOnly(s)) out.push({ text: `Checks at most every ${floorOf(s)} minutes, only when your phone is idle`, sub: 'It waits while Juli answers you or something is being made (a picture, a song, a clip), and never goes first.', icon: '#i-sf-clock' });
+      for (const id of ((s && s.manifest.permissions) || {}).online || []) { const S = SOURCES[id]; if (S && S.budgets) { for (const C of Object.values(S.budgets)) out.push(quotaRow(C, localStorage, Date.now(), appId)); } else if (S && S.budget) out.push(quotaRow(S.budget, localStorage, Date.now(), appId)); }
     } catch (e) { /* none */ }
     return out;
   };
   // 3.9 Wallet Watch: a source's credit with direct links (Snowtrace: "Powered by Routescan.io APIs", routescan.io and Routescan's account
   // on X). They open the way p0pc0rn opens every outside link (a new tab: the phone's own browser sheet); p0pc0rn never fetches them
   const linkEl = (l) => { const a = mk('a', null, l.text); if (/^https:\/\//.test(String(l.href))) a.href = l.href; a.target = '_blank'; a.rel = 'noopener noreferrer'; if (l.label) a.setAttribute('aria-label', l.label); return a; };
-  const creditEl = (c, tag = 'span', cls = 'footnote ww-links') => { const s = mk(tag, cls, c.line + ': '); c.links.forEach((l, i) => { if (i) s.append(' · '); s.append(linkEl(l)); }); return s; };
+  const creditEl = (c, tag = 'span', cls = 'footnote ww-links') => { const s = mk(tag, cls); for (const x of creditParts(c)) s.append(x.href ? linkEl(x) : x.text); return s; };   // v4: + a credit with its links inside its words (Token Watch)
+  // v4 (Token Watch): a source's own page for one item (a token on DEX Screener), at the person's tap in the open app: the host makes the
+  // address (the app holds none), and a real link opens it in the phone's own browser sheet; it shows under the app, above the credit
+  function linkTray(page, label) {
+    const w = $('app-run'); if (!w || !page || !/^https:\/\//.test(page.url)) return false;
+    let t = $('app-link'); if (t) t.remove();
+    t = mk('div', 'app-link'); t.id = 'app-link'; t.setAttribute('role', 'status');
+    const name = String(label || '').replace(/[^\p{L}\p{N} $._+-]/gu, '').trim().slice(0, 20);
+    const a = linkEl({ text: `Open ${name || 'it'} on ${page.name}`, href: page.url, label: `Open ${name || 'it'} on ${page.name} (${page.site}), in your browser` });
+    t.append(a, btn('Not now', 'mini', () => t.remove()));
+    const cr = $('app-credit'); if (cr && cr.parentNode === w) w.insertBefore(t, cr); else w.append(t);
+    clearTimeout(A.linkT); A.linkT = setTimeout(() => { if (t.isConnected) t.remove(); }, 30000);
+    return true;
+  }
   /** the running app's credit, under the app (the sandboxed app can hold no link of its own) */
   const creditBar = (skel) => { const L = creditsOf(skel && skel.manifest); if (!L.length) return null; const d = mk('div', 'app-credit'); d.id = 'app-credit'; for (const c of L) d.append(creditEl(c, 'p', 'footnote')); return d; };
   const svgIcon = (href) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), u = document.createElementNS('http://www.w3.org/2000/svg', 'use'); u.setAttribute('href', href); s.append(u); s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', 'sf-perm-ic'); return s; };
@@ -222,8 +310,10 @@ export function createApps(api) {
     for (const g of await A.db.all('grants')) A.grants.set(g.id, g);
     await loadSkills();   // H39: p0pc0rn's skills (skills/) and the person's; the Skills section
     A.apps = (await A.db.all('apps')).sort((a, b) => a.createdAt - b.createdAt);
+    await holdBroken();   // v4: the app the page ended in last time waits for the person (before any check or open)
     wireEdits();   // H39: an app change's progress and its end
     render();
+    showBroken();
     setTimeout(() => tick(true), 8000);            // 'on-open': the agentic apps check once soon after p0pc0rn opens
     // memory (the phone's ~1.86 GB page cap): an open app closes when Juli or a render starts (its own question to Juli excepted)
     api.Q().on('change', (j) => { if (j.status === 'running' && A.open && api.Q().modelOf(j) && !gameMove(j)) { const n = A.open.app.name; closeApp(); api.toast(`${n} closed: Juli or a render needs the memory`); } });
@@ -286,9 +376,15 @@ export function createApps(api) {
       }
       if (fn === 'chat.post') { limit(app.id, 'post', LIM.postsPerHour, 3600e3); const n = cleanNotice(args[0]); await api.notice(app.name, n); tell('step', app, { what: 'post', title: n.title, mode }); return true; }
       if (fn === 'juli.ask') { limit(app.id, 'ask', LIM.asksPerHour, 3600e3); tell('step', app, { what: 'ask', mode }); return askJuli(app, String(args[0] || '').slice(0, 4000), { json: !!(args[1] && args[1].json), check: mode === 'check', skill: args[1] && args[1].skill, yields: mode === 'check' && idleOnly(skel) }); }   // 3.9 Wallet Watch: + the app's skill; it yields
+      if (fn === 'juli.big') return bigInfo(app);   // v4 (Token Watch): its switch, downloaded, can run, this phone's speed
+      if (fn === 'juli.setBig') { limit(app.id, 'big', 20, 60e3); return setBig(app, !!args[0]); }
+      if (fn === 'juli.download') { limit(app.id, 'dl', 3, 60e3); if (!bigState().downloaded && api0.downloadBig) api0.downloadBig(); return bigInfo(app); }   // the existing download: its model card and licence, accepted by the person
+      if (fn === 'juli.refer') { limit(app.id, 'refer', 30, 3600e3); tell('step', app, { what: 'ask', mode }); return referJuli(app, skel, args[0] || {}); }
+      if (fn === 'juli.cite') { limit(app.id, 'open', 20, 60e3); const c = A.cites.get(String(args[0] || '')); return c ? linkTray({ url: c.url, name: c.site, site: c.site }, c.title) : false; }
       if (fn === 'juli.choose') { limit(app.id, 'choose', CHOOSE.perHour, 3600e3); return chooseJuli(app, skel, args[0]); }   // 3.9: a game's move
       if (fn === 'juli.models') return { juli: !!api.installed('brain'), big: !!(A.chooseBig && A.chooseBig()) };   // 3.9 polish: the Bigger brain downloaded and on
       if (fn === 'location.get') { limit(app.id, 'loc', LIM.locationsPerMin, 60e3); return deviceLocation(); }
+      if (fn === 'open') { limit(app.id, 'open', 20, 60e3); const pg = SOURCES[args[0]].page(args[1] || {}); return linkTray(pg, args[1] && args[1].label); }   // v4 (Token Watch)
       if (fn === 'app.badge') {
         limit(app.id, 'badge', LIM.badgesPerMin, 60e3);
         const b = Math.max(0, Math.min(99, +args[0] || 0)); if (b === (app.badge || 0)) return true;
@@ -306,6 +402,8 @@ export function createApps(api) {
   }
   async function askJuli(app, prompt, o = {}) {
     if (!api.installed('brain')) throw Object.assign(new Error('Juli is not downloaded'), { code: 'NOT_DOWNLOADED' });
+    if (o.check && !o.yields) o = Object.assign({}, o, { yields: true });   // v4 (scheduler): every app's question in a check yields to the person
+    const had = loadedModel(); if (o.check && had !== 'e2b') SL('load', { app: app.name, model: 'e2b', swap: !!had && had !== 'e2b' });
     if (o.yields) { const b = busyNow(); if (b) throw Object.assign(new Error('Juli waits for an idle phone: ' + b), { code: 'BUSY' }); }   // 3.9 Wallet Watch: never first
     const j = await api.Q().add('appask', { prompt, app: app.name, json: !!o.json, skill: appSkill(o.skill) }, { title: app.name });   // 3.9 Wallet Watch: + its skill
     if (o.check) A.checkJobs.add(j.id);   // a check's question goes with the check (closed, timed out, or stopped)
@@ -386,8 +484,10 @@ export function createApps(api) {
 
   // ---- running an app (full screen)
   async function openApp(app) {
+    if (A.batch) { A.batch = null; SL('yield', { app: app.name, why: 'you opened an app' }); }   // v4 (scheduler): the person comes first: the batch's hold lets go below
     const skel = A.skels.get(app.skel);
     if (!skel) return api.toast('This app’s design is no longer on this phone');
+    if (app.broke) return brokeSheet(app);   // v4: p0pc0rn ended while it ran last time: the person chooses first (its icon, My apps, a reopen)
     if (watches(skel) && !app.openedAt && UI() && UI().needsIntro && UI().needsIntro(skel)) return UI().intro(skel, () => openApp(app));   // 3.9 polish: its first open: what it does, what it sees, how to pause it
     if (!granted(skel)) return permSheet(skel, () => openApp(app));
     // 3.9 polish: a game closed while Juli chose its move and opened again at once: that move (cancelled when the game closed) clears
@@ -414,7 +514,7 @@ export function createApps(api) {
     document.documentElement.classList.add('app-open');
     await flushApp(app.id);   // 3.9 polish: closed and opened again at once, the app starts from its last save
     const store = await storeOf(app.id);
-    const fr = startFrame({ parent: body, frameUrl: api.frameUrl || 'makeapp/frame.html', libs: L, bundle: skel, slots: app.slots, store, mode: 'run', name: app.name,
+    const fr = startFrame({ parent: body, frameUrl: api.frameUrl || 'makeapp/frame.html', libs: L, bundle: skel, slots: app.slots, store, mode: 'run', name: app.name, inflight: { appId: app.id, kind: 'open' },   // v4
       custom: app.custom || '', onCustomError: (m) => { api.diag('apps: an added part stopped', { skel: app.skel }); notice1(app.id, `${app.name}: its added part stopped (${m.slice(0, 60)}). Change › Undo puts it back.`); },   // H39
       onSave: (k, v) => save(app.id, k, v), onCall: callsFor(app, skel), onError: (m, fatal) => { api.diag('apps: app error', { skel: app.skel, fatal }); if (fatal) api.toast('The app stopped: ' + m.slice(0, 80)); },
       onBreach: () => { api.diag('apps: sandbox stopped an app', { skel: app.skel }); if (A.open && A.open.fr === fr) closeApp(); api.toast(`${app.name} was stopped: it tried to reach outside its sandbox`); } });
@@ -444,6 +544,7 @@ export function createApps(api) {
   // ---- the checks of agentic and live apps (only while p0pc0rn is open; never while a picture, clip or song is rendering)
   function due(app, skel, onOpen) {
     if (!skel || !watches(skel) || !granted(skel) || app.paused || app.youPaused || pausedAll()) return false;   // 3.9 polish: + the person's pauses (one app, or all)
+    if (app.broke) return false;   // v4: the page ended while it ran last time: it waits for the person
     if (capOf(skel, app.id)) return false;   // 3.9 Wallet Watch: its source's free limit (every app, or its share): no check, nothing sent
     if (idleOnly(skel) && (tooSoon(app, skel) || busyNow())) return false;   // 3.9 Wallet Watch: at most every 15 minutes, only when the phone is idle
     if (app.soon && Date.now() >= (app.nextCheck || 0)) return true;   // the check right after the person closed it
@@ -453,10 +554,118 @@ export function createApps(api) {
   }
   async function tick(onOpen) {
     if (A.checking || A.open || !A.db || document.visibilityState === 'hidden' || api.modelBusy()) return;   // one frame at a time, never next to a model
-    const list = A.apps.filter((a) => due(a, A.skels.get(a.skel), onOpen) && !(A.open && A.open.app.id === a.id));
+    if (safeMode()) return;   // v4: safe mode (?safe=1): no app checks on its own, as the queue runs nothing
+    const list = schedule(A.apps.filter((a) => due(a, A.skels.get(a.skel), onOpen) && !(A.open && A.open.app.id === a.id)), Date.now());   // v4: the scheduler's order
     if (!list.length) return;
-    A.checking = true;
-    try { for (const a of list) { if (A.open || api.modelBusy() || a.youPaused || pausedAll()) break; if (idleOnly(A.skels.get(a.skel)) && busyNow()) continue; await runCheck(a); } } finally { A.checking = false; A.checkFr = null; A.checkingId = null; render(); }
+    A.checking = true; const t0 = Date.now();
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const a = list[i].app;
+        if (Date.now() - t0 > SCHED.tickBudgetMs) { SL('yield', { why: `this tick’s ${SCHED.tickBudgetMs / 1000} s are used: ${list.length - i} more go next` }); break; }   // v4: a time budget per tick
+        A.batch = list[i].model && list.slice(i + 1).some((x) => x.model === list[i].model) ? { model: list[i].model, app: a.id } : null;   // v4: the next check asks the same model
+        if (A.open || api.modelBusy() || a.youPaused || pausedAll()) break; if (idleOnly(A.skels.get(a.skel)) && busyNow()) continue; await runCheck(a); }
+    } finally { A.batch = null; A.checking = false; A.checkFr = null; A.checkingId = null; render(); }
+  }
+  /** v4 (scheduler, makeapp/scheduler.js): the due checks -> the order they run in: priority (Settings › Apps), then the most overdue; a
+   *  Low app that is 3x its interval late goes first; an app that is watching closely gets a half step; the checks that ask Juli are
+   *  grouped by model; when the first one would load Juli for itself while more of her questions are due within a minute, those wait for
+   *  the next tick, together (never a High or starving one, never twice in a row). -> [{app, model, ...}] */
+  const asksJuli = (skel) => skel.manifest.category === 'agentic' && ((skel.manifest.permissions || {}).juli || []).includes('ask');
+  /** the model an app's check needs: Juli's own, or the Bigger brain when its own switch is on and it can run (else it waits: E2B) */
+  function modelOf(a, s) { const p = modelPlan(s.manifest, { bigOn: !!a.bigOn, big: bigState() }); return p.model === 'big' && !p.wait ? 'big' : 'e2b'; }
+  function schedItem(a, prios) {
+    const s = A.skels.get(a.skel), iv = ((s && s.manifest.triggers) || []).find((t) => t && t.type === 'interval');
+    return { id: a.id, app: a, name: a.name, due: a.nextCheck || 0, everyMs: (iv ? iv.minMinutes : 720) * 60e3, lastRun: a.lastCheck || 0,
+      priority: priorityOf(prios, a.id), boost: !!a.lastActive, model: s && asksJuli(s) ? modelOf(a, s) : null };
+  }
+  function schedule(list, now) {
+    if (!list.length) return [];
+    const prios = readPriorities(lsSafe()), loaded = loadedModel(), b = batchByModel(rankDue(list.map((a) => schedItem(a, prios)), now), loaded === 'e2b' || loaded === 'big' ? loaded : null);
+    let order = b.order;
+    const head = order[0];
+    if (head && head.model) {
+      const soon = A.apps.filter((a) => !list.includes(a) && !a.youPaused && !a.paused && A.skels.get(a.skel) && watches(A.skels.get(a.skel)) && granted(A.skels.get(a.skel))).map((a) => schedItem(a, prios));
+      const last = A.waited.get(head.id) || 0, w = batchWait(head, soon, now, loaded, now - last < 3 * SCHED.batchWindowMs);
+      if (w > 0) {
+        A.waited.set(head.id, now);
+        const n = soon.filter((x) => x.model === head.model && x.due > now && x.due - now <= SCHED.batchWindowMs).length;
+        SL('wait', { app: head.name, model: head.model, why: `batching: ${n} more ${n === 1 ? 'question' : 'questions'} for Juli due within a minute`, ms: w });
+        order = order.filter((x) => x.model !== head.model);
+      }
+    }
+    if (b.swaps) SL('plan', { why: `${b.swaps} model ${b.swaps === 1 ? 'swap' : 'swaps'} in this order` });
+    return order;
+  }
+  /** v4 (scheduler): a check's request a source's cap refused (or stopped part way) waits for that window: the check runs again when it
+   *  opens (never sooner, never in a loop), so the work is not lost. The calls per source go in the scheduler's log */
+  const WAITS = new Set(['RATE_LIMIT', 'HOUR_CAP', 'SHARE', 'BACKOFF', 'DAILY_CAP', 'APP_CAP']);
+  function noteCap(app, src, code, until) {
+    if (!WAITS.has(code) || !(+until > Date.now())) return;
+    const was = A.capWait.get(app.id); if (!was || was.until < +until) A.capWait.set(app.id, { source: String(src), code, until: +until });
+    SL('refused', { app: app.name, source: String(src), why: code });
+  }
+  const capWatch = (app, f) => async (fn, args) => {
+    try {
+      const v = await f(fn, args);
+      if (fn === 'fetch') { SL('call', { app: app.name, source: String(args[0]) }); if (v && v.stopped) noteCap(app, args[0], v.stopped.code, v.stopped.until); }
+      return v;
+    } catch (e) { if (fn === 'fetch' && e) noteCap(app, args[0], e.code, e.until); throw e; }
+  };
+  // ---- v4 (Token Watch, Josh Nov 1): Name references. The Bigger brain compares a new token's name with what Juli's AIRLOCKED research
+  // lane finds on Wikipedia, then Fandom (makeapp/reference.js: the name is sanitised first, it is only a lookup topic, the model sees the
+  // lane's fact lines and answers in a closed schema, code writes the sentence and the citation). Only when the app's OWN switch is on
+  // (app.bigOn: off by default, never automatic), the Bigger brain is downloaded and its second process can run; only in a check (never
+  // next to an open app, a game or the person's model: it yields to the person); never answered by Juli's own model; its lookups have
+  // their own budget (REFLOOKUP_CAP); one answer per name for a day (the cache)
+  const bigState = () => { try { return (api0.bigState && api0.bigState()) || {}; } catch (e) { return {}; } };
+  function bigInfo(app) {
+    const b = bigState();
+    return { on: !!app.bigOn, downloaded: !!b.downloaded, usable: !!b.usable, why: String(b.why || '').slice(0, 120), sizeGB: +b.sizeGB || 0, wordsPerSec: +b.tokPerS > 0 ? Math.max(1, Math.round(+b.tokPerS * 0.75)) : 0 };
+  }
+  async function setBig(app, on) { app.bigOn = !!on; await A.db.put('apps', app); SL('switch', { app: app.name, model: 'big', why: on ? 'its Bigger brain switch is on' : 'its Bigger brain switch is off' }); return bigInfo(app); }
+  function refTake() {
+    if (!A.refBudget) A.refBudget = createBudget(REFLOOKUP_CAP, { store: lsSafe() });
+    const r = A.refBudget.take('');
+    SL(r.ok ? 'call' : 'refused', { source: 'wikipedia+fandom', why: r.ok ? '' : r.code });
+    return r;
+  }
+  function refOut(r) {
+    const st = ['yes', 'no', 'unclear', 'none', 'skipped', 'rejected', 'wait'].includes(r && r.status) ? r.status : 'none';
+    if (st !== 'yes' || !r.cite || !r.cite.permalink) return { status: st, why: String((r && r.why) || '').slice(0, 120) };
+    const id = 'c' + uid().slice(0, 10); A.cites.set(id, { url: r.cite.permalink, site: r.cite.site || 'Wikipedia', title: r.cite.title || '' }); if (A.cites.size > 200) A.cites.delete(A.cites.keys().next().value);
+    return { status: 'yes', line: String(r.line || '').slice(0, 160), cite: { id, title: String(r.cite.title || '').slice(0, 80), site: String(r.cite.site || '').slice(0, 60), license: String(r.cite.license || '').slice(0, 40), asOf: String(r.cite.asOf || '').slice(0, 40) } };
+  }
+  async function referJuli(app, skel, item) {
+    const plan = modelPlan(skel.manifest, { bigOn: !!app.bigOn, big: bigState() });
+    if (plan.model !== 'big') return { status: 'off' };
+    if (plan.wait) { SL('wait', { app: app.name, model: 'big', why: plan.wait }); return { status: 'wait', why: plan.wait }; }
+    const b = busyNow(); if (b) throw Object.assign(new Error('the Bigger brain waits for an idle phone: ' + b), { code: 'BUSY' });   // never first
+    const name = String((item && item.name) || '').slice(0, 120), symbol = String((item && item.symbol) || '').slice(0, 40), key = refKey(name, symbol);
+    const hit = A.refCache.get(key); if (hit && Date.now() - hit.at < REF.cacheMs) return hit.v;
+    const had = loadedModel(); if (had !== 'big') SL('load', { app: app.name, model: 'big', swap: !!had && had !== 'big' });
+    const j = await api.Q().add('appref', { name, symbol, app: app.name }, { title: app.name });
+    A.checkJobs.add(j.id);
+    const off = api.Q().on ? api.Q().on('change', (x) => { if (x && x.id !== j.id && !A.checkJobs.has(x.id) && (x.status === 'queued' || x.status === 'running' || x.status === 'waiting')) api.Q().cancel(j.id).catch(() => {}); }) : null;   // the person's job goes first
+    let r; try { r = await waitJob(j.id); } finally { A.checkJobs.delete(j.id); if (typeof off === 'function') off(); }
+    const v = refOut(r);
+    if (v.status !== 'wait') { A.refCache.set(key, { at: Date.now(), v }); if (A.refCache.size > 200) A.refCache.delete(A.refCache.keys().next().value); }
+    return v;
+  }
+  /** the queue runner for 'appref' (app.js registers it on the Bigger brain's model; no fallback: Juli's own model never answers it).
+   *  o.research() = Juli's research lane (null when lookups are off in Settings › Juli). The lane's quarantined reader is this job's model,
+   *  stateless, for this job only */
+  function refRunner(modelId, o = {}) {
+    return { model: () => modelId, needsConsent: false, async run(ctx) {
+      if (!modelId) return { status: 'wait', why: 'the Bigger brain is not on this phone' };
+      const research = o.research ? o.research() : null;
+      if (!research) return { status: 'wait', why: 'lookups are off (Settings › Juli)' };
+      const text = (r) => (typeof r === 'string' ? r : r && r.raw != null ? r.raw : (r && r.reply && r.reply.content) || (r && r.text) || '');
+      const chat = async (messages, op = {}) => text(await ctx.engine.chat(messages, Object.assign({ maxTokens: op.maxTokens || REF.maxTokens, signal: ctx.signal }, op.prefix ? { prefix: op.prefix } : {})));
+      const prev = research.reader;
+      research.reader = (messages, ro = {}) => chat(messages, { maxTokens: ro.maxTokens || 600, prefix: ro.prefix });
+      try { return await runRef({ name: ctx.params.name, symbol: ctx.params.symbol }, { research, chat, take: refTake, signal: ctx.signal }); }
+      finally { research.reader = prev; }
+    } };
   }
   async function runCheck(app) {
     const skel = A.skels.get(app.skel), T = skel.manifest.triggers || [], iv = T.find((t) => t.type === 'interval');
@@ -464,13 +673,14 @@ export function createApps(api) {
     await api.settle();   // 3.8 (iOS 27): a few seconds after a model leaves
     if (A.open || api.modelBusy()) return;
     if (idleOnly(skel) && busyNow()) return;   // 3.9 Wallet Watch: a job of the person's came first: the next idle tick
+    if (app.broke || safeMode()) return;   // v4: held for the person, or safe mode
     const host = $('app-checks') || document.body.appendChild(Object.assign(mk('div', 'app-checks'), { id: 'app-checks' }));
     const store = await storeOf(app.id);
     let breach = false;
-    const fr = startFrame({ parent: host, frameUrl: api.frameUrl || 'makeapp/frame.html', libs: L, bundle: skel, slots: app.slots, store, mode: 'check', name: app.name, hidden: true,
+    const fr = startFrame({ parent: host, frameUrl: api.frameUrl || 'makeapp/frame.html', libs: L, bundle: skel, slots: app.slots, store, mode: 'check', name: app.name, hidden: true, inflight: { appId: app.id, kind: 'check' },   // v4
       custom: app.custom || '',   // H39: the added part runs in a check too (its hooks do not)
-      onSave: (k, v) => save(app.id, k, v), onCall: callsFor(app, skel, 'check'), onError: () => {}, onBreach: () => { breach = true; } });
-    A.checkFr = fr; A.checkingId = app.id; tell('check-start', app);   // 3.9 polish: the home screen's activity pill and the log
+      onSave: (k, v) => save(app.id, k, v), onCall: capWatch(app, callsFor(app, skel, 'check')), onError: () => {}, onBreach: () => { breach = true; } });
+    A.checkFr = fr; A.checkingId = app.id; tell('check-start', app); const t0Check = Date.now();   // 3.9 polish: the home screen's activity pill and the log
     let out = null, err = null;
     const ms = skel.manifest.category === 'agentic' && ((skel.manifest.permissions || {}).juli || []).includes('ask') ? CHECK_JULI_MS : CHECK_MS;
     try { await Promise.race([fr.booted, new Promise((r, j) => setTimeout(() => j(new Error('the app did not start')), 15000))]); out = await fr.check(ms); }
@@ -484,6 +694,9 @@ export function createApps(api) {
     // 3.9 Wallet Watch: a check may say when it wants the next one ({next: minutes}), kept within its trigger's minMinutes .. calmMinutes
     const nx = !err && out && iv && Number.isFinite(+out.next) && +out.next > 0 ? Math.max(iv.minMinutes, Math.min(Math.max(iv.calmMinutes || iv.minMinutes, iv.minMinutes), Math.round(+out.next))) : 0;
     app.nextCheck = Date.now() + (nx ? nx * 60e3 : ((active || !iv ? (iv ? iv.minMinutes : 720) : (iv.calmMinutes || iv.minMinutes)) * 60e3) * (err ? 0.5 : 1));
+    const cw = A.capWait.get(app.id);   // v4 (scheduler): a refused request: the check runs again when its source's window opens (not sooner)
+    if (cw) { A.capWait.delete(app.id); app.nextCheck = cw.until >= app.nextCheck ? cw.until + 1000 : Math.max(cw.until + 1000, Date.now() + 60e3); SL('wait', { app: app.name, source: cw.source, why: `${cw.code}: again when ${cw.source} allows it`, ms: app.nextCheck - Date.now() }); }
+    SL('ran', { app: app.name, model: asksJuli(skel) ? 'e2b' : '', why: err ? 'error: ' + err.slice(0, 60) : '', ms: Date.now() - t0Check });
     await A.db.put('apps', app);
     api.diag('apps: check', { skel: app.skel, ok: !err, active, posted: out && out.posted || 0 });
     tell('check-end', app, { ok: !err, found: app.badge || 0, posted: (out && out.posted) || 0, error: err || null, active });   // 3.9 polish
@@ -540,7 +753,7 @@ export function createApps(api) {
         const t0 = performance.now(), at = Date.now();
         const trip = { id: 'selftest', shelf: 'confirmed', kind: 'trip', title: 'Test trip', text: '', data: { place: TEST_TOWN, start: later(2), end: later(3), what: 'hike' }, evidence: [], review: false, at, upd: at };
         const note = { id: 'selftestnote', shelf: 'suspected', kind: 'note', title: 'Camping at Moab this Friday to Sunday', text: '', data: { note: 'Camping at Moab this Friday to Sunday' }, evidence: [], review: false, at, upd: at };
-        const data = { 'weather.nws': () => ({ place: 'Moab, UT', periods: testForecast() }), 'alerts.nws': () => ({ alerts: [] }), 'geocode.openmeteo': () => ({ results: [TEST_TOWN] }) };
+        const data = { 'weather.nws': () => ({ place: 'Moab, UT', periods: testForecast() }), 'alerts.nws': () => ({ alerts: [] }), 'geocode.local': () => ({ results: [TEST_TOWN] }), 'geocode.openmeteo': () => ({ results: [TEST_TOWN] }) };
         await api.settle();
         const r = frame(tw, { 'p0kit:nb.trips': JSON.stringify({ v: 1, e: [trip, note] }) }, 'check', data);
         let value = null;
@@ -619,7 +832,7 @@ export function createApps(api) {
   }
   /** the person's pause of one app (its checks wait; the one that runs now stops) and of every app (Pause all) */
   async function setPaused(app, on) {
-    app.youPaused = !!on; await A.db.put('apps', app).catch(() => {});
+    app.youPaused = !!on; delete app.broke; await A.db.put('apps', app).catch(() => {});   // v4: the person's choice ends p0pc0rn's hold
     if (on && A.checkingId === app.id) stopCheck();
     tell('paused', app, { on: !!on }); render();
   }
@@ -628,6 +841,37 @@ export function createApps(api) {
     if (on) stopCheck();
     tell('paused', { id: '*', name: 'All apps', skel: '' }, { on: !!on }); render();
     if (!on) setTimeout(() => tick(false), 1500);
+  }
+  // v4: the app the page ended in. At start-up (init) the marker an app frame left marks that app `broke` {at, kind} on this phone: it
+  // does not check on its own (due) or open by itself (openApp, the reopen after a planned fresh page), and p0pc0rn starts on the home
+  // screen with a sheet that names it: Open anyway / Pause it / Delete it. Until the person chooses, a tap on the app shows the same sheet.
+  async function holdBroken() {
+    const m = A.bootMark; if (!m) return;
+    const app = A.apps.find((a) => a.id === m.appId);
+    if (app) {
+      app.broke = { at: m.at, kind: m.kind }; A.brokeNotice = app.id;
+      await A.db.put('apps', app).catch(() => {});
+      api.diag('apps: p0pc0rn ended while an app ran', { skel: app.skel, kind: m.kind });
+    }
+    inflightClear(pageStorage(), m);   // kept only once it is on the app (a page that ends before this finds it again)
+  }
+  /** the start-up sheet, once the app is on screen (app.js: booted) and the apps are loaded, whichever comes last */
+  function showBroken() {
+    if (!A.uiReady || !A.brokeNotice) return;
+    const app = A.apps.find((a) => a.id === A.brokeNotice); A.brokeNotice = null;
+    if (app && app.broke) brokeSheet(app);
+  }
+  function brokeSheet(app) {
+    const skel = A.skels.get(app.skel), works = !!skel && watches(skel), name = app.name || 'This app';
+    const { sheet, close } = api.sheet('app-broke', `“${name}” may have stopped p0pc0rn`);
+    sheet.classList.add('app-broke'); sheet.dataset.app = app.id;
+    sheet.append(mk('p', 'callout', `p0pc0rn closed while ${name} ${app.broke && app.broke.kind === 'check' ? 'was checking on its own' : 'was open'}. To be safe, it stays closed${works ? ' and doesn’t check on its own' : ''} until you choose.`));
+    const open = btn('Open anyway', 'btn', async () => { close(); delete app.broke; await A.db.put('apps', app).catch(() => {}); render(); openApp(app); }); open.id = 'app-broke-open';
+    sheet.append(open);
+    if (works) { const p = btn('Pause it', 'btn', async () => { close(); await setPaused(app, true); api.toast(`${name} is paused: it won’t check on its own`); }); p.id = 'app-broke-pause'; sheet.append(p); }
+    const del = btn('Delete it', 'btn', () => { close(); api.confirm(`Delete “${name}”?`, 'Its data on this phone goes too.', 'Delete', () => removeApp(app)); }); del.id = 'app-broke-delete';
+    const later = btn('Not now', 'btn ghost', () => close()); later.id = 'app-broke-later';
+    sheet.append(del, later);
   }
   /** access taken back (the app's settings page): its grant goes and its checks stop; the next open or check asks again */
   async function revoke(skelId) {
@@ -661,14 +905,22 @@ export function createApps(api) {
     L.push(['Never sees your photos, Library, Cast or files', 'Apps run in a locked box on this phone.', 'shield']);
     return L;
   }
-  function permSheet(skel, onAllow) {
+  // v4 (security review): a design or a skill file from somewhere else can carry skills, and a skill changes how Juli answers and builds
+  // apps. Where the person adds one (the import's permission sheet, the skill's own sheet) this says so, above the button that adds it
+  const TRUST = { design: 'Only add app designs you made yourself or that come from people you trust. A design can bring skills that change how Juli answers and builds apps.',
+    skill: 'Only add skills you wrote yourself or that come from people you trust. A skill changes how Juli answers and builds apps.' };
+  const trustNote = (text, id) => { const p = mk('p', 'note warn sf-trust'); p.id = id; const ic = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), u = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    u.setAttribute('href', '#i-alert'); ic.append(u); ic.setAttribute('class', 'ic'); ic.setAttribute('aria-hidden', 'true'); p.append(ic, mk('span', null, text)); return p; };
+  function permSheet(skel, onAllow, o = {}) {
     const m = skel.manifest;
     const { sheet, close } = api.sheet('app-perm', `“${m.name}” would like to:`);
     sheet.classList.add('app-perm', 'sf-perm');
     try { const I = UI(); if (I && I.iconEl) sheet.insertBefore(I.iconEl(m, 'big'), sheet.firstChild); } catch (e) { /* no icon */ }
     const ul = mk('ul', 'perm-list sf-perm-list');
     for (const [a, b, icon, credit] of permLines(skel)) { const li = mk('li'); li.dataset.icon = icon || ''; li.append(svgIcon(ICONS[icon] || '#i-check'), mk('span', 'callout', a), mk('span', 'footnote dim', b)); if (credit) li.append(creditEl(credit)); ul.append(li); }   // 3.9 Wallet Watch: + the credit's links
-    sheet.append(mk('p', 'footnote sf-perm-plain', plainOf(m)), ul);
+    sheet.append(mk('p', 'footnote sf-perm-plain', plainOf(m)));
+    if (o.importing) sheet.append(trustNote(TRUST.design, 'app-perm-trust'));   // v4: an imported design, before what it asks for and Allow
+    sheet.append(ul);
     sheet.append(mk('p', 'footnote dim sf-perm-from', (A.bundled.has(m.id) ? 'Comes with p0pc0rn.' : 'Made by someone else: allow it only if you trust where it came from.') + (watches(skel) ? ' You can pause it, or turn this off, any time in its settings.' : ' You can turn this off any time in its settings.')));
     const ok = btn('Allow', 'btn cta', async () => { const g = { id: m.id, key: permKey(m), at: Date.now() }; await A.db.put('grants', g); A.grants.set(g.id, g); close(); onAllow && onAllow(); });
     ok.id = 'app-perm-allow';
@@ -692,7 +944,7 @@ export function createApps(api) {
       if (A.skills) await A.skills.setBundle(id, b.skills || {});   // H39: the skills it brings, on once the person allowed it (a new version's replace the old)
       render(); renderSkills();
       api.toast(`${b.manifest.name} is on your shelf`);
-    });
+    }, { importing: true });   // v4: + the warning about where it came from
   }
   function errorSheet(title, lines) {
     const { sheet } = api.sheet('app-err', title);
@@ -760,6 +1012,7 @@ export function createApps(api) {
     if (c.problems.length) return errorSheet('This skill can’t be used', c.problems.slice(0, 12));
     const k = c.skill, { sheet, close } = api.sheet('skill-add', c.replaces ? `Replace your skill “${k.name}”?` : 'Add this skill?');
     sheet.classList.add('skill-sheet');
+    sheet.append(trustNote(TRUST.skill, 'skill-add-trust'));   // v4: first, above the skill and its Turn on
     sheet.append(mk('p', 'footnote dim', 'Read all of it before you turn it on. Juli follows a skill as know-how when it fits what you ask. It never changes p0pc0rn’s rules and gives no app any permission.'),
       mk('p', 'callout', k.name), mk('p', 'footnote dim', k.description), mk('p', 'footnote dim', forLine(k)), mk('pre', 'doc-text', k.md));
     const ok = btn('Turn on', 'btn cta', async () => {
@@ -909,6 +1162,7 @@ export function createApps(api) {
   /** 3.9: how long the queue keeps a model after a job (app.js takes the larger of this and Juli's own 5 s): THE GAME HOLD, a minute after
    *  a move of the game that is open; 0 otherwise */
   function holdFor(id) {
+    if (A.batch && id) return SCHED.batchHoldMs;   // v4 (scheduler): the next check of this tick asks the same model: it stays loaded for it
     const c = A.lastChoose;
     return id && id === A.chooseModel && A.open && c && c.appId === A.open.app.id && Date.now() - c.at < GAME_HOLD ? GAME_HOLD : 0;
   }
@@ -1184,7 +1438,7 @@ export function createApps(api) {
       const skel = A.skels.get(a.skel), checks = !!skel && watches(skel);
       const row = mk('div', 'li app-row'); row.dataset.mine = a.id;   // 3.9 polish: ui/storefront.js draws its card (its icon, what needs you, its sentence)
       const t = mk('span', 'app-txt'); t.append(mk('span', 'sw-name', a.name),
-        mk('span', 'footnote dim', !skel ? 'Its design is gone' : checks ? agenticLine(a, skel) : skel.manifest.name));
+        mk('span', 'footnote dim', !skel ? 'Its design is gone' : a.broke ? BROKE_LINE : checks ? agenticLine(a, skel) : skel.manifest.name));
       const end = mk('span', 'li-end');
       const o = btn('Open', 'btn sm', () => openApp(a)); o.dataset.app = a.id; o.disabled = !skel;
       const d = btn('Delete', 'mini', () => api.confirm(`Delete “${a.name}”?`, 'Its data on this phone goes too.', 'Delete', () => removeApp(a)));
@@ -1202,7 +1456,9 @@ export function createApps(api) {
       row.append(t, end); (m.kind === 'game' && gm ? gm : m.category === 'agentic' ? ag : na).append(row);
     }
   }
+  const BROKE_LINE = 'Waiting for you: p0pc0rn closed while it ran';   // v4: held after the page ended while it ran (brokeSheet)
   function agenticLine(a, skel) {
+    if (a.broke) return BROKE_LINE;
     if (a.youPaused || pausedAll()) return a.youPaused ? 'Paused by you' : 'Paused: all apps are paused';   // 3.9 polish: the person's pauses first, in plain words
     { const c = capOf(skel, a.id); if (c) return c.line; }   // 3.9 Wallet Watch: "Paused until 5:00 PM to stay within Snowtrace’s free limit"
     if (!granted(skel)) return 'Not allowed yet: open it to allow';
@@ -1217,18 +1473,46 @@ export function createApps(api) {
   }
   const ago = (t) => { const s = (Date.now() - t) / 1000; return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; };
 
+  // ---- v4 (Token Watch): "watch closely" in Juli's chat, in code (no model). It goes to the person's Token Watch as a request its next
+  // check acts on (kept in the app's own storage, 'p0kit:tw.cmd'); that check comes at its usual time (at most every 15 minutes, only
+  // when the phone is idle). -> {text} for the chat, or null (not this command)
+  async function command(text) {
+    const c = tokenCommand(text); if (!c) return null;
+    const skel = A.skels.get('token-watch'); if (!skel || !A.db) return null;
+    const app = yoursOf(A.apps, 'token-watch');
+    if (!app) return { text: 'Token Watch isn’t in your apps yet: Apps › Works for you › Token Watch (beta) › Get. Open it once, then say “watch closely” again.' };
+    if (!granted(skel)) return { text: 'Open Token Watch once and allow it first (Apps › My apps › Token Watch). Then say “watch closely” again.' };
+    if (app.youPaused || pausedAll()) return { text: 'Token Watch is paused. Turn it back on in its settings (Apps › My apps › Token Watch), then say “watch closely” again.' };
+    const names = (c.chains || []).map((x) => TOKEN_CHAINS[x].label), what = !names.length ? 'the chains picked in it' : names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+    save(app.id, 'p0kit:tw.cmd', JSON.stringify({ cmd: c.cmd, chains: c.chains, at: Date.now(), visit: visitId() })); await flushApp(app.id);
+    app.soon = true; app.nextCheck = Date.now(); await A.db.put('apps', app); setTimeout(() => tick(false), 4000);
+    if (c.cmd === 'stop') return { text: 'OK: if Token Watch is watching closely, it stops at its next check and says so here.' };
+    const first = Math.max(Date.now(), (app.lastCheck || 0) + floorOf(skel) * 60e3), when = first - Date.now() < 90e3 ? 'in a minute or so' : 'at ' + new Date(first).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return { text: `OK: Token Watch will watch ${what} closely for 2 hours, while p0pc0rn is open. It looks every 15 minutes when your phone is idle, and posts here only when a new token enters its top 5 or a safety flag changes. Its first look: ${when}. Not financial advice.` };
+  }
+
   function wire() {
     $('apps-make').onclick = () => { const only = A.only || null; A.only = null; make($('apps-in').value, only); };
     $('apps-in').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('apps-make').click(); } });
     $('apps-import').onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; importFile(f); };
   }
   wire();
-  return { init, render, runner, askRunner, editRunner, chooseRunner, holdFor, choose: (app, o) => chooseJuli(app, A.skels.get(app.skel), o), change, undoEdit, restoreVersion, changeSheet, openApp, closeApp, make, tick, importFile, selfTest,
+  return { init, render, runner, askRunner, editRunner, chooseRunner, refRunner, holdFor, choose: (app, o) => chooseJuli(app, A.skels.get(app.skel), o), change, undoEdit, restoreVersion, changeSheet, openApp, closeApp, make, tick, importFile, selfTest,
     // 3.9 polish (A1): what the Apps screen, an app's settings page and the activity log use (ui/storefront.js, ui/works.js)
     getOrOpen: (skelId) => { const s = A.skels.get(skelId); return s ? getOrOpen(s) : null; }, askRemove: (app) => api.confirm(`Delete “${app.name}”?`, 'Its data on this phone goes too.', 'Delete', () => removeApp(app)),
     pause: setPaused, pauseAll: setPauseAll, pausedAll, revoke, allow: (skelId, then) => { const s = A.skels.get(skelId); if (s) permSheet(s, then); }, granted: (skelId) => { const s = A.skels.get(skelId); return !!s && granted(s); },
     quota: quotaRows,   // 3.9 Wallet Watch: how often it checks and "Snowtrace requests today: N of 5,000" (ui/works.js, an app's settings page)
-    statusOf: (a) => { const s = A.skels.get(a.skel); return !s ? 'Its design is gone' : watches(s) ? agenticLine(a, s) : s.manifest.name; }, ownLog, beforeAfter, hosts: HOSTS,
+    capped: (skelId, appId = '') => capOf(A.skels.get(skelId), appId),
+    // v4 (scheduler): Settings › Apps › Priority (each app that works on its own), and the scheduler's log for Diagnostics
+    priorities: () => { const p = readPriorities(lsSafe()); return A.apps.filter((a) => { const s = A.skels.get(a.skel); return s && watches(s); }).map((a) => ({ id: a.id, name: a.name, priority: priorityOf(p, a.id), big: !!a.bigOn })); },
+    setPriority: (appId, level) => { setPriority(lsSafe(), appId, level); SL('priority', { app: (A.apps.find((a) => a.id === appId) || {}).name || appId, why: level }); },
+    schedLog: () => A.sched.list(), schedCounts: () => A.sched.counts(),
+    schedPlan: (ids, now = Date.now()) => schedule(ids.map((id) => A.apps.find((a) => a.id === id)).filter(Boolean), now).map((x) => ({ id: x.id, model: x.model, tier: x.tier, starving: x.starving })),   // v4: the order a tick would run these due apps in (tests, the bench)
+    schedLines: (n = 40) => { const c = A.sched.counts(); return [`apps scheduler: ran ${c.ran}, waited ${c.waited}, Juli loads ${c.loads} (swaps ${c.swaps}), yields ${c.yields}; calls ${JSON.stringify(c.calls)}; refused ${JSON.stringify(c.refused)}`].concat(logLines(A.sched.list().slice(-n))); },   // v4: why an app's checks rest (a capped source it reads in them), or null
+    command,   // v4 (Token Watch): "watch closely" from Juli's chat (ui/chat.js, through app.js)
+    statusOf: (a) => { const s = A.skels.get(a.skel); return !s ? 'Its design is gone' : a.broke ? BROKE_LINE : watches(s) ? agenticLine(a, s) : s.manifest.name; }, ownLog, beforeAfter, hosts: HOSTS,
+    // v4: the app the page ended in last time (app.js starts on the home screen then), and the app on screen (its sheet shows then)
+    brokeAtBoot: () => !!A.bootMark, booted: () => { A.uiReady = true; showBroken(); },
     confirmMake: (skelId, slots, name) => { const s = A.skels.get(skelId); return s ? confirmMake(s, slots || JSON.parse(JSON.stringify(s.slots_default || {})), String(name || s.manifest.name).slice(0, 30)) : Promise.resolve(null); },
     get state() { return A; } };
 }

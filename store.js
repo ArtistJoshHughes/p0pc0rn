@@ -129,3 +129,39 @@ export async function clearVideoInputs() {
   if (mem) { mem.inputs.delete('video'); return; }
   return run(['inputs'], 'readwrite', (t) => { t.objectStore('inputs').delete('video'); });
 }
+/** (v4) Create › Video › Restyle a clip: the clip being restyled, one slot: {pack (its frames), first (frame 0, PNG), thumb, styled (Klein's
+ *  first frame, once made)} - so a reload or a planned fresh page keeps the clip and the picture to review. Same 'inputs' store, no schema change. */
+export async function putStyleInput(rec) {
+  await open();
+  const r = Object.assign({}, rec, { id: 'style' });
+  if (mem) { mem.inputs.set('style', r); return; }
+  return run(['inputs'], 'readwrite', (t) => { t.objectStore('inputs').put(r); });
+}
+export async function getStyleInput() {
+  await open();
+  if (mem) return mem.inputs.get('style') || null;
+  return run(['inputs'], 'readonly', (t, box) => { const r = t.objectStore('inputs').get('style'); r.onsuccess = () => { box.v = r.result || null; }; });
+}
+export async function clearStyleInput() {
+  await open();
+  if (mem) { mem.inputs.delete('style'); return; }
+  return run(['inputs'], 'readwrite', (t) => { t.objectStore('inputs').delete('style'); });
+}
+/** (v4) the whole video restyled in parts: the frames packs of its parts after the first, {parts: [Blob], t (the clip's pick time)}, kept
+ *  in their own slot of the same 'inputs' store, so the page does not hold them while the first frame is made and checked */
+export async function putStyleParts(rec) {
+  await open();
+  const r = Object.assign({}, rec, { id: 'style-parts' });
+  if (mem) { mem.inputs.set('style-parts', r); return; }
+  return run(['inputs'], 'readwrite', (t) => { t.objectStore('inputs').put(r); });
+}
+export async function getStyleParts() {
+  await open();
+  if (mem) return mem.inputs.get('style-parts') || null;
+  return run(['inputs'], 'readonly', (t, box) => { const r = t.objectStore('inputs').get('style-parts'); r.onsuccess = () => { box.v = r.result || null; }; });
+}
+export async function clearStyleParts() {
+  await open();
+  if (mem) { mem.inputs.delete('style-parts'); return; }
+  return run(['inputs'], 'readwrite', (t) => { t.objectStore('inputs').delete('style-parts'); });
+}

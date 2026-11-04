@@ -1,7 +1,8 @@
 # The assistant model: Gemma 4 E2B-it
 
 p0pc0rn's assistant runs **Gemma 4 E2B-it**, Copyright Google LLC, licensed under the **Apache License 2.0**
-(LICENSE-Gemma-4-Apache-2.0.txt, the copy Google ships with the model). Source: https://huggingface.co/google/gemma-4-E2B-it
+(LICENSE-Gemma-4-Apache-2.0.txt: the Apache License 2.0 as the Apache Software Foundation publishes it; Google's model card names
+Apache-2.0). Source: https://huggingface.co/google/gemma-4-E2B-it
 
 This is NOT the Gemma Terms of Use. Those terms (GEMMA_TERMS_OF_USE.txt) cover the video model's separate Gemma-2-2B-it text encoder only.
 

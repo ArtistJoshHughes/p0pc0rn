@@ -1,0 +1,5836 @@
+{
+ "version": 1,
+ "schema": "Troll-E collectibles: the asset maker's collect catalog (glb2-glb4) plus the game's rules in each item's \"game\" (how a01 gets it, its body, what it weighs in the bin)",
+ "credit": "3D assets: NVIDIA SimReady Assets (CC BY 4.0), modified: https://huggingface.co/datasets/nvidia/simready-assets",
+ "items": {
+  "diesel_can": {
+   "name": "Viscous Ember",
+   "real": "1 L Antifreeze Diesel Engine tin",
+   "category": "trash / fuel",
+   "rarity": "common",
+   "found": [
+    "dock",
+    "metro"
+   ],
+   "hint": "Small fires sleep in black tins. Forty of them dream of hands.",
+   "function": "Fuel for the Roentgen Furnace and Salamander Lung; 40 feed the Tetrabrachion. Leaks a slick when the cap pops.",
+   "recipes": [
+    "R01",
+    "R19"
+   ],
+   "glb": "assets/props/diesel_can.glb",
+   "node": "diesel_can",
+   "accent": "#FFB347",
+   "turntable": {
+    "center": [
+     0,
+     0.1046,
+     0
+    ],
+    "radius_m": 0.1223,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.543,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.1772,
+    "size_m": [
+     0.0659,
+     0.2061,
+     0.1083
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "trash": "diesel",
+    "grab": "stock",
+    "size": [
+     0.066,
+     0.209,
+     0.108
+    ],
+    "mass": 1.1,
+    "shape": "box",
+    "grip": 0.066,
+    "carry": [
+     1.1,
+     1.34
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1031,
+      0
+     ],
+     "h": [
+      0.0329,
+      0.1031,
+      0.0541
+     ]
+    }
+   }
+  },
+  "fuel_jug": {
+   "name": "Hydra Flask",
+   "real": "20 L hydraulic-oil jug",
+   "category": "pickup",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "Thick blood for machines that bend.",
+   "function": "Input: Cadmium Leachfilter, Somnus Bellows, Contrast Syringe.",
+   "recipes": [
+    "R10",
+    "R11",
+    "R22"
+   ],
+   "glb": "assets/survival/fuel_jug.glb",
+   "node": "fuel_jug",
+   "accent": "#7FA7FF",
+   "turntable": {
+    "center": [
+     0,
+     0.1777,
+     0
+    ],
+    "radius_m": 0.2957,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.314,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 1.4302,
+    "size_m": [
+     0.3178,
+     0.3555,
+     0.35
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 2,
+    "carry": [
+     2.5,
+     20
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1777,
+      0
+     ],
+     "h": [
+      0.1589,
+      0.1777,
+      0.175
+     ]
+    }
+   }
+  },
+  "soda_can": {
+   "name": "Sweet Cradle",
+   "real": "ColaBuzz soda can",
+   "category": "trash",
+   "rarity": "common",
+   "found": [
+    "park",
+    "metro"
+   ],
+   "hint": "Drink the sweetness, keep the tin.",
+   "function": "Heliostat Rail (with a solar panel); 20 crushed feed the Roentgen Furnace.",
+   "recipes": [
+    "R02",
+    "R06"
+   ],
+   "glb": "assets/props/trash_soda_can.glb",
+   "node": "trash_soda_can",
+   "accent": "#FF2BD6",
+   "turntable": {
+    "center": [
+     0,
+     0.0458,
+     0
+    ],
+    "radius_m": 0.066,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.293,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.0347,
+    "size_m": [
+     0.0672,
+     0.0916,
+     0.0672
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "trash": "soda",
+    "grab": "stock",
+    "size": [
+     0.067,
+     0.092,
+     0.067
+    ],
+    "mass": 0.18,
+    "shape": "cyl",
+    "grip": 0.067,
+    "carry": [
+     0.18,
+     0.37
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0458,
+      0
+     ],
+     "h": [
+      0.0336,
+      0.0458,
+      0.0336
+     ]
+    }
+   }
+  },
+  "tin_can": {
+   "name": "Tomato Reliquary",
+   "real": "food tin",
+   "category": "trash",
+   "rarity": "common",
+   "found": [
+    "park",
+    "metro"
+   ],
+   "hint": "Empty saints still ring when struck.",
+   "function": "Echo Psalter, Leech Collar.",
+   "recipes": [
+    "R09",
+    "R21"
+   ],
+   "glb": "assets/props/trash_tin_can.glb",
+   "node": "trash_tin_can",
+   "accent": "#E85C3A",
+   "turntable": {
+    "center": [
+     0,
+     0.0568,
+     0
+    ],
+    "radius_m": 0.0804,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.357,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.0532,
+    "size_m": [
+     0.0804,
+     0.1136,
+     0.0804
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "trash": "tin",
+    "grab": "stock",
+    "size": [
+     0.08,
+     0.114,
+     0.08
+    ],
+    "mass": 0.3,
+    "shape": "cyl",
+    "grip": 0.08,
+    "carry": [
+     0.3,
+     0.66
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0568,
+      0
+     ],
+     "h": [
+      0.0402,
+      0.0568,
+      0.0402
+     ]
+    }
+   }
+  },
+  "water_bottle": {
+   "name": "Clear Vessel",
+   "real": "plastic water bottle",
+   "category": "trash",
+   "rarity": "common",
+   "found": [
+    "park"
+   ],
+   "hint": "It held clean water once. Remember that.",
+   "function": "Cadmium Leachfilter.",
+   "recipes": [
+    "R10"
+   ],
+   "glb": "assets/props/trash_water_bottle.glb",
+   "node": "trash_water_bottle",
+   "accent": "#9FE8FF",
+   "turntable": {
+    "center": [
+     0,
+     0.1226,
+     0
+    ],
+    "radius_m": 0.1318,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.586,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.2553,
+    "size_m": [
+     0.0682,
+     0.2453,
+     0.0682
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "trash": "water",
+    "grab": "stock",
+    "size": [
+     0.068,
+     0.245,
+     0.068
+    ],
+    "mass": 0.25,
+    "shape": "cyl",
+    "grip": 0.068,
+    "carry": [
+     0.25,
+     1.02
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1227,
+      0
+     ],
+     "h": [
+      0.0341,
+      0.1227,
+      0.0341
+     ]
+    }
+   }
+  },
+  "beer_bottle": {
+   "name": "Green Throat",
+   "real": "glass IPA bottle",
+   "category": "trash",
+   "rarity": "common",
+   "found": [
+    "metro",
+    "park"
+   ],
+   "hint": "Six green throats sing one straight note.",
+   "function": "Coherent Lance (6), Photon Altar (6).",
+   "recipes": [
+    "R08",
+    "R18"
+   ],
+   "glb": "assets/props/trash_beer_bottle.glb",
+   "node": "trash_beer_bottle",
+   "accent": "#6CFF6B",
+   "turntable": {
+    "center": [
+     0,
+     0.1108,
+     0
+    ],
+    "radius_m": 0.1186,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.527,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 1.2954,
+    "size_m": [
+     0.06,
+     0.2215,
+     0.06
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "trash": "beer",
+    "grab": "stock",
+    "size": [
+     0.06,
+     0.222,
+     0.06
+    ],
+    "mass": 0.45,
+    "shape": "cyl",
+    "grip": 0.06,
+    "carry": [
+     0.45,
+     0.72
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1108,
+      0
+     ],
+     "h": [
+      0.03,
+      0.1108,
+      0.03
+     ]
+    }
+   }
+  },
+  "chips_bag": {
+   "name": "Crinkle Ghost",
+   "real": "crisp packet",
+   "category": "trash",
+   "rarity": "common",
+   "found": [
+    "park"
+   ],
+   "hint": "Every wrapper remembers being a shape.",
+   "function": "Matter Loom (10).",
+   "recipes": [
+    "R14"
+   ],
+   "glb": "assets/props/trash_chips_bag.glb",
+   "node": "trash_chips_bag",
+   "accent": "#FF5A5A",
+   "turntable": {
+    "center": [
+     0,
+     0.0405,
+     0
+    ],
+    "radius_m": 0.1107,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.492,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.1231,
+    "size_m": [
+     0.1689,
+     0.0811,
+     0.1181
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "trash": "chips",
+    "grab": "stock",
+    "size": [
+     0.169,
+     0.081,
+     0.118
+    ],
+    "mass": 0.1,
+    "shape": "box",
+    "grip": 0.118,
+    "carry": [
+     0.1,
+     1.45
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0406,
+      0
+     ],
+     "h": [
+      0.0844,
+      0.0406,
+      0.0591
+     ]
+    }
+   }
+  },
+  "juice_carton": {
+   "name": "Citrus Coffin",
+   "real": "juice carton",
+   "category": "trash",
+   "rarity": "common",
+   "found": [
+    "park"
+   ],
+   "hint": "Sweet once, light now.",
+   "function": "Compost / filler trash (score).",
+   "recipes": [],
+   "glb": "assets/props/trash_juice_carton.glb",
+   "node": "trash_juice_carton",
+   "accent": "#FFD21F",
+   "turntable": {
+    "center": [
+     0,
+     0.0525,
+     0
+    ],
+    "radius_m": 0.0649,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.288,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.0129,
+    "size_m": [
+     0.0408,
+     0.105,
+     0.0644
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "trash": "carton",
+    "grab": "stock",
+    "size": [
+     0.041,
+     0.105,
+     0.064
+    ],
+    "mass": 0.12,
+    "shape": "box",
+    "grip": 0.041,
+    "carry": [
+     0.12,
+     0.25
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0525,
+      0
+     ],
+     "h": [
+      0.0204,
+      0.0525,
+      0.0322
+     ]
+    }
+   }
+  },
+  "cardboard_box": {
+   "name": "Hollow Cube",
+   "real": "cardboard box",
+   "category": "trash (large)",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "Big and empty, like most promises.",
+   "function": "Pushable; shelter insulation filler.",
+   "recipes": [],
+   "glb": "assets/props/trash_cardboard_box.glb",
+   "node": "trash_cardboard_box",
+   "accent": "#C8A060",
+   "turntable": {
+    "center": [
+     0,
+     0.2612,
+     0
+    ],
+    "radius_m": 0.4458,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.981,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 2.2587,
+    "size_m": [
+     0.5143,
+     0.5223,
+     0.5077
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "collider": {
+     "c": [
+      0,
+      0.2612,
+      0
+     ],
+     "h": [
+      0.2571,
+      0.2612,
+      0.2539
+     ]
+    }
+   }
+  },
+  "car_battery": {
+   "name": "Lead Heart",
+   "real": "12 V car battery",
+   "category": "pickup / energy",
+   "rarity": "uncommon",
+   "found": [
+    "metro",
+    "dock"
+   ],
+   "hint": "Heavy hearts still beat if you ask nicely.",
+   "function": "+25% charge on pickup; input for many machines.",
+   "recipes": [
+    "R03",
+    "R04",
+    "R05",
+    "R08",
+    "R13",
+    "R15",
+    "R24"
+   ],
+   "glb": "assets/props/battery.glb",
+   "node": "battery",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.096,
+     0
+    ],
+    "radius_m": 0.1874,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.833,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 1.2891,
+    "size_m": [
+     0.19,
+     0.1919,
+     0.26
+    ],
+    "energy_wh": 600,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "r01",
+    "size": [
+     0.19,
+     0.1919,
+     0.26
+    ],
+    "mass": 14,
+    "shape": "box",
+    "grip": 0.19,
+    "salvage": 1,
+    "restock": 2,
+    "carry": [
+     14,
+     9
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.096,
+      0
+     ],
+     "h": [
+      0.095,
+      0.096,
+      0.13
+     ]
+    }
+   }
+  },
+  "drum_rusty": {
+   "name": "Rust Bell",
+   "real": "200 L steel drum (rusted)",
+   "category": "salvage",
+   "rarity": "common",
+   "found": [
+    "dock",
+    "forest"
+   ],
+   "hint": "Ring it and the dark listens.",
+   "function": "50 gal barrel for the Tetrabrachion, Roentgen Furnace, Salamander Lung; burning barrel at night.",
+   "recipes": [
+    "R01",
+    "R06",
+    "R19"
+   ],
+   "glb": "assets/props/drum_rusty.glb",
+   "node": "drum_rusty",
+   "accent": "#FF7A2A",
+   "turntable": {
+    "center": [
+     0,
+     0.4341,
+     0.0076
+    ],
+    "radius_m": 0.632,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 2.808,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 86.0311,
+    "size_m": [
+     0.6418,
+     0.8636,
+     0.6418
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     15,
+     40
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.4318,
+      0
+     ],
+     "h": [
+      0.3209,
+      0.4318,
+      0.3209
+     ]
+    }
+   }
+  },
+  "solar_panel": {
+   "name": "Daylight Leaf",
+   "real": "mass-produced solar panel (aged in tiers)",
+   "category": "pickup / upgrade",
+   "rarity": "rare",
+   "found": [
+    "park",
+    "metro"
+   ],
+   "hint": "They were made by the thousand and grow old by the hour.",
+   "function": "Mount on the bin (8 slots) via the Heliostat Rail; charges only in daylight.",
+   "recipes": [
+    "R02",
+    "R18"
+   ],
+   "glb": "assets/survival/solar_panel.glb",
+   "node": "solar_panel",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0,
+     0.0038
+    ],
+    "radius_m": 0.3003,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.334,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": null,
+    "size_m": [
+     0.309,
+     0.515,
+     0.0076
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified; procedural parts",
+   "game": {
+    "salvage": 2,
+    "restock": 3,
+    "carry": [
+     2,
+     2
+    ],
+    "collider": {
+     "c": [
+      0,
+      0,
+      0.0038
+     ],
+     "h": [
+      0.1545,
+      0.2575,
+      0.0038
+     ]
+    }
+   }
+  },
+  "car_frame": {
+   "name": "Iron Ribcage",
+   "real": "stripped car body shell",
+   "category": "salvage (large)",
+   "rarity": "rare",
+   "found": [
+    "metro"
+   ],
+   "hint": "A body without a heart is still a body.",
+   "function": "Tetrabrachion input.",
+   "recipes": [
+    "R01"
+   ],
+   "glb": "assets/world/metro_car_frame.glb",
+   "node": "metro_car_frame",
+   "accent": "#C0C0C0",
+   "turntable": {
+    "center": [
+     -0.0001,
+     0.6587,
+     0
+    ],
+    "radius_m": 2.7103,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 12.042,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 593.8421,
+    "size_m": [
+     4.9302,
+     1.3157,
+     1.8392
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "carry": [
+     20,
+     30
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.6578,
+      0
+     ],
+     "h": [
+      2.4651,
+      0.6578,
+      0.9196
+     ]
+    }
+   }
+  },
+  "vending_machine": {
+   "name": "Glass Larder",
+   "real": "street vending machine",
+   "category": "salvage (large)",
+   "rarity": "uncommon",
+   "found": [
+    "metro"
+   ],
+   "hint": "It still hums a little at night.",
+   "function": "Matter Loom input.",
+   "recipes": [
+    "R14"
+   ],
+   "glb": "assets/world/metro_vending_machine.glb",
+   "node": "metro_vending_machine",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     -0.0002,
+     0.9238,
+     0
+    ],
+    "radius_m": 1.1001,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.888,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 509.4333,
+    "size_m": [
+     0.9259,
+     1.8475,
+     0.756
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "carry": [
+     18,
+     30
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.9237,
+      0
+     ],
+     "h": [
+      0.4629,
+      0.9237,
+      0.378
+     ]
+    }
+   }
+  },
+  "utility_cabinet": {
+   "name": "Street Vein Box",
+   "real": "street utility cabinet",
+   "category": "salvage",
+   "rarity": "uncommon",
+   "found": [
+    "metro"
+   ],
+   "hint": "Where the street's veins meet.",
+   "function": "Matter Loom, Ley Junction input.",
+   "recipes": [
+    "R14",
+    "R16"
+   ],
+   "glb": "assets/world/metro_utility_cabinet.glb",
+   "node": "metro_utility_cabinet",
+   "accent": "#7FA7FF",
+   "turntable": {
+    "center": [
+     0.0005,
+     2.5366,
+     0.0004
+    ],
+    "radius_m": 2.6605,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 11.821,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 817.2372,
+    "size_m": [
+     1.5204,
+     5.0757,
+     0.5212
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "carry": [
+     12,
+     20
+    ],
+    "collider": {
+     "c": [
+      0,
+      2.5379,
+      0
+     ],
+     "h": [
+      0.7602,
+      2.5379,
+      0.2606
+     ]
+    }
+   }
+  },
+  "hvac_duct": {
+   "name": "Iron Lung Pipe",
+   "real": "HVAC duct section",
+   "category": "salvage",
+   "rarity": "common",
+   "found": [
+    "metro"
+   ],
+   "hint": "Breath runs through square bones.",
+   "function": "Iron Breath, Salamander Lung input.",
+   "recipes": [
+    "R12",
+    "R19"
+   ],
+   "glb": "assets/world/metro_hvac_duct.glb",
+   "node": "metro_hvac_duct",
+   "accent": "#B0B0B0",
+   "turntable": {
+    "center": [
+     0,
+     0.305,
+     0
+    ],
+    "radius_m": 0.8034,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 3.57,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 20,
+    "size_m": [
+     1,
+     0.61,
+     1.1
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     5,
+     40
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.305,
+      0
+     ],
+     "h": [
+      0.5,
+      0.305,
+      0.55
+     ]
+    }
+   }
+  },
+  "pallet_jack": {
+   "name": "Fork Mule",
+   "real": "pallet jack",
+   "category": "salvage",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "Two tines that carried the world.",
+   "function": "Mole Courier input.",
+   "recipes": [
+    "R05"
+   ],
+   "glb": "assets/world/dock_pallet_jack.glb",
+   "node": "dock_pallet_jack",
+   "accent": "#FFB347",
+   "turntable": {
+    "center": [
+     0,
+     0.5995,
+     -0.0002
+    ],
+    "radius_m": 1.056,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.692,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 167.7263,
+    "size_m": [
+     0.6806,
+     1.201,
+     1.6012
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "carry": [
+     15,
+     20
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.6005,
+      0
+     ],
+     "h": [
+      0.3403,
+      0.6005,
+      0.8006
+     ]
+    }
+   }
+  },
+  "forklift": {
+   "name": "Old Lifter",
+   "real": "walkie stacker forklift",
+   "category": "salvage (large)",
+   "rarity": "rare",
+   "found": [
+    "dock"
+   ],
+   "hint": "The old lifter's heart still wants to run downhill.",
+   "function": "Dynamo Heart input.",
+   "recipes": [
+    "R20"
+   ],
+   "glb": "assets/world/dock_forklift_stacker.glb",
+   "node": "dock_forklift_stacker",
+   "accent": "#FF7A2A",
+   "turntable": {
+    "center": [
+     0,
+     0.9787,
+     0
+    ],
+    "radius_m": 1.4197,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 6.308,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 265.3625,
+    "size_m": [
+     0.8226,
+     1.9575,
+     1.8853
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 5,
+    "carry": [
+     25,
+     30
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.9787,
+      0
+     ],
+     "h": [
+      0.4113,
+      0.9787,
+      0.9426
+     ]
+    }
+   }
+  },
+  "ibc_tank": {
+   "name": "Caged Rain",
+   "real": "IBC tote tank",
+   "category": "salvage (large)",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "A cage built to hold water, not birds.",
+   "function": "Lumen Vigil, Cadmium Leachfilter input; shelter water store.",
+   "recipes": [
+    "R04",
+    "R10"
+   ],
+   "glb": "assets/world/dock_ibc_tank.glb",
+   "node": "dock_ibc_tank",
+   "accent": "#9FE8FF",
+   "turntable": {
+    "center": [
+     0,
+     0.6012,
+     -0.0005
+    ],
+    "radius_m": 1.0145,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.508,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 180.5478,
+    "size_m": [
+     1.0479,
+     1.2022,
+     1.2557
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "carry": [
+     8,
+     40
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.6011,
+      0
+     ],
+     "h": [
+      0.524,
+      0.6011,
+      0.6278
+     ]
+    }
+   }
+  },
+  "pallet_rack": {
+   "name": "Ladder of Shelves",
+   "real": "pallet rack",
+   "category": "salvage (large)",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "Climb it and nothing climbs back.",
+   "function": "Skiagraph Pillar, Photon Altar input; shelter frame.",
+   "recipes": [
+    "R07",
+    "R18"
+   ],
+   "glb": "assets/world/dock_pallet_rack.glb",
+   "node": "dock_pallet_rack",
+   "accent": "#4060FF",
+   "turntable": {
+    "center": [
+     0,
+     1.505,
+     0
+    ],
+    "radius_m": 2.705,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 12.019,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 1170.4934,
+    "size_m": [
+     4,
+     3.01,
+     2.0666
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "piece": true,
+    "carry": [
+     20,
+     30
+    ],
+    "collider": {
+     "c": [
+      0,
+      1.505,
+      0
+     ],
+     "h": [
+      2,
+      1.505,
+      1.0333
+     ]
+    }
+   }
+  },
+  "wheelbarrow": {
+   "name": "One-Wheel Ox",
+   "real": "wheelbarrow",
+   "category": "salvage",
+   "rarity": "common",
+   "found": [
+    "forest"
+   ],
+   "hint": "It still remembers the garden.",
+   "function": "Shelter building (moves 4 items at once - future).",
+   "recipes": [],
+   "glb": "assets/world/forest_wheelbarrow.glb",
+   "node": "forest_wheelbarrow",
+   "accent": "#3A6A3A",
+   "turntable": {
+    "center": [
+     0.0003,
+     0.3614,
+     0.0011
+    ],
+    "radius_m": 0.9837,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.371,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 24.2857,
+    "size_m": [
+     0.6479,
+     0.7223,
+     1.716
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     8,
+     30
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.3611,
+      0
+     ],
+     "h": [
+      0.3239,
+      0.3611,
+      0.858
+     ]
+    }
+   }
+  },
+  "leech_husk": {
+   "name": "Leech Husk",
+   "real": "dead energy leech (rearranged hose, EV plug, jumper clamps, bulbs)",
+   "category": "creature drop",
+   "rarity": "uncommon",
+   "found": [
+    "forest",
+    "everywhere at night"
+   ],
+   "hint": "Wear the mouth of the thing that fed on you.",
+   "function": "Leech Collar input; jaws = jumper clamps (Lazarus Clamps).",
+   "recipes": [
+    "R21"
+   ],
+   "glb": "assets/survival/energy_leech.glb",
+   "node": "leech",
+   "accent": "#FFD21F",
+   "turntable": {
+    "center": [
+     -0.3166,
+     0.0643,
+     0.0007
+    ],
+    "radius_m": 0.6503,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 2.889,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": null,
+    "size_m": [
+     0,
+     0,
+     0
+    ],
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified; procedural parts",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     3,
+     10
+    ],
+    "collider": {
+     "c": [
+      0,
+      0,
+      0
+     ],
+     "h": [
+      0,
+      0,
+      0
+     ]
+    }
+   }
+  },
+  "wrench": {
+   "name": "Iron Jaw",
+   "real": "pipe wrench",
+   "category": "pickup",
+   "rarity": "uncommon",
+   "found": [
+    "dock",
+    "metro"
+   ],
+   "hint": "It only knows how to turn what it is told to.",
+   "function": "Tetrabrachion, Coherent Lance, Dynamo Heart.",
+   "recipes": [
+    "R01",
+    "R08",
+    "R20"
+   ],
+   "glb": "assets/survival/item_wrench.glb",
+   "node": "item_wrench",
+   "accent": "#FF7A2A",
+   "turntable": {
+    "center": [
+     0,
+     0.0146,
+     0
+    ],
+    "radius_m": 0.1403,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.623,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 1.1182,
+    "size_m": [
+     0.2707,
+     0.0292,
+     0.0689
+    ],
+    "energy_wh": 0,
+    "triangles": 3996
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "stock",
+    "size": [
+     0.2707,
+     0.0292,
+     0.0689
+    ],
+    "mass": 1.1,
+    "shape": "box",
+    "grip": 0.069,
+    "carry": [
+     1.1,
+     0.6
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0146,
+      0
+     ],
+     "h": [
+      0.1353,
+      0.0146,
+      0.0345
+     ]
+    }
+   }
+  },
+  "battery_9v": {
+   "name": "Square Spark",
+   "real": "9 V battery",
+   "category": "pickup / energy",
+   "rarity": "common",
+   "found": [
+    "metro",
+    "park"
+   ],
+   "hint": "Touch it to your tongue. It still bites.",
+   "function": "+2% charge on pickup; Tetrabrachion, Skiagraph Pillar, Echo Psalter, Lazarus Clamps, Charge Oracle, Warmth Eye.",
+   "recipes": [
+    "R01",
+    "R07",
+    "R09",
+    "R13",
+    "R17",
+    "R23"
+   ],
+   "glb": "assets/survival/item_battery_9v.glb",
+   "node": "item_battery_9v",
+   "accent": "#6CFF6B",
+   "turntable": {
+    "center": [
+     0,
+     0.0267,
+     0
+    ],
+    "radius_m": 0.0312,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.139,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.1993,
+    "size_m": [
+     0.0175,
+     0.0534,
+     0.027
+    ],
+    "energy_wh": 4.5,
+    "triangles": 2000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "stock",
+    "size": [
+     0.0175,
+     0.0534,
+     0.027
+    ],
+    "mass": 0.05,
+    "shape": "box",
+    "grip": 0.027,
+    "carry": [
+     0.05,
+     0.03
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0267,
+      0
+     ],
+     "h": [
+      0.0088,
+      0.0267,
+      0.0135
+     ]
+    }
+   }
+  },
+  "hydraulic_hose": {
+   "name": "Black Vein",
+   "real": "hydraulic hose",
+   "category": "pickup",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "Machines bleed through these.",
+   "function": "Dioscuri Rig, Cadmium Leachfilter, Somnus Bellows, Iron Breath, Contrast Syringe.",
+   "recipes": [
+    "R03",
+    "R10",
+    "R11",
+    "R12",
+    "R22"
+   ],
+   "glb": "assets/survival/item_hydraulic_hose.glb",
+   "node": "item_hydraulic_hose",
+   "accent": "#7FA7FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0223,
+     0
+    ],
+    "radius_m": 0.193,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.858,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.7958,
+    "size_m": [
+     0.3679,
+     0.0447,
+     0.1086
+    ],
+    "energy_wh": 0,
+    "triangles": 3999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "stock",
+    "size": [
+     0.3679,
+     0.0447,
+     0.1086
+    ],
+    "mass": 0.8,
+    "shape": "box",
+    "grip": 0.105,
+    "carry": [
+     0.8,
+     1.2
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0223,
+      0
+     ],
+     "h": [
+      0.184,
+      0.0223,
+      0.0543
+     ]
+    }
+   }
+  },
+  "light_bulb": {
+   "name": "Glass Ember",
+   "real": "H7 headlight bulb",
+   "category": "pickup",
+   "rarity": "common",
+   "found": [
+    "metro"
+   ],
+   "hint": "A sun small enough to lose in a pocket.",
+   "function": "Lumen Vigil (12), Skiagraph Pillar, Warmth Eye, Small Vigil.",
+   "recipes": [
+    "R04",
+    "R07",
+    "R23",
+    "R24"
+   ],
+   "glb": "assets/survival/item_light_bulb.glb",
+   "node": "item_light_bulb",
+   "accent": "#FFE6B0",
+   "turntable": {
+    "center": [
+     0,
+     0.0239,
+     0
+    ],
+    "radius_m": 0.0566,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.251,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.3772,
+    "size_m": [
+     0.0931,
+     0.0478,
+     0.043
+    ],
+    "energy_wh": 0,
+    "triangles": 4999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "stock",
+    "size": [
+     0.0931,
+     0.0478,
+     0.043
+    ],
+    "mass": 0.05,
+    "shape": "box",
+    "grip": 0.048,
+    "carry": [
+     0.05,
+     0.2
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0239,
+      0
+     ],
+     "h": [
+      0.0466,
+      0.0239,
+      0.0215
+     ]
+    }
+   }
+  },
+  "fuse": {
+   "name": "Red Sleeper",
+   "real": "mega fuse",
+   "category": "pickup",
+   "rarity": "common",
+   "found": [
+    "metro",
+    "dock"
+   ],
+   "hint": "It dies so the rest can live.",
+   "function": "Lumen Vigil, Ley Junction (8), Leech Collar; the Matter Loom prints more.",
+   "recipes": [
+    "R04",
+    "R16",
+    "R21"
+   ],
+   "glb": "assets/survival/item_fuse.glb",
+   "node": "item_fuse",
+   "accent": "#FF5A3A",
+   "turntable": {
+    "center": [
+     0,
+     0.0197,
+     0
+    ],
+    "radius_m": 0.0585,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.26,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.0214,
+    "size_m": [
+     0.0394,
+     0.0394,
+     0.1029
+    ],
+    "energy_wh": 0,
+    "triangles": 2000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "stock",
+    "size": [
+     0.0394,
+     0.0394,
+     0.1029
+    ],
+    "mass": 0.03,
+    "shape": "box",
+    "grip": 0.039,
+    "carry": [
+     0.03,
+     0.15
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0197,
+      0
+     ],
+     "h": [
+      0.0197,
+      0.0197,
+      0.0515
+     ]
+    }
+   }
+  },
+  "alternator": {
+   "name": "Spinning Lung",
+   "real": "car alternator",
+   "category": "salvage",
+   "rarity": "uncommon",
+   "found": [
+    "metro"
+   ],
+   "hint": "Turn it and it remembers lightning.",
+   "function": "Roentgen Furnace (2), Dynamo Heart (2).",
+   "recipes": [
+    "R06",
+    "R20"
+   ],
+   "glb": "assets/survival/item_alternator.glb",
+   "node": "item_alternator",
+   "accent": "#C0C0C0",
+   "turntable": {
+    "center": [
+     -0.0001,
+     0.1231,
+     0
+    ],
+    "radius_m": 0.2455,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.091,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 92.7836,
+    "size_m": [
+     0.3055,
+     0.2463,
+     0.2964
+    ],
+    "energy_wh": 0,
+    "triangles": 23976
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     6,
+     6
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1231,
+      0
+     ],
+     "h": [
+      0.1527,
+      0.1231,
+      0.1482
+     ]
+    }
+   }
+  },
+  "copper_cable": {
+   "name": "Copper Nerve",
+   "real": "wiring harness",
+   "category": "pickup",
+   "rarity": "common",
+   "found": [
+    "metro",
+    "dock"
+   ],
+   "hint": "The street's nerves, pulled out by the root.",
+   "function": "Roentgen Furnace (10), Skiagraph Pillar, Echo Psalter, Arc Forge, Ley Junction, Leech Collar.",
+   "recipes": [
+    "R06",
+    "R07",
+    "R09",
+    "R15",
+    "R16",
+    "R21"
+   ],
+   "glb": "assets/survival/item_copper_cable.glb",
+   "node": "item_copper_cable",
+   "accent": "#FF9A3A",
+   "turntable": {
+    "center": [
+     0,
+     0.0523,
+     -0.0001
+    ],
+    "radius_m": 0.3076,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.3667,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 3,
+    "size_m": [
+     0.0518,
+     0.1046,
+     0.6046
+    ],
+    "energy_wh": 0,
+    "triangles": 4894
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 3,
+    "restock": 2,
+    "carry": [
+     3,
+     4
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0523,
+      0
+     ],
+     "h": [
+      0.0259,
+      0.0523,
+      0.3023
+     ]
+    },
+    "scale": 0.065
+   }
+  },
+  "cctv_dome": {
+   "name": "Glass Eye",
+   "real": "CCTV dome camera",
+   "category": "salvage",
+   "rarity": "uncommon",
+   "found": [
+    "metro"
+   ],
+   "hint": "It watched everything and saved nothing.",
+   "function": "Mole Courier, Warmth Eye.",
+   "recipes": [
+    "R05",
+    "R23"
+   ],
+   "glb": "assets/survival/item_cctv_dome.glb",
+   "node": "item_cctv_dome",
+   "accent": "#9FE8FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0604,
+     -0.0001
+    ],
+    "radius_m": 0.1261,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.56,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 1.2698,
+    "size_m": [
+     0.1567,
+     0.1208,
+     0.1567
+    ],
+    "energy_wh": 0,
+    "triangles": 5998
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "r01",
+    "size": [
+     0.1567,
+     0.1208,
+     0.1567
+    ],
+    "mass": 1.3,
+    "shape": "box",
+    "grip": 0.157,
+    "salvage": 1,
+    "restock": 2,
+    "carry": [
+     1.3,
+     3
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0604,
+      0
+     ],
+     "h": [
+      0.0783,
+      0.0604,
+      0.0783
+     ]
+    }
+   }
+  },
+  "office_monitor": {
+   "name": "Dead Window",
+   "real": "office monitor",
+   "category": "salvage",
+   "rarity": "uncommon",
+   "found": [
+    "metro"
+   ],
+   "hint": "Someone logged in. Nobody logged out.",
+   "function": "Dioscuri Rig, Echo Psalter.",
+   "recipes": [
+    "R03",
+    "R09"
+   ],
+   "glb": "assets/survival/item_office_monitor.glb",
+   "node": "item_office_monitor",
+   "accent": "#9B5CFF",
+   "turntable": {
+    "center": [
+     0,
+     0.1971,
+     0.0001
+    ],
+    "radius_m": 0.346,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.537,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 1.0948,
+    "size_m": [
+     0.542,
+     0.3942,
+     0.1722
+    ],
+    "energy_wh": 0,
+    "triangles": 2500
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     4,
+     15
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1971,
+      0
+     ],
+     "h": [
+      0.271,
+      0.1971,
+      0.0861
+     ]
+    }
+   }
+  },
+  "extinguisher": {
+   "name": "Cold Breath",
+   "real": "fire extinguisher (gas cylinder)",
+   "category": "pickup",
+   "rarity": "uncommon",
+   "found": [
+    "dock",
+    "metro"
+   ],
+   "hint": "A bottle of held breath.",
+   "function": "Somnus Bellows.",
+   "recipes": [
+    "R11"
+   ],
+   "glb": "assets/survival/item_extinguisher.glb",
+   "node": "item_extinguisher",
+   "accent": "#FF3020",
+   "turntable": {
+    "center": [
+     0,
+     0.2498,
+     -0.0003
+    ],
+    "radius_m": 0.2978,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.323,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 15.5306,
+    "size_m": [
+     0.1846,
+     0.4998,
+     0.2672
+    ],
+    "energy_wh": 0,
+    "triangles": 5999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "r01",
+    "size": [
+     0.1846,
+     0.4998,
+     0.2672
+    ],
+    "mass": 6,
+    "shape": "box",
+    "grip": 0.185,
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     6,
+     12
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.2499,
+      0
+     ],
+     "h": [
+      0.1338,
+      0.2499,
+      0.1338
+     ]
+    }
+   }
+  },
+  "anesthesia_mask": {
+   "name": "Sleep Cup",
+   "real": "anaesthesia mask",
+   "category": "pickup",
+   "rarity": "rare",
+   "found": [
+    "metro"
+   ],
+   "hint": "Breathe in. Count back from ten.",
+   "function": "Somnus Bellows.",
+   "recipes": [
+    "R11"
+   ],
+   "glb": "assets/survival/item_anesthesia_mask.glb",
+   "node": "item_anesthesia_mask",
+   "accent": "#9FE8FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0256,
+     0
+    ],
+    "radius_m": 0.0827,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.368,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.0961,
+    "size_m": [
+     0.1304,
+     0.0513,
+     0.0882
+    ],
+    "energy_wh": 0,
+    "triangles": 5000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "stock",
+    "size": [
+     0.1304,
+     0.0513,
+     0.0882
+    ],
+    "mass": 0.1,
+    "shape": "box",
+    "grip": 0.088,
+    "carry": [
+     0.1,
+     0.6
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0256,
+      0
+     ],
+     "h": [
+      0.0652,
+      0.0256,
+      0.0441
+     ]
+    }
+   }
+  },
+  "shop_fan": {
+   "name": "Wind Flower",
+   "real": "pedestal fan",
+   "category": "salvage",
+   "rarity": "uncommon",
+   "found": [
+    "park",
+    "metro"
+   ],
+   "hint": "It turned its face to everyone.",
+   "function": "Iron Breath.",
+   "recipes": [
+    "R12"
+   ],
+   "glb": "assets/survival/item_shop_fan.glb",
+   "node": "item_shop_fan",
+   "accent": "#B0B0B0",
+   "turntable": {
+    "center": [
+     -0.0002,
+     0.6571,
+     0.0005
+    ],
+    "radius_m": 0.7303,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 3.245,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 5.4551,
+    "size_m": [
+     0.4522,
+     1.3142,
+     0.4521
+    ],
+    "energy_wh": 0,
+    "triangles": 11996
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     5,
+     20
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.6571,
+      0
+     ],
+     "h": [
+      0.2261,
+      0.6571,
+      0.2261
+     ]
+    }
+   }
+  },
+  "multimeter_clamp": {
+   "name": "Truth Claw",
+   "real": "clamp multimeter",
+   "category": "pickup",
+   "rarity": "rare",
+   "found": [
+    "dock"
+   ],
+   "hint": "Close it round a wire and the wire confesses.",
+   "function": "Charge Oracle.",
+   "recipes": [
+    "R17"
+   ],
+   "glb": "assets/survival/item_multimeter_clamp.glb",
+   "node": "item_multimeter_clamp",
+   "accent": "#FFD21F",
+   "turntable": {
+    "center": [
+     0,
+     0.0162,
+     -0.0002
+    ],
+    "radius_m": 0.1469,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.653,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.2244,
+    "size_m": [
+     0.2417,
+     0.0323,
+     0.1644
+    ],
+    "energy_wh": 0,
+    "triangles": 3999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "r01",
+    "size": [
+     0.2417,
+     0.0323,
+     0.1644
+    ],
+    "mass": 0.22,
+    "shape": "box",
+    "grip": 0.164,
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     0.3,
+     1
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0161,
+      0
+     ],
+     "h": [
+      0.1209,
+      0.0161,
+      0.0822
+     ]
+    }
+   }
+  },
+  "iv_pole": {
+   "name": "Drip Tree",
+   "real": "IV pole",
+   "category": "salvage",
+   "rarity": "uncommon",
+   "found": [
+    "metro"
+   ],
+   "hint": "A tree that grew medicine instead of leaves.",
+   "function": "Contrast Syringe, Small Vigil.",
+   "recipes": [
+    "R22",
+    "R24"
+   ],
+   "glb": "assets/survival/item_iv_pole.glb",
+   "node": "item_iv_pole",
+   "accent": "#E0E0E0",
+   "turntable": {
+    "center": [
+     -0.0002,
+     0.9001,
+     0.0001
+    ],
+    "radius_m": 1.0099,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.487,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 2.6129,
+    "size_m": [
+     0.7221,
+     1.7994,
+     0.5709
+    ],
+    "energy_wh": 0,
+    "triangles": 7992
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     2.6,
+     6
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.8997,
+      0
+     ],
+     "h": [
+      0.361,
+      0.8997,
+      0.2855
+     ]
+    }
+   }
+  },
+  "oilfilter_pliers": {
+   "name": "Grip Mother",
+   "real": "oil-filter pliers",
+   "category": "pickup",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "Every claw begins as a pair of hands.",
+   "function": "Dioscuri Rig (2). The same pliers are the claw's fingers.",
+   "recipes": [
+    "R03"
+   ],
+   "glb": "assets/survival/item_oilfilter_pliers.glb",
+   "node": "item_oilfilter_pliers",
+   "accent": "#3A7BFF",
+   "turntable": {
+    "center": [
+     0.0001,
+     0.0055,
+     0.0001
+    ],
+    "radius_m": 0.155,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.689,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.4963,
+    "size_m": [
+     0.2981,
+     0.0108,
+     0.0854
+    ],
+    "energy_wh": 0,
+    "triangles": 3000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "stock",
+    "size": [
+     0.2981,
+     0.0108,
+     0.0854
+    ],
+    "mass": 0.5,
+    "shape": "box",
+    "grip": 0.085,
+    "carry": [
+     0.5,
+     0.3
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0054,
+      0
+     ],
+     "h": [
+      0.149,
+      0.0054,
+      0.0427
+     ]
+    }
+   }
+  },
+  "jumper_clamps": {
+   "name": "Twin Teeth",
+   "real": "jumper clamps",
+   "category": "creature drop / pickup",
+   "rarity": "uncommon",
+   "found": [
+    "forest",
+    "metro"
+   ],
+   "hint": "Teeth taken from what bit you will bite back once.",
+   "function": "Lazarus Clamps (2), Charge Oracle. Dead leeches drop them.",
+   "recipes": [
+    "R13",
+    "R17"
+   ],
+   "glb": "assets/survival/item_jumper_clamps.glb",
+   "node": "item_jumper_clamps",
+   "accent": "#FFD21F",
+   "turntable": {
+    "center": [
+     0.0001,
+     0.0145,
+     0.0003
+    ],
+    "radius_m": 0.2302,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.023,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 2.1097,
+    "size_m": [
+     0.3953,
+     0.0295,
+     0.2351
+    ],
+    "energy_wh": 0,
+    "triangles": 5999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "r01",
+    "size": [
+     0.3953,
+     0.0295,
+     0.2351
+    ],
+    "mass": 2.1,
+    "shape": "box",
+    "grip": 0.235,
+    "salvage": 1,
+    "restock": 2,
+    "carry": [
+     2.1,
+     3
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0147,
+      0
+     ],
+     "h": [
+      0.1976,
+      0.0147,
+      0.1176
+     ]
+    }
+   }
+  },
+  "work_light": {
+   "name": "Pocket Noon",
+   "real": "portable LED work light",
+   "category": "pickup / night light",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "Hold the dark back by an arm's length.",
+   "function": "Placeable warm light (about 6 m). Lets you see leeches; it does not stop them (only UV does).",
+   "recipes": [],
+   "glb": "assets/survival/night_work_light.glb",
+   "node": "night_work_light",
+   "accent": "#FFE6B0",
+   "turntable": {
+    "center": [
+     0,
+     0.0679,
+     0
+    ],
+    "radius_m": 0.1072,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.476,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 10.3233,
+    "size_m": [
+     0.1131,
+     0.1358,
+     0.1214
+    ],
+    "energy_wh": 0,
+    "triangles": 5000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "r01",
+    "size": [
+     0.1131,
+     0.1358,
+     0.1214
+    ],
+    "mass": 2.5,
+    "shape": "box",
+    "grip": 0.12,
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     2.5,
+     2
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0679,
+      0
+     ],
+     "h": [
+      0.0566,
+      0.0679,
+      0.0607
+     ]
+    }
+   }
+  },
+  "inspection_lamp": {
+   "name": "Leash Light",
+   "real": "corded inspection lamp",
+   "category": "pickup / night light",
+   "rarity": "common",
+   "found": [
+    "dock",
+    "metro"
+   ],
+   "hint": "Light on a leash. It never strays far from the socket.",
+   "function": "Hangs from the bin rim: a small light that travels with Troll-E.",
+   "recipes": [],
+   "glb": "assets/survival/night_inspection_lamp.glb",
+   "node": "night_inspection_lamp",
+   "accent": "#FFE6B0",
+   "turntable": {
+    "center": [
+     0,
+     0.1818,
+     -0.0004
+    ],
+    "radius_m": 0.2611,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.16,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 4.3611,
+    "size_m": [
+     0.2999,
+     0.3635,
+     0.2274
+    ],
+    "energy_wh": 0,
+    "triangles": 3996
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "r01",
+    "size": [
+     0.2999,
+     0.3635,
+     0.2274
+    ],
+    "mass": 1,
+    "shape": "box",
+    "grip": 0.227,
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     1,
+     5
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1818,
+      0
+     ],
+     "h": [
+      0.15,
+      0.1818,
+      0.1137
+     ]
+    }
+   }
+  },
+  "strip_light": {
+   "name": "Bench Halo",
+   "real": "LED bench strip light",
+   "category": "pickup / night light",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "A thin line between you and the night.",
+   "function": "Shelter light (under shelves, over the bench).",
+   "recipes": [],
+   "glb": "assets/survival/night_strip_light.glb",
+   "node": "night_strip_light",
+   "accent": "#E8F4FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0073,
+     0
+    ],
+    "radius_m": 0.3761,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.671,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 4.4308,
+    "size_m": [
+     0.0561,
+     0.0147,
+     0.75
+    ],
+    "energy_wh": 0,
+    "triangles": 1500
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 2,
+    "restock": 3,
+    "carry": [
+     0.9,
+     0.6
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0073,
+      0
+     ],
+     "h": [
+      0.0281,
+      0.0073,
+      0.375
+     ]
+    }
+   }
+  },
+  "alarm_beacon": {
+   "name": "Red Herald",
+   "real": "warehouse alarm beacon",
+   "category": "salvage / night light",
+   "rarity": "uncommon",
+   "found": [
+    "dock",
+    "metro"
+   ],
+   "hint": "It screams in colour.",
+   "function": "Shelter alarm: spins red when the Warmth Eye sees leeches.",
+   "recipes": [],
+   "glb": "assets/survival/night_alarm_beacon.glb",
+   "node": "night_alarm_beacon",
+   "accent": "#FF3020",
+   "turntable": {
+    "center": [
+     0,
+     0.07,
+     0
+    ],
+    "radius_m": 0.1333,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.592,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 2.8634,
+    "size_m": [
+     0.1786,
+     0.14,
+     0.14
+    ],
+    "energy_wh": 0,
+    "triangles": 4000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "carry": [
+     0.5,
+     1
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.07,
+      0
+     ],
+     "h": [
+      0.0893,
+      0.07,
+      0.07
+     ]
+    }
+   }
+  },
+  "tea_candles": {
+   "name": "Last Embers",
+   "real": "tea candles",
+   "category": "pickup / night light",
+   "rarity": "common",
+   "found": [
+    "park",
+    "metro"
+   ],
+   "hint": "Small fires for small hours.",
+   "function": "Tiny warm light that costs no charge.",
+   "recipes": [],
+   "glb": "assets/survival/night_tea_candles.glb",
+   "node": "night_tea_candles",
+   "accent": "#FFB347",
+   "turntable": {
+    "center": [
+     0,
+     0.0098,
+     0
+    ],
+    "radius_m": 0.03,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.133,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 0.1933,
+    "size_m": [
+     0.0402,
+     0.0196,
+     0.0401
+    ],
+    "energy_wh": 0,
+    "triangles": 2000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "grab": "stock",
+    "size": [
+     0.0402,
+     0.0196,
+     0.0401
+    ],
+    "mass": 0.02,
+    "shape": "box",
+    "grip": 0.04,
+    "carry": [
+     0.02,
+     0.05
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0098,
+      0
+     ],
+     "h": [
+      0.0201,
+      0.0098,
+      0.02
+     ]
+    }
+   }
+  },
+  "wire_wall": {
+   "name": "Cage Leaf",
+   "real": "security-room mesh panel",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "dock",
+    "metro"
+   ],
+   "hint": "A wall you can see through keeps out everything but the view.",
+   "function": "Cage Hive wall (7).",
+   "recipes": [],
+   "glb": "assets/survival/shelter_a_wire_wall.glb",
+   "node": "shelter_a_wire_wall",
+   "accent": "#B0B0B0",
+   "turntable": {
+    "center": [
+     0,
+     1.5366,
+     0
+    ],
+    "radius_m": 2.0409,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 9.068,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 423.7308,
+    "size_m": [
+     2.683,
+     3.0732,
+     0.1373
+    ],
+    "energy_wh": 0,
+    "triangles": 4117
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 4,
+    "restock": 3,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      1.5366,
+      0
+     ],
+     "h": [
+      1.3415,
+      1.5366,
+      0.0687
+     ]
+    }
+   }
+  },
+  "accordion_gate": {
+   "name": "Folding Mouth",
+   "real": "accordion safety gate",
+   "category": "shelter piece",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "It opens like a lung.",
+   "function": "Shelter door (Cage Hive; two for the bunker).",
+   "recipes": [],
+   "glb": "assets/survival/shelter_a_accordion_gate.glb",
+   "node": "shelter_a_accordion_gate",
+   "accent": "#FFB347",
+   "turntable": {
+    "center": [
+     1.5332,
+     0.8312,
+     0
+    ],
+    "radius_m": 1.8028,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 8.01,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 12.7143,
+    "size_m": [
+     0.1367,
+     1.6622,
+     0.4866
+    ],
+    "energy_wh": 0,
+    "triangles": 13946
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "piece": true,
+    "collider": {
+     "c": [
+      0.0204,
+      0.8311,
+      0
+     ],
+     "h": [
+      0.0684,
+      0.8311,
+      0.2433
+     ]
+    },
+    "door": {
+     "type": "accordion",
+     "fixed_node": "shelter_a_accordion_gate",
+     "lattice_node": "gate_lattice",
+     "moving_node": "gate_post_b",
+     "closed_span_m": 2.93,
+     "folded_scale": 0.12,
+     "rule": "gate_post_b.position.x = gate_lattice.position.x + 2.93 * gate_lattice.scale.x",
+     "note": "one half of barrier_gate_safety_a02 (the source is two 3 m sections); place two mirrored for a 6 m opening"
+    }
+   }
+  },
+  "roof_pallet": {
+   "name": "Blue Shingle",
+   "real": "plastic pallet",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "It carried the world's boxes. Now it carries the rain.",
+   "function": "Roof tiles: a patch roof on the first night, the Rack Fort roof (16).",
+   "recipes": [],
+   "glb": "assets/survival/shelter_a_roof_pallet.glb",
+   "node": "shelter_a_roof_pallet",
+   "accent": "#4060FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0768,
+     0
+    ],
+    "radius_m": 0.7908,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 3.514,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 10.1123,
+    "size_m": [
+     1.0094,
+     0.1535,
+     1.2083
+    ],
+    "energy_wh": 0,
+    "triangles": 2500
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 6,
+    "restock": 3,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.0767,
+      0
+     ],
+     "h": [
+      0.5047,
+      0.0767,
+      0.6041
+     ]
+    }
+   }
+  },
+  "roof_slab": {
+   "name": "Sky Lid",
+   "real": "ceiling slab",
+   "category": "shelter piece (large)",
+   "rarity": "rare",
+   "found": [
+    "metro"
+   ],
+   "hint": "Put a lid on the sky.",
+   "function": "Cage Hive roof (6 x 6 m).",
+   "recipes": [],
+   "glb": "assets/survival/shelter_a_roof_slab.glb",
+   "node": "shelter_a_roof_slab",
+   "accent": "#B0B0B0",
+   "turntable": {
+    "center": [
+     0,
+     0.264,
+     0
+    ],
+    "radius_m": 4.2509,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 18.888,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 4278.04,
+    "size_m": [
+     6,
+     0.528,
+     6
+    ],
+    "energy_wh": 0,
+    "triangles": 3000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.264,
+      0
+     ],
+     "h": [
+      3,
+      0.264,
+      3
+     ]
+    }
+   }
+  },
+  "storage_shelf": {
+   "name": "Patient Shelf",
+   "real": "storage shelf",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "It waits. It is good at waiting.",
+   "function": "Shelter storage.",
+   "recipes": [],
+   "glb": "assets/survival/shelter_a_storage_shelf.glb",
+   "node": "shelter_a_storage_shelf",
+   "accent": "#C0C0C0",
+   "turntable": {
+    "center": [
+     0,
+     1.2114,
+     0
+    ],
+    "radius_m": 1.8504,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 8.222,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 3010.833,
+    "size_m": [
+     1.2674,
+     2.4227,
+     2.4943
+    ],
+    "energy_wh": 0,
+    "triangles": 9091
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      1.2114,
+      0
+     ],
+     "h": [
+      0.6337,
+      1.2114,
+      1.2471
+     ]
+    }
+   }
+  },
+  "coolant_tank": {
+   "name": "Steel Cistern",
+   "real": "stainless IBC tank",
+   "category": "shelter piece (large)",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "Clean water, if you can make it clean.",
+   "function": "Shelter coolant store (fed by the Cadmium Leachfilter).",
+   "recipes": [],
+   "glb": "assets/survival/shelter_a_coolant_tank.glb",
+   "node": "shelter_a_coolant_tank",
+   "accent": "#9FE8FF",
+   "turntable": {
+    "center": [
+     0,
+     0.6484,
+     0
+    ],
+    "radius_m": 1.0628,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.722,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 195.1603,
+    "size_m": [
+     1.265,
+     1.2967,
+     1.1121
+    ],
+    "energy_wh": 0,
+    "triangles": 5994
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.6484,
+      0
+     ],
+     "h": [
+      0.6325,
+      0.6484,
+      0.556
+     ]
+    }
+   }
+  },
+  "hoop_guard": {
+   "name": "Stub Sentry",
+   "real": "machine hoop guard",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "It stands where it is told and never sleeps.",
+   "function": "Door guard posts.",
+   "recipes": [],
+   "glb": "assets/survival/shelter_a_bollard.glb",
+   "node": "shelter_a_bollard",
+   "accent": "#FFD21F",
+   "turntable": {
+    "center": [
+     0,
+     0.1155,
+     0
+    ],
+    "radius_m": 0.5091,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 2.262,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 19.3788,
+    "size_m": [
+     0.9769,
+     0.231,
+     0.17
+    ],
+    "energy_wh": 0,
+    "triangles": 4000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 2,
+    "restock": 3,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.1155,
+      0
+     ],
+     "h": [
+      0.4955,
+      0.1155,
+      0.4955
+     ]
+    }
+   }
+  },
+  "bedding": {
+   "name": "Soft Heap",
+   "real": "bedding",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "metro"
+   ],
+   "hint": "Robots do not sleep. It is nice to pretend.",
+   "function": "Cosy (no gameplay).",
+   "recipes": [],
+   "glb": "assets/survival/shelter_a_bedding.glb",
+   "node": "shelter_a_bedding",
+   "accent": "#4A90FF",
+   "turntable": {
+    "center": [
+     -0.0001,
+     0.1992,
+     0
+    ],
+    "radius_m": 1.1219,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.985,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 3.7754,
+    "size_m": [
+     2.0318,
+     0.3993,
+     0.8699
+    ],
+    "energy_wh": 0,
+    "triangles": 2999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.1996,
+      0
+     ],
+     "h": [
+      1.0159,
+      0.1996,
+      0.435
+     ]
+    }
+   }
+  },
+  "plywood_crate": {
+   "name": "Hollow Ark",
+   "real": "plywood crate",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "Nailed shut by someone who planned to come back.",
+   "function": "Rack Fort wall fill.",
+   "recipes": [],
+   "glb": "assets/survival/shelter_b_crate.glb",
+   "node": "shelter_b_crate",
+   "accent": "#C8A060",
+   "turntable": {
+    "center": [
+     0.0001,
+     0.507,
+     -0.0007
+    ],
+    "radius_m": 0.8711,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 3.87,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 94.6291,
+    "size_m": [
+     1.0022,
+     1.0165,
+     1.0087
+    ],
+    "energy_wh": 0,
+    "triangles": 2432
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 3,
+    "restock": 3,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.5083,
+      0
+     ],
+     "h": [
+      0.5011,
+      0.5083,
+      0.5043
+     ]
+    }
+   }
+  },
+  "scaffold": {
+   "name": "Iron Ladder Tower",
+   "real": "rolling scaffold",
+   "category": "shelter piece (large)",
+   "rarity": "uncommon",
+   "found": [
+    "dock",
+    "metro"
+   ],
+   "hint": "Climb it and the map grows.",
+   "function": "Rack Fort lookout.",
+   "recipes": [],
+   "glb": "assets/survival/shelter_b_scaffold.glb",
+   "node": "shelter_b_scaffold",
+   "accent": "#FFB347",
+   "turntable": {
+    "center": [
+     -0.0001,
+     1.7618,
+     -0.0002
+    ],
+    "radius_m": 2.2029,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 9.788,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 372.8471,
+    "size_m": [
+     1.7081,
+     3.5232,
+     2.0236
+    ],
+    "energy_wh": 0,
+    "triangles": 11351
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      1.7616,
+      0
+     ],
+     "h": [
+      0.854,
+      1.7616,
+      1.0118
+     ]
+    }
+   }
+  },
+  "guard_panel": {
+   "name": "Mesh Scale",
+   "real": "machine-guard mesh panel",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "Scales for a building that wants armour.",
+   "function": "Bunker walls (12).",
+   "recipes": [],
+   "glb": "assets/survival/shelter_c_guard_panel.glb",
+   "node": "shelter_c_guard_panel",
+   "accent": "#FFD21F",
+   "turntable": {
+    "center": [
+     0,
+     0.85,
+     0
+    ],
+    "radius_m": 1.1021,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.897,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 175.2676,
+    "size_m": [
+     1.396,
+     1.7,
+     0.15
+    ],
+    "energy_wh": 0,
+    "triangles": 2998
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 6,
+    "restock": 3,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.85,
+      0
+     ],
+     "h": [
+      0.698,
+      0.85,
+      0.075
+     ]
+    }
+   }
+  },
+  "workbench": {
+   "name": "Maker's Altar",
+   "real": "workbench with pegboard",
+   "category": "shelter piece",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "Everything here began on a table.",
+   "function": "Crafting before the Matter Loom.",
+   "recipes": [],
+   "glb": "assets/survival/shelter_workbench.glb",
+   "node": "shelter_workbench",
+   "accent": "#3A7BFF",
+   "turntable": {
+    "center": [
+     0,
+     0.6925,
+     0
+    ],
+    "radius_m": 1.0656,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.735,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 42,
+    "size_m": [
+     0.5331,
+     1.3841,
+     1.5314
+    ],
+    "energy_wh": 0,
+    "triangles": 18919
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.6921,
+      0
+     ],
+     "h": [
+      0.2665,
+      0.6921,
+      0.7657
+     ]
+    }
+   }
+  },
+  "tool_cabinet": {
+   "name": "Iron Wardrobe",
+   "real": "tool cabinet",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "Two doors. Behind them, order.",
+   "function": "Shelter storage.",
+   "recipes": [],
+   "glb": "assets/survival/shelter_tool_cabinet.glb",
+   "node": "shelter_tool_cabinet",
+   "accent": "#B0B0B0",
+   "turntable": {
+    "center": [
+     0.0002,
+     1.0249,
+     0
+    ],
+    "radius_m": 1.3036,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 5.792,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 40,
+    "size_m": [
+     0.714,
+     2.0498,
+     1.4455
+    ],
+    "energy_wh": 0,
+    "triangles": 4996
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      1.0249,
+      0
+     ],
+     "h": [
+      0.357,
+      1.0249,
+      0.7227
+     ]
+    }
+   }
+  },
+  "r01_tetrabrachion": {
+   "name": "Tetrabrachion",
+   "real": "robotic_system_a01",
+   "category": "craftable (tier 3)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Four hands remember what one forgot. Feed them forty small fires.",
+   "function": "Grabber upgrade: four arms replace the claw. Picks up to 4 items per press, lifts drums and car parts the claw cannot, reach +25%.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r01_tetrabrachion.glb",
+   "node": "craft_r01_tetrabrachion",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0.0002,
+     0.3038,
+     -0.0001
+    ],
+    "radius_m": 0.476,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 2.1153,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 7.6436,
+    "size_m": [
+     0.5279,
+     0.6073,
+     0.5099
+    ],
+    "energy_wh": 0,
+    "triangles": 19755
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R01",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.3036,
+      0
+     ],
+     "h": [
+      0.2639,
+      0.3036,
+      0.2549
+     ]
+    },
+    "scale": 0.3
+   }
+  },
+  "r02_heliostat_rail": {
+   "name": "Heliostat Rail",
+   "real": "extrusion_tSlot_aluminum_b06",
+   "category": "craftable (tier 1)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Drink the sweetness, keep the tin: the sun needs a cradle.",
+   "function": "Unlocks one solar mount slot on the bin (craft up to 8). The panel itself is consumed into the rail.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r02_heliostat_rail.glb",
+   "node": "craft_r02_heliostat_rail",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0105,
+     0
+    ],
+    "radius_m": 0.2017,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.8961,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 0.45,
+    "size_m": [
+     0.0473,
+     0.021,
+     0.4
+    ],
+    "energy_wh": 0,
+    "triangles": 5067
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R02",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0105,
+      0
+     ],
+     "h": [
+      0.0236,
+      0.0105,
+      0.2
+     ]
+    },
+    "scale": 0.0589
+   }
+  },
+  "r03_dioscuri_rig": {
+   "name": "Dioscuri Rig",
+   "real": "robot_surgical_c01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Two brothers, one heartbeat, a screen that watches both.",
+   "function": "Second arm pair on the back of the bin: carry while grabbing, double pickup speed.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r03_dioscuri_rig.glb",
+   "node": "craft_r03_dioscuri_rig",
+   "accent": "#FF2BD6",
+   "turntable": {
+    "center": [
+     0,
+     0.2253,
+     0
+    ],
+    "radius_m": 0.3442,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.5296,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 2.13,
+    "size_m": [
+     0.474,
+     0.4518,
+     0.2163
+    ],
+    "energy_wh": 0,
+    "triangles": 19768
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R03",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.2259,
+      0
+     ],
+     "h": [
+      0.237,
+      0.2259,
+      0.1082
+     ]
+    },
+    "scale": 0.32
+   }
+  },
+  "r04_lumen_vigil": {
+   "name": "Lumen Vigil",
+   "real": "lamp_uvc_robot_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "What drinks the dark cannot drink this light.",
+   "function": "Wandering UV-C sentry around the shelter. Leeches will not cross its 8 m radius for 3 nights.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r04_lumen_vigil.glb",
+   "node": "craft_r04_lumen_vigil",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     -0.0014,
+     0.9062,
+     -0.0006
+    ],
+    "radius_m": 0.9999,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.443,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 42.318,
+    "size_m": [
+     0.5754,
+     1.8122,
+     0.6254
+    ],
+    "energy_wh": 0,
+    "triangles": 13997
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R04",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.9061,
+      0
+     ],
+     "h": [
+      0.2877,
+      0.9061,
+      0.3127
+     ]
+    }
+   }
+  },
+  "r05_mole_courier": {
+   "name": "Mole Courier",
+   "real": "robotics_small_bot_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Lay a fork on its back and give it eyes; it will dig for you.",
+   "function": "Autonomous scout: fetches one marked item per day and maps cadmium puddles on the minimap.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r05_mole_courier.glb",
+   "node": "craft_r05_mole_courier",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0976,
+     0
+    ],
+    "radius_m": 0.518,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 2.302,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 13.0188,
+    "size_m": [
+     0.7495,
+     0.1949,
+     0.6882
+    ],
+    "energy_wh": 0,
+    "triangles": 14308
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R05",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0975,
+      0
+     ],
+     "h": [
+      0.3748,
+      0.0975,
+      0.3441
+     ]
+    }
+   }
+  },
+  "r06_roentgen_furnace": {
+   "name": "Roentgen Furnace",
+   "real": "Xray_machine_HVgenerator_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Wind the copper, crush the silver tins, and the drum will hum through midnight.",
+   "function": "Shelter generator: turns diesel cans into charge at night (1 can = 10% bin battery).",
+   "recipes": [],
+   "glb": "assets/craft/craft_r06_roentgen_furnace.glb",
+   "node": "craft_r06_roentgen_furnace",
+   "accent": "#FF2BD6",
+   "turntable": {
+    "center": [
+     0,
+     0.4665,
+     0
+    ],
+    "radius_m": 0.7405,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 3.29,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 16.0634,
+    "size_m": [
+     0.6201,
+     0.9309,
+     0.9724
+    ],
+    "energy_wh": 0,
+    "triangles": 15340
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R06",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.4655,
+      0
+     ],
+     "h": [
+      0.3101,
+      0.4655,
+      0.4862
+     ]
+    }
+   }
+  },
+  "r07_skiagraph_pillar": {
+   "name": "Skiagraph Pillar",
+   "real": "Xray_machine_buckyStand_a01",
+   "category": "craftable (tier 3)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Stand the bones upright and walls become rumours.",
+   "function": "Needs a Roentgen Furnace nearby. Reveals hidden or buried supplies through walls within 15 m for 20 s.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r07_skiagraph_pillar.glb",
+   "node": "craft_r07_skiagraph_pillar",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     1.0856,
+     0
+    ],
+    "radius_m": 1.1609,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 5.158,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 13.0065,
+    "size_m": [
+     0.6088,
+     2.1715,
+     0.5533
+    ],
+    "energy_wh": 0,
+    "triangles": 9999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R07",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      1.0857,
+      0
+     ],
+     "h": [
+      0.3044,
+      1.0857,
+      0.2766
+     ]
+    }
+   }
+  },
+  "r08_coherent_lance": {
+   "name": "Coherent Lance",
+   "real": "laser_system_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Six green throats sing one straight note.",
+   "function": "Cuts barricades and fences (opens shortcuts) and burns a latched leech off in 2 s.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r08_coherent_lance.glb",
+   "node": "craft_r08_coherent_lance",
+   "accent": "#FF2BD6",
+   "turntable": {
+    "center": [
+     0.0001,
+     0.2303,
+     0
+    ],
+    "radius_m": 0.302,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.3419,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 1.2542,
+    "size_m": [
+     0.3449,
+     0.4605,
+     0.1868
+    ],
+    "energy_wh": 0,
+    "triangles": 13863
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R08",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.2302,
+      0
+     ],
+     "h": [
+      0.1724,
+      0.2302,
+      0.0934
+     ]
+    },
+    "scale": 0.35
+   }
+  },
+  "r09_echo_psalter": {
+   "name": "Echo Psalter",
+   "real": "ultrasound_b01",
+   "category": "craftable (tier 1)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Listen to the mud. It is full of things that were thrown away.",
+   "function": "Pings buried items in mud and puddles within 10 m.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r09_echo_psalter.glb",
+   "node": "craft_r09_echo_psalter",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.1758,
+     0.0001
+    ],
+    "radius_m": 0.316,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.404,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 3.9799,
+    "size_m": [
+     0.3644,
+     0.3516,
+     0.3785
+    ],
+    "energy_wh": 0,
+    "triangles": 9958
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R09",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1758,
+      0
+     ],
+     "h": [
+      0.1822,
+      0.1758,
+      0.1892
+     ]
+    }
+   }
+  },
+  "r10_cadmium_leachfilter": {
+   "name": "Cadmium Leachfilter",
+   "real": "hemodialysis_machine_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "The yellow water is sick. Give it new kidneys.",
+   "function": "Purifies cadmium puddle water into coolant (consumable: repairs aged panels, cools motors for faster driving).",
+   "recipes": [],
+   "glb": "assets/craft/craft_r10_cadmium_leachfilter.glb",
+   "node": "craft_r10_cadmium_leachfilter",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     -0.0002,
+     0.9192,
+     0
+    ],
+    "radius_m": 1.0422,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 4.631,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 27.987,
+    "size_m": [
+     0.708,
+     1.8387,
+     0.6865
+    ],
+    "energy_wh": 0,
+    "triangles": 15867
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R10",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.9193,
+      0
+     ],
+     "h": [
+      0.354,
+      0.9193,
+      0.3433
+     ]
+    }
+   }
+  },
+  "r11_somnus_bellows": {
+   "name": "Somnus Bellows",
+   "real": "anesthesia_machine_a01",
+   "category": "craftable (tier 3)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Even hunger sleeps if you breathe for it.",
+   "function": "Releases a sleep cloud at the shelter door: leeches inside 6 m stay dormant for one night.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r11_somnus_bellows.glb",
+   "node": "craft_r11_somnus_bellows",
+   "accent": "#FF2BD6",
+   "turntable": {
+    "center": [
+     -0.0006,
+     0.8513,
+     0.0002
+    ],
+    "radius_m": 1.4764,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 6.56,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 120.17,
+    "size_m": [
+     0.8455,
+     1.7016,
+     2.2618
+    ],
+    "energy_wh": 0,
+    "triangles": 23936
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R11",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.8508,
+      0
+     ],
+     "h": [
+      0.4227,
+      0.8508,
+      1.1309
+     ]
+    }
+   }
+  },
+  "r12_iron_breath": {
+   "name": "Iron Breath",
+   "real": "lung_ventilation_artificial_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "A shelter that cannot breathe will rust in its sleep.",
+   "function": "Shelter air scrubber: no overnight corrosion, items stored inside keep full value.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r12_iron_breath.glb",
+   "node": "craft_r12_iron_breath",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0.0003,
+     0.6704,
+     0
+    ],
+    "radius_m": 0.8071,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 3.586,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 43.3117,
+    "size_m": [
+     0.7268,
+     1.3405,
+     0.5317
+    ],
+    "energy_wh": 0,
+    "triangles": 15982
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R12",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.6702,
+      0
+     ],
+     "h": [
+      0.3634,
+      0.6702,
+      0.2659
+     ]
+    }
+   }
+  },
+  "r13_lazarus_clamps": {
+   "name": "Lazarus Clamps",
+   "real": "defibrillator_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Teeth taken from what bit you will bite back once.",
+   "function": "One-shot revive at 0% battery (restores 25%) and shocks a latched leech off.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r13_lazarus_clamps.glb",
+   "node": "craft_r13_lazarus_clamps",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     -0.0001,
+     0.1337,
+     0.0002
+    ],
+    "radius_m": 0.2781,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.236,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 2.5387,
+    "size_m": [
+     0.2038,
+     0.2673,
+     0.4441
+    ],
+    "energy_wh": 0,
+    "triangles": 15999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R13",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1337,
+      0
+     ],
+     "h": [
+      0.1019,
+      0.1337,
+      0.2221
+     ]
+    }
+   }
+  },
+  "r14_matter_loom": {
+   "name": "Matter Loom",
+   "real": "equipment_3d_printer_b01",
+   "category": "craftable (tier 1)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Every wrapper remembers being a shape.",
+   "function": "Shelter crafting station: unlocks tier-2 recipes and prints fuses and bolts from plastic trash.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r14_matter_loom.glb",
+   "node": "craft_r14_matter_loom",
+   "accent": "#FF2BD6",
+   "turntable": {
+    "center": [
+     0,
+     0.4123,
+     0
+    ],
+    "radius_m": 0.5458,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 2.425,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 79.5445,
+    "size_m": [
+     0.51,
+     0.8246,
+     0.5016
+    ],
+    "energy_wh": 0,
+    "triangles": 13960
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R14",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.4123,
+      0
+     ],
+     "h": [
+      0.255,
+      0.4123,
+      0.2508
+     ]
+    }
+   }
+  },
+  "r15_arc_forge": {
+   "name": "Arc Forge",
+   "real": "powerTool_welding_station_c01",
+   "category": "craftable (tier 1)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Marry the rust to the lightning and it will stand up.",
+   "function": "Builds and upgrades shelter walls, roof and doors from scrap.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r15_arc_forge.glb",
+   "node": "craft_r15_arc_forge",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0.0007,
+     0.5731,
+     0
+    ],
+    "radius_m": 0.8255,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 3.668,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 35.4933,
+    "size_m": [
+     1.0675,
+     1.1446,
+     0.5388
+    ],
+    "energy_wh": 0,
+    "triangles": 13996
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R15",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.5723,
+      0
+     ],
+     "h": [
+      0.5338,
+      0.5723,
+      0.2694
+     ]
+    }
+   }
+  },
+  "r16_ley_junction": {
+   "name": "Ley Junction",
+   "real": "electrical_main_terminal_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Where the street's veins meet, store the noon for midnight.",
+   "function": "Shelter power hub: night storage and 2 extra panel circuits. Daylight only charges it; it carries Troll-E through the night.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r16_ley_junction.glb",
+   "node": "craft_r16_ley_junction",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0.0059,
+     0.526,
+     0
+    ],
+    "radius_m": 1.4908,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 6.6241,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 20.2756,
+    "size_m": [
+     1.1741,
+     1.0522,
+     2.5367
+    ],
+    "energy_wh": 0,
+    "triangles": 12622
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R16",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.5261,
+      0
+     ],
+     "h": [
+      0.587,
+      0.5261,
+      1.2684
+     ]
+    },
+    "scale": 0.7
+   }
+  },
+  "r17_charge_oracle": {
+   "name": "Charge Oracle",
+   "real": "testingTool_battery_analyzer_c01",
+   "category": "craftable (tier 1)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Ask the cell how long it has. It will not lie to this.",
+   "function": "Shows true charge on found batteries and each solar panel's age tier and efficiency.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r17_charge_oracle.glb",
+   "node": "craft_r17_charge_oracle",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0235,
+     -0.0001
+    ],
+    "radius_m": 0.1473,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.655,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 6.7795,
+    "size_m": [
+     0.263,
+     0.047,
+     0.1244
+    ],
+    "energy_wh": 0,
+    "triangles": 11990
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R17",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0235,
+      0
+     ],
+     "h": [
+      0.1315,
+      0.0235,
+      0.0622
+     ]
+    }
+   }
+  },
+  "r18_photon_altar": {
+   "name": "Photon Altar",
+   "real": "labware_table_thorlabs_a01",
+   "category": "craftable (tier 3)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Lay the tired suns flat and they remember noon.",
+   "function": "Restores one aged panel one tier per day (ruined to aged to new), at the cost of the four sacrificed panels.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r18_photon_altar.glb",
+   "node": "craft_r18_photon_altar",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     -0.0002,
+     0.4013,
+     0
+    ],
+    "radius_m": 0.7124,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 3.166,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 62.5276,
+    "size_m": [
+     0.8999,
+     0.8024,
+     0.7603
+    ],
+    "energy_wh": 0,
+    "triangles": 25656
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R18",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.4012,
+      0
+     ],
+     "h": [
+      0.4499,
+      0.4012,
+      0.3801
+     ]
+    }
+   }
+  },
+  "r19_salamander_lung": {
+   "name": "Salamander Lung",
+   "real": "climate_heater_dieselTorpedo_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Cold batteries bleed faster. Give the night a fever.",
+   "function": "Shelter heater: burns diesel at night, so night drain is 30% lower while docked.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r19_salamander_lung.glb",
+   "node": "craft_r19_salamander_lung",
+   "accent": "#FF2BD6",
+   "turntable": {
+    "center": [
+     -0.001,
+     0.2992,
+     0
+    ],
+    "radius_m": 0.6428,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 2.856,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 194.3534,
+    "size_m": [
+     1.0281,
+     0.5981,
+     0.493
+    ],
+    "energy_wh": 0,
+    "triangles": 15997
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R19",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.299,
+      0
+     ],
+     "h": [
+      0.5141,
+      0.299,
+      0.2465
+     ]
+    }
+   }
+  },
+  "r20_dynamo_heart": {
+   "name": "Dynamo Heart",
+   "real": "engineAssembly_electric_engine_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "The old lifter's heart still wants to run downhill.",
+   "function": "Drive upgrade: +25% top speed and regenerative braking on slopes.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r20_dynamo_heart.glb",
+   "node": "craft_r20_dynamo_heart",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.1425,
+     0
+    ],
+    "radius_m": 0.4672,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 2.076,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 38.3676,
+    "size_m": [
+     0.6381,
+     0.2865,
+     0.621
+    ],
+    "energy_wh": 0,
+    "triangles": 20000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R20",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.1433,
+      0
+     ],
+     "h": [
+      0.319,
+      0.1433,
+      0.3105
+     ]
+    }
+   }
+  },
+  "r21_leech_collar": {
+   "name": "Leech Collar",
+   "real": "equipment_surgeProtector_batteryClamp_a01",
+   "category": "craftable (tier 1)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Wear the mouth of the thing that fed on you.",
+   "function": "Passive: the first leech each night that latches on is zapped off automatically.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r21_leech_collar.glb",
+   "node": "craft_r21_leech_collar",
+   "accent": "#FF2BD6",
+   "turntable": {
+    "center": [
+     0,
+     0.0148,
+     0
+    ],
+    "radius_m": 0.3005,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.335,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 3.8203,
+    "size_m": [
+     0.37,
+     0.0297,
+     0.473
+    ],
+    "energy_wh": 0,
+    "triangles": 8000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R21",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0148,
+      0
+     ],
+     "h": [
+      0.185,
+      0.0148,
+      0.2365
+     ]
+    }
+   }
+  },
+  "r22_contrast_syringe": {
+   "name": "Contrast Syringe",
+   "real": "CT_injection_system_a01",
+   "category": "craftable (tier 2)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "Dye the blood of the machine and it will run like a rumour.",
+   "function": "Consumable overdrive: 60 s at double speed with double drain.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r22_contrast_syringe.glb",
+   "node": "craft_r22_contrast_syringe",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     -0.0001,
+     0.2461,
+     0
+    ],
+    "radius_m": 0.2789,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.2393,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 0.6854,
+    "size_m": [
+     0.1729,
+     0.4921,
+     0.2016
+    ],
+    "energy_wh": 0,
+    "triangles": 9992
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R22",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.2461,
+      0
+     ],
+     "h": [
+      0.0864,
+      0.2461,
+      0.1008
+     ]
+    },
+    "scale": 0.3
+   }
+  },
+  "r23_warmth_eye": {
+   "name": "Warmth Eye",
+   "real": "detector_thermal_fire_a01",
+   "category": "craftable (tier 1)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "They are cold. Watch for the holes in the heat.",
+   "function": "Shelter sensor: warns 30 s before leeches approach.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r23_warmth_eye.glb",
+   "node": "craft_r23_warmth_eye",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.0237,
+     0
+    ],
+    "radius_m": 0.0822,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 0.365,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 0.0835,
+    "size_m": [
+     0.112,
+     0.0473,
+     0.1107
+    ],
+    "energy_wh": 0,
+    "triangles": 3000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R23",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.0237,
+      0
+     ],
+     "h": [
+      0.056,
+      0.0237,
+      0.0554
+     ]
+    }
+   }
+  },
+  "r24_small_vigil": {
+   "name": "Small Vigil",
+   "real": "lamp_uvc_a01",
+   "category": "craftable (tier 1)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (crafted)"
+   ],
+   "hint": "A pocket of noon you can set down in the mud.",
+   "function": "Placeable UV lamp: leech-free 4 m radius for one night.",
+   "recipes": [],
+   "glb": "assets/craft/craft_r24_small_vigil.glb",
+   "node": "craft_r24_small_vigil",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0.0001,
+     0.2199,
+     0.0001
+    ],
+    "radius_m": 0.2473,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 1.099,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "craft_done",
+   "stats": {
+    "mass_kg": 4.0795,
+    "size_m": [
+     0.16,
+     0.44,
+     0.16
+    ],
+    "energy_wh": 0,
+    "triangles": 3995
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "recipe": "R24",
+   "game": {
+    "crafted": true,
+    "carry": [
+     0,
+     0
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.22,
+      0
+     ],
+     "h": [
+      0.08,
+      0.22,
+      0.08
+     ]
+    }
+   }
+  },
+  "rusty_beam": {
+   "name": "Rust Spine",
+   "real": "rusted steel I-beam (structure_beam_a01)",
+   "category": "salvage (large)",
+   "rarity": "common",
+   "found": [
+    "dock",
+    "forest"
+   ],
+   "hint": "What held the roof up still remembers the weight.",
+   "function": "Two feed the Arc Forge.",
+   "recipes": [
+    "R15"
+   ],
+   "glb": "assets/survival/beam_rusty.glb",
+   "node": "beam_rusty",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.9498,
+     0
+    ],
+    "radius_m": 2.865,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 12.399,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 865.3434,
+    "size_m": [
+     5.4,
+     1.8996,
+     0.27
+    ],
+    "energy_wh": 0,
+    "triangles": 6999
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "carry": [
+     15,
+     20
+    ],
+    "collider": {
+     "c": [
+      0,
+      0.9498,
+      0
+     ],
+     "h": [
+      2.7,
+      0.9498,
+      0.135
+     ]
+    }
+   }
+  },
+  "dock_charger": {
+   "name": "Glass Cradle",
+   "real": "robot charging bay (equipment_robot_charger_a01)",
+   "category": "shelter piece",
+   "rarity": "uncommon",
+   "found": [
+    "dock"
+   ],
+   "hint": "Every shelter starts where something can sleep and wake up full.",
+   "function": "The shelter's charger: a01 parks on its pad overnight.",
+   "recipes": [],
+   "glb": "assets/survival/dock_charger.glb",
+   "node": "dock_charger",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.81,
+     0
+    ],
+    "radius_m": 1.256,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 5.436,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 237.1636,
+    "size_m": [
+     1.7157,
+     1.62,
+     0.8628
+    ],
+    "energy_wh": 0,
+    "triangles": 19998
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 4,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.81,
+      0
+     ],
+     "h": [
+      0.8578,
+      0.81,
+      0.4314
+     ]
+    }
+   }
+  },
+  "edge_rail": {
+   "name": "Dock Jaw",
+   "real": "dock safety gate (barrier_gate_safetyDock_a02)",
+   "category": "shelter piece",
+   "rarity": "common",
+   "found": [
+    "dock"
+   ],
+   "hint": "A gate that once kept forklifts from the edge.",
+   "function": "Rack Fort door.",
+   "recipes": [],
+   "glb": "assets/world/dock_edge_rail.glb",
+   "node": "dock_edge_rail",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.57135,
+     0
+    ],
+    "radius_m": 1.683,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 7.281,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 45.9096,
+    "size_m": [
+     3.1616,
+     1.1427,
+     0.148
+    ],
+    "energy_wh": 0,
+    "triangles": 2970
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 3,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.5714,
+      0
+     ],
+     "h": [
+      1.5808,
+      0.5714,
+      0.074
+     ]
+    }
+   }
+  },
+  "led_hexgrid": {
+   "name": "Honeycomb Noon",
+   "real": "overhead LED hex grid (lighting_overheadLed_hexGrid_a01)",
+   "category": "shelter piece",
+   "rarity": "rare",
+   "found": [
+    "metro"
+   ],
+   "hint": "Six-sided light, for rooms that hate the dark.",
+   "function": "Bunker ceiling light.",
+   "recipes": [],
+   "glb": "assets/survival/led_hexgrid.glb",
+   "node": "led_hexgrid",
+   "accent": "#00E5FF",
+   "turntable": {
+    "center": [
+     0,
+     0.5411,
+     0
+    ],
+    "radius_m": 2.74,
+    "camera_fov_deg": 30,
+    "camera_distance_m": 11.857,
+    "start_yaw_deg": 35,
+    "spin_deg_per_s": 40,
+    "tilt_deg": 18,
+    "up": [
+     0,
+     1,
+     0
+    ]
+   },
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": 202.1712,
+    "size_m": [
+     4.804,
+     1.0822,
+     2.404
+    ],
+    "energy_wh": 0,
+    "triangles": 14000
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "salvage": 1,
+    "restock": 5,
+    "piece": true,
+    "collider": {
+     "c": [
+      0,
+      0.5411,
+      0
+     ],
+     "h": [
+      2.402,
+      0.5411,
+      1.202
+     ]
+    }
+   }
+  },
+  "coolant": {
+   "name": "Clear Kidney",
+   "real": "coolant, purified from cadmium puddle water",
+   "category": "consumable (crafted)",
+   "rarity": "crafted",
+   "found": [
+    "shelter (Cadmium Leachfilter)"
+   ],
+   "hint": "The sick water, cured, cools what runs hot.",
+   "function": "Repairs one aged panel to new and clears every panel's dust; cools the motors (+15 % top speed for 60 s).",
+   "recipes": [],
+   "glb": null,
+   "node": null,
+   "accent": "#00E5FF",
+   "turntable": null,
+   "sound": "collect_small",
+   "stats": {
+    "mass_kg": null,
+    "size_m": null,
+    "energy_wh": 0,
+    "triangles": null
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "carry": [
+     1,
+     1
+    ]
+   }
+  },
+  "warehouse_corner": {
+   "name": "warehouse corner module",
+   "real": "warehouse corner module",
+   "category": "shelter module (found)",
+   "rarity": "rare",
+   "found": [
+    "in place"
+   ],
+   "hint": "",
+   "function": "Warehouse-corner bunker module, sunk 1.3 m so its floor meets the ground.",
+   "recipes": [],
+   "glb": "assets/survival/shelter_c_warehouse_corner.glb",
+   "node": "warehouse_corner",
+   "accent": "#00E5FF",
+   "turntable": null,
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 101205.9943,
+    "size_m": [
+     5.5001,
+     7.15,
+     5.5001
+    ],
+    "energy_wh": 0,
+    "triangles": 3856
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "piece": true,
+    "found": true
+   }
+  },
+  "warehouse_bay": {
+   "name": "warehouse centre bay",
+   "real": "warehouse centre bay",
+   "category": "shelter module (found)",
+   "rarity": "rare",
+   "found": [
+    "in place"
+   ],
+   "hint": "",
+   "function": "Warehouse-corner bunker module, sunk 1.3 m so its floor meets the ground.",
+   "recipes": [],
+   "glb": "assets/survival/shelter_c_warehouse_bay.glb",
+   "node": "warehouse_bay",
+   "accent": "#00E5FF",
+   "turntable": null,
+   "sound": "collect_big",
+   "stats": {
+    "mass_kg": 60894.7689,
+    "size_m": [
+     5.0001,
+     6.884,
+     5
+    ],
+    "energy_wh": 0,
+    "triangles": 2660
+   },
+   "credit": "NVIDIA SimReady Assets (CC BY 4.0), modified",
+   "game": {
+    "piece": true,
+    "found": true
+   }
+  }
+ }
+}

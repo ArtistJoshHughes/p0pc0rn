@@ -1,11 +1,11 @@
 // shell.js - p0pc0rn 3.9: the phone-OS shell. Josh (Oct-25): "I want ... the UI to be like a mobile OS". A home screen that scrolls up
-// and down (no pages), a fixed dock (Juli, Create, Music, Settings), the p0pc0rn pill above it (tap = Juli), red number badges at the top
+// and down (no pages), a fixed dock (Juli, Create, Music, Messages; v4: Settings is on the home screen), the p0pc0rn pill above it (tap = Juli), red number badges at the top
 // left of an icon, widgets for agentic apps, made apps the person pins, a blurred wallpaper they choose, edit mode (a long press: the
 // icons wiggle, drag to reorder, remove a pinned app), screens that grow from their icon and go back with a swipe from the left edge.
 // The 3.8 screens stay as they were: go(tab) still shows one (app.js); this module adds the home around them and calls nothing in them.
 // API (for every part of the app; also window.SHELL): SHELL.register / open / home / badge / refresh / pin / unpin / on.
 // app.js's hooks: init (once, at start), went (every go), note (a result landed), titleOf, startTab, restorable, homeButton.
-import { DOCK, HOME_ORDER, gridLayout, slotAt, badgeText, badgeLabel, moveItem, orderIds, createPins, widgetsOf, appsBadge, screenOf, startTab } from './shell_core.js';
+import { DOCK, HOME_ORDER, SOON, gridLayout, slotAt, badgeText, badgeLabel, moveItem, orderHome, createPins, widgetsOf, appsBadge, screenOf, startTab } from './shell_core.js';
 import { createRecognizer, attach } from './gesture.js';
 import { createWallpaper } from './wallpaper.js';
 import { createHomePlus } from './homeplus.js';   // 3.9 polish (A1): an icon's context menu, the install ring, the activity pill
@@ -28,13 +28,14 @@ const BUILTIN = [
   { id: 'assistant', title: 'Juli', icon: '#i-chat', view: 'v-assistant', dock: true, badge: () => {   // the chat's unread count (ui/chat.js unread())
     const ch = S.api && S.api.chat && S.api.chat(); return ch && typeof ch.unread === 'function' ? ch.unread() : 0; } },
   { id: 'create', title: 'Create', icon: '#i-sh-camera', view: 'v-create', dock: true },
-  { id: 'settings', title: 'Settings', icon: '#i-gear', view: 'v-settings', dock: true },
+  { id: 'settings', title: 'Settings', icon: '#i-gear', view: 'v-settings', home: true },   // v4: on the home screen, after Connection (Messages took its place in the dock)
   { id: 'library', title: 'Library', icon: '#i-grid', view: 'v-library', home: true },
   { id: 'apps', title: 'Apps', icon: '#i-apps', view: 'v-apps', home: true },
   { id: 'browser', title: 'Browser', icon: '#i-sh-globe', view: 'v-browser', home: true },
   { id: 'games', title: 'Games', icon: '#i-sh-game', view: 'v-apps', home: true },   // the Apps screen at its Games group
   { id: 'skills', title: 'Skills', icon: '#i-sh-skill', view: 'v-skills', home: true },
   { id: 'connection', title: 'Connection', icon: '#i-sh-link', home: true, grayed: true },   // "coming soon", nothing else
+  { id: 'messages', title: 'Messages', icon: '#i-chat', dock: true, grayed: true },   // v4: grayed: "coming soon", nothing else
 ];
 
 const S = {
@@ -68,7 +69,7 @@ function badgeOf(id) {
 function open(id, { from } = {}) {
   if (!S.api || !id) return;
   if (S.editing) exitEdit();
-  if (id === 'connection') return comingSoon();
+  { const sc = S.screens.get(id); if (sc && sc.grayed) return comingSoon(sc); }   // Connection and Messages, until something registers them for real
   if (id.startsWith('app:')) return openPin(id);
   const target = screenOf(id);
   if (!S.screens.has(id) && !VIEWS_38.includes(target) && !$('v-' + target)) return;
@@ -226,7 +227,7 @@ function wireBackSwipe() {
 // ------------------------------------------------------------------------------------------------ icons
 // the icon set (installed by the build): icons/ui/<id>.svg = the drawn guides (always there), icons/ui/<id>-180.png / -120.png = the
 // rendered finals Josh picked; ids as the set names them (Juli = 'juli')
-const ART_IDS = new Set(['cast', 'juli', 'create', 'music', 'settings', 'library', 'apps', 'browser', 'games', 'skills', 'connection']);
+const ART_IDS = new Set(['cast', 'juli', 'create', 'music', 'settings', 'library', 'apps', 'browser', 'games', 'skills', 'connection', 'messages']);   // v4: messages = a placeholder guide until its art is made
 const artId = (id) => (id === 'assistant' ? 'juli' : id);
 function tileFor(sc) {
   const t = mk('span', 'sh-tile'); t.dataset.id = sc.id;
@@ -249,7 +250,7 @@ function homeItems() {
   const st = appsState(), have = st && st.apps ? new Set(st.apps.map((a) => a.id)) : null;
   const pins = S.pins.list().filter((p) => !have || have.has(p.ref)).map((p) => Object.assign({ pin: true }, p));
   const byId = new Map([...reg, ...pins].map((x) => [x.id, x]));
-  return orderIds(lsGet(KEY.order, null), [...byId.keys()]).map((id) => byId.get(id));
+  return orderHome(lsGet(KEY.order, null), [...byId.keys()]).map((id) => byId.get(id));   // v4: Settings, new on the home screen, lands next to Connection in a saved order
 }
 function appButton(sc, cls = 'sh-app') {
   const b = mk('button', cls); b.type = 'button'; b.dataset.id = sc.id;
@@ -368,12 +369,12 @@ function openPin(id) {
   if (a && A.openApp) return A.openApp(a);
   toast('That app is no longer on this phone'); unpin(id);
 }
-function comingSoon() {
-  if (!S.api || !S.api.sheet) return toast('Coming soon');
-  const { sheet, close } = S.api.sheet('sh-connection', 'Connection');
+function comingSoon(sc = { id: 'connection', title: 'Connection' }) {
+  if (!S.api || !S.api.sheet) return toast(SOON);
+  const { sheet, close } = S.api.sheet('sh-' + sc.id, sc.title);
   sheet.classList.add('sh-soon');
   const ok = mk('button', 'btn', 'OK'); ok.type = 'button'; ok.onclick = close;
-  sheet.append(mk('p', 'callout', 'Coming soon'), ok);
+  sheet.append(mk('p', 'callout', SOON), ok);
 }
 
 // ------------------------------------------------------------------------------------------------ edit mode (a long press on the home screen)
@@ -488,7 +489,7 @@ function init(api) {
   loadArt().then((j) => {
     try { S.wall = createWallpaper({ toast, sheet: S.api.sheet, art: j && j.wallpaper ? j.wallpaper : null }); S.wall.load(); } catch (e) { diag('wallpaper failed', { message: String((e && e.message) || e).slice(0, 200) }); }
   });
-  try { S.store = createStorefront({ apps: () => (S.api.apps ? S.api.apps() : null), go: S.api.go, tab, toast, sheet: S.api.sheet, diag }); } catch (e) { diag('storefront failed', { message: String((e && e.message) || e).slice(0, 200) }); }   // 3.9 polish (A1)
+  try { S.store = createStorefront({ apps: () => (S.api.apps ? S.api.apps() : null), go: S.api.go, tab, toast, sheet: S.api.sheet, diag, gameBusy: () => (S.api.gameBusy ? S.api.gameBusy() : '') }); } catch (e) { diag('storefront failed', { message: String((e && e.message) || e).slice(0, 200) }); }   // 3.9 polish (A1)
   // the 3.8 Apps host fills its data after start: draw the widgets and badges once it has
   let n = 0; const wait = setInterval(() => { const st = appsState(); if ((st && st.db) || ++n > 40) { clearInterval(wait); refresh(); } }, 500);
   try { dispatchEvent(new Event('p0:shell-ready')); } catch (e) { /* */ }   // parts that loaded before the shell register now (Music)

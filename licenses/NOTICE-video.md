@@ -27,6 +27,17 @@ and re-laid-out by the Pocket Video packer (pocketflux.pack/1); they are not the
   replaces latent frame 0 and runs at timestep 0 through per-frame AdaLN), applied to the 4-step model p0pc0rn already ships. "Between
   two pictures" pins the last latent frame the same way (a p0pc0rn extension, not an official SANA mode).
 
+## The clip reader (p0pc0rn 4.0: Restyle a clip)
+
+- LTX-2.3 video VAE ENCODER (the separate 638 MB "clip reader" pack, vae.venc.* files): Copyright Lightricks, LTX-2 Community License
+  Agreement (LICENSE-LTX-2.txt, complete copy). Built from the vae.* tensors of Lightricks/LTX-2.3 (ltx-2.3-22b-dev.safetensors) in the
+  Diffusers layout (diffusion_pytorch_model.safetensors, sha256 425f0dfa227dee5d0ff3d9720563370810409a439c302ca74f0f944057ce55c5).
+  MODIFIED by the p0pc0rn packer (tools/ltx_video_enc_pack.py): the encoder half only, 16-bit floats, re-laid out for the engine's 3-D
+  convolution, conv_in padded, conv_out cut to its mean channels, down_blocks.3 and the mid block rescaled by 1/64; these are not the
+  original files. This derivative is distributed only under the LTX-2 Community License Agreement; its use restrictions (paragraph 4
+  and Attachment A) are part of the app's terms of use, and the app asks you to accept it before the clip reader downloads. Entities
+  with annual revenue of USD 10 million or more need a separate commercial licence from Lightricks.
+
 ## Where the LTX-2.3 weights come from (p0pc0rn v026.4)
 
 Both LTX-2.3 parts (the decoder in the video pack, the encoder in the picture reader pack) are built from Lightricks' own repository,

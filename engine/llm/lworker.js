@@ -8,9 +8,10 @@ import { createGpu } from '../core/gpu.js';
 import { DecodeRunner } from './drunner.js';
 import { Gemma4 } from './gemma4.js';
 import { specAlloc, encodeVerifyLayers } from './spec.js';
-import { setKX } from './lopsx.js';   // 3.8 (bench v041)
+import { setKX, setPicks } from './lopsx.js';   // 3.8 (bench v041); v4: + this device's tune
+import { setAD } from './lopsd.js';   // v4 (autotune Phase 2)
 
-const TAG = 'p0split', CH = 16 * 1024 * 1024, PROTO = 3;   // PROTO = split.js SPLIT_PROTO (the page refuses a worker part of another version)
+const TAG = 'p0split', CH = 16 * 1024 * 1024, PROTO = 5;   // PROTO = split.js SPLIT_PROTO (the page refuses a worker part of another version; v4: 4 = + restorePrefix, dropPrefix, prefill snapKey; 5 = + closing)
 const UPCAP = 64 * 1024 * 1024;   // 3.8 port (bench v047): the weights in flight while loading (core/store.js)
 
 /** a read-only view of a pack in this origin's OPFS (the folder the page's engine downloaded into): the manifest + one GPU buffer per
@@ -75,6 +76,7 @@ const ops = {
     if (W) ops.free({ keep: true });
     const t0 = now();
     setKX(m.kx !== false);   // 3.8 (bench v041): the page's kernels
+    setPicks((m.tune && m.tune.picks) || null); setAD((m.tune && m.tune.ad) || null);   // v4: the page's device tune (before any allocation)
     let g = null, scoped = false;
     try {
       g = await createGpu({ powerPreference: 'high-performance' });
@@ -112,22 +114,38 @@ const ops = {
     // new bind group per dispatch per chunk piled up ~5,000 a long read-in; iOS 27.0.1 gives their memory back only at garbage collection)
     try { await g.device.queue.onSubmittedWorkDone(); } catch (e) { /* */ }
     R.sync();
-    if (m.first) model.allocKV(model.ctxCap, m.chunk);   // kept unless the size changed: a new prompt's positions start again at 0
+    if (m.first && model.allocKV(model.ctxCap, m.chunk) && m.p0 > 0) throw Object.assign(new Error('the worker part made its KV cache again: a read-in cannot start at ' + m.p0), { code: 'SPLIT_WORKER' });   // kept unless the size changed (v4: a read-in from the system-prompt snapshot needs the rows before it)
     const s = model._keptPrefillBufs(m.chunk), t0 = now(), bs0 = R.batchSeconds;   // kept from prompt to prompt (gemma4.js)
     g.device.queue.writeBuffer(s.x, 0, m.x.buffer, m.x.byteOffset, m.M * D * 4);
     g.device.queue.writeBuffer(s.ple, 0, m.ple.buffer, m.ple.byteOffset, m.M * NT * 4);
     R.batchSeconds = (model.opts && model.opts.prefillBatch) || 0.4;
     try { for (let l = model.l0; l < model.l1; l++) await model._layerPrefill(l, m.M, m.p0, s); } finally { R.batchSeconds = bs0; }
+    let snap;   // v4 (the prefix snapshot): this chunk ends the prompt's fixed start: this part keeps its own rows [0, snapAt) while it has the room
+    if (m.snapKey && m.p0 + m.M === m.snapAt) snap = Object.assign(model.snapshotPrefix(m.snapAt, m.snapKey, { capMB: m.capMB || 0, max: m.max || 2 }), { aliveMB: Math.round(g.alive / 1e6) });
     if (W.perPos) {   // 3.8: the rows and the mirror layers' KV rows for these positions, in one read
       const xb = m.M * D * 4; R.copy(s.x, 0, W.out.p, 0, xb); kvRows((a, b, c, d, e) => R.copy(a, b, c, d, e), m.p0, m.M, W.out.p, xb);
       const ab = await g.read(W.out.p, 0, xb + m.M * W.perPos);
       lost(g);
-      return { x: new Float32Array(ab, 0, m.M * D), kv: new Uint8Array(ab, xb, m.M * W.perPos), ms: +(now() - t0).toFixed(2), transfer: [ab] };
+      return { x: new Float32Array(ab, 0, m.M * D), kv: new Uint8Array(ab, xb, m.M * W.perPos), ms: +(now() - t0).toFixed(2), snap, transfer: [ab] };
     }
     const x = new Float32Array(await g.read(s.x, 0, m.M * D * 4));
     lost(g);
-    return { x, ms: +(now() - t0).toFixed(2), transfer: [x.buffer] };
+    return { x, ms: +(now() - t0).toFixed(2), snap, transfer: [x.buffer] };
   },
+  /** v4 (the prefix snapshot): a prefix's rows back into this part's caches, when it has one by this key -> { P } (0 = none); mirrors =
+   *  the page keeps none of its own: the mirror layers' rows of it come back too (their bytes) */
+  async restorePrefix(m) {
+    const P = W.model.restorePrefix(m.key), r = { P, MB: W.model.prefixMB() };
+    if (P && m.mirrors && W.mirror.length) {
+      const x = await W.model.prefixRows(m.key, W.mirror.map((o) => o.l));
+      if (!x) return { P: 0, MB: r.MB };
+      Object.assign(r, { rows: x.rows, ab: x.ab, transfer: [x.ab] });
+    }
+    lost(W.g);
+    return r;
+  },
+  /** v4: one prefix (key) or every one let go -> { MB } (what this part keeps now) */
+  async dropPrefix(m) { W.model.dropPrefix(m.key == null ? undefined : m.key); return { MB: W.model.prefixMB() }; },
   /** one decode token at `pos`: x [D] + ple [NL*256] -> x after layers [l0, l1) (one command buffer, cached bind groups) */
   async decode(m) {
     const { g, model, s, dr } = W, D = model.D, NT = model.NL * 256, core = g.runner, t0 = now();
@@ -166,6 +184,22 @@ const ops = {
     return { x, kv: W.perPos ? new Uint8Array(o.buffer, m.M * D * 4, m.M * W.perPos) : null, encMs: +enc.toFixed(2), ms: +(now() - t0).toFixed(2), transfer: [o.buffer] };
   },
   async stats() { const g = W && W.g; return g ? { aliveMB: Math.round(g.alive / 1e6), peakMB: Math.round(g.peak / 1e6), lost: !!g.lost, tokens: W.n } : { none: true }; },
+  /** v4 (Josh's phone, Nov 2: the Bigger brain's helper did not start after Juli's): this part's end, confirmed: its GPU buffers freed,
+   *  its device destroyed (until device.lost settles, at most 1 s), a short settle, then the answer; it closes itself just after. The
+   *  page's closeAsync() resolves on this answer (split.js) and the next helper starts only after it */
+  async closing(m = {}) {
+    const t0 = now(); let lostWhy = null;
+    if (W) {
+      const g = W.g;
+      try { W.model.releaseResident(); W.model.freeKV(); } catch (e) { /* */ }
+      try { g.freeAll(); g.device.destroy(); } catch (e) { /* */ }
+      try { lostWhy = await Promise.race([g.device.lost.then((i) => (i && i.reason) || 'lost'), new Promise((r) => setTimeout(() => r('no answer in 1 s'), 1000))]); } catch (e) { lostWhy = 'error'; }
+      W = null;
+    }
+    await new Promise((r) => setTimeout(r, Math.min(1000, Math.max(0, m.settleMs != null ? +m.settleMs : 150))));
+    setTimeout(() => { try { self.close(); } catch (e) { /* */ } }, 20);
+    return { closed: true, device: lostWhy || 'none', ms: Math.round(now() - t0) };
+  },
   /** frees everything; the page's close() ends the worker after it (keep = a new init follows) */
   free(m = {}) {
     if (W) {
@@ -183,7 +217,7 @@ self.onconnect = (e) => {
   port.onmessage = async (ev) => {
     const d = ev.data || {}; if (d[TAG] !== 1 || !ops[d.op]) return;
     try {
-      if (d.op !== 'init' && d.op !== 'free' && d.op !== 'stats' && !W) throw new Error('the worker part is not loaded');
+      if (d.op !== 'init' && d.op !== 'free' && d.op !== 'stats' && d.op !== 'closing' && !W) throw new Error('the worker part is not loaded');
       const r = await ops[d.op](d) || {}, tr = r.transfer || []; delete r.transfer;
       port.postMessage({ [TAG]: 1, id: d.id, ok: true, r }, tr);
     } catch (err) { port.postMessage({ [TAG]: 1, id: d.id, ok: false, error: String((err && err.message) || err).slice(0, 400), code: (err && err.code) || (W && W.g && W.g.lost ? 'GPU_LOST' : null) }); }

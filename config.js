@@ -13,7 +13,14 @@
     'flux2-klein-4b': '37790478492991e235008d292fa14d686b0625bb', 'flux2-klein-9b': 'c22668f0345d0087c9d7b0ac4b6817154bb257aa', 'sanavideo2-5b': '4415a9a340a3770ce3d779acd616c4269dfb5f6c', 'ltx23-still-enc': 'f6abf6baf632af19a6a2d5f9e05428207ca35fa3', 'gemma4-e2b': '141f0e8665691d74f824c4469725cf19a2ded9e8',
     'acestep15-turbo': 'd9cbd6ddb0bcd8ca2edc950d523e0c738136efe5', 'qwen3-tts-0.6b': '26a6f7acbd6f80f206756c2a72ab6f99c1df930f', 'musetalk-1.5': '526a7ece698aa7512fe285a252ff6137f22b8c04', 'starter-kb': '8c86bfa537ce8f96fabb849b276c968d00ca490c',
     // 3.8: Juli's faster replies, the Bigger brain and its faster replies
-    'gemma4-e2b-drafter': 'a75bfc34f451b907ae89d105e6ab8053b8dbbb62', 'bolt-e4b': '55c29c2e59c5a5b9dbf76b458373e448ed7563a5', 'bolt-e4b-drafter': 'e34437d0aa7c1f922a64bc3057d791b240fea45e'
+    'gemma4-e2b-drafter': 'a75bfc34f451b907ae89d105e6ab8053b8dbbb62', 'bolt-e4b': '55c29c2e59c5a5b9dbf76b458373e448ed7563a5', 'bolt-e4b-drafter': 'e34437d0aa7c1f922a64bc3057d791b240fea45e',
+    // 4.0: Juli's own voice, the Nowcast, the video LoRA, the looks LoRA, the clip reader and voice input
+    'p0voice-juli': '368aee8cc52380a878532436ef5db40a69c4e19c',
+    'dgmr-nowcast': '30f81dfe8faecd786b49bb3517d8baaa780f4730',
+    'sanavideo2-5b-lora': 'a9d7b77470c31ece27978b3e4ff512d2a00f4815',
+    'sanavideo2-5b-style-lora': '256fc6c62eff2e64eb96b1481cb0ffb316b30fcc',
+    'ltx23-video-enc': 'bf9e3ab5f568c2ce3fef603ecfe5ab7ff4f50ae9',
+    'nemotron35-asr-0.6b': '85748c8a44ad4f8e4214cd463459e86c6cff249d'
   };
   var hf = function (key, repo) { return HF + repo + '/resolve/' + REV[key] + '/'; };
   var PACKS = {
@@ -30,7 +37,13 @@
     'starter-kb':      [hf('starter-kb', 'datasets/JoshHughes/p0pc0rn-starter-kb'),            'b654e4ad03d69a87c685851d29d02a449c19b285d390f1a52e419f44dc0a6c3b'],   // the starter knowledge pack (3,214 Wikipedia articles), 2.6 MB
     'gemma4-e2b-drafter': [hf('gemma4-e2b-drafter', 'JoshHughes/p0pc0rn-assistant-drafter-gemma4-e2b'), '3834b7b78894228705895dee051605c1b29237a4e36a7972420245ab01652798'],   // 3.8: faster answers (Google's Gemma 4 E2B MTP drafter, q8 layers + q4 head), 54 MB
     'bolt-e4b':        [hf('bolt-e4b', 'JoshHughes/p0pc0rn-assistant-nemotron-bolt-e4b-q4'),        'af9919d7bb4a5817820ce8acb1616694c43e572b862bebac30ccc7b284cfc7f1'],   // 3.8 (v040): the bigger brain (NVIDIA Nemotron 3.5 Bolt E4B, 4-bit), 4.7 GB
-    'bolt-e4b-drafter': [hf('bolt-e4b-drafter', 'JoshHughes/p0pc0rn-assistant-drafter-gemma4-e4b'), '43526ef2f5df776d7ad37a8dcdec6e1ab51a3102635ea10ce2b70dcbeef2a4ff']    // 3.8 (v040): its faster replies (Google's Gemma 4 E4B MTP drafter, q8 layers + q4 head), 55 MB
+    'bolt-e4b-drafter': [hf('bolt-e4b-drafter', 'JoshHughes/p0pc0rn-assistant-drafter-gemma4-e4b'), '43526ef2f5df776d7ad37a8dcdec6e1ab51a3102635ea10ce2b70dcbeef2a4ff'],   // 3.8 (v040): its faster replies (Google's Gemma 4 E4B MTP drafter, q8 layers + q4 head), 55 MB
+    'p0voice-juli': [hf('p0voice-juli', 'JoshHughes/p0pc0rn-voice-juli-p0voice'), 'f3b9afbe2579642f77f53a228c447db17918abc97abb5ffb417dde77d474816b'],   // v4: Juli's own voice in voice mode (p0voice v3 by the p0pc0rn project, int8; without it voice mode speaks with Flite), 25 MB
+    'dgmr-nowcast': [hf('dgmr-nowcast', 'JoshHughes/p0pc0rn-nowcast-dgmr'), '6f8a385e6bfaf703762bac06322819542f2f75b7d56e9724254884ecf2c3719e', { 'f16/': '4df6bbaebf3ca7cd41edf33c64d3c2f7f43661503f4cd40cc18b72a8b144f64d' }],   // v4: the Nowcast, Experimental (DeepMind DGMR, CC BY 4.0, modified): 8-bit 71 MB at the top, float 136 MB in f16/
+    'sanavideo2-5b-lora': [hf('sanavideo2-5b-lora', 'JoshHughes/p0pc0rn-video-lora-firstframe-f3'), 'eba7f272bd3e125f1e996ad6958b0c4e09a9a8612a2844b50d04427fadb8b11a'],   // v4: the video LoRA (first frame + first/last frame, f3 step 1000; LoRA by Josh Hughes, Apache-2.0), 64 MB
+    'sanavideo2-5b-style-lora': [hf('sanavideo2-5b-style-lora', 'JoshHughes/p0pc0rn-video-lora-looks-c20'), '341db0a1934ce903291616bd3b6b9472883b76335722adb2d325a5b7c7bf8dfd'],   // v4: the looks LoRA (Restyle a clip, c20 step 1500; LoRA by Josh Hughes, Apache-2.0), 64 MB
+    'ltx23-video-enc': [hf('ltx23-video-enc', 'JoshHughes/p0pc0rn-clip-reader-f16'), 'd3307435de6636f93656572c52376a275f68365e9d46c59bcd7857e90cc44bfb'],   // v4: the clip reader (LTX-2.3 video encoder, f16; LTX-2 Community License), 638 MB
+    'nemotron35-asr-0.6b': [hf('nemotron35-asr-0.6b', 'JoshHughes/p0pc0rn-voicein-nemotron35-asr-06b'), 'f43ffaf67c9478ab296809f14bbd5679fef720b797c19fa756356b1c696d4d0a']   // v4: voice input (NVIDIA Nemotron 3.5 ASR Streaming 0.6B, int8; OpenMDW-1.1), 640 MB
   };
   var packs = {}, pins = {};
   for (var k in PACKS) {

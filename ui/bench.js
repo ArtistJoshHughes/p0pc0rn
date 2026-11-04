@@ -17,6 +17,10 @@
 // on every page it takes; a page the PHONE ended fails its check and the run goes on (bench_core.js afterReload); the card has one line
 // a check, says when a second process stopped (Two processes · stayed up for the whole run) and marks the speed lines measured in one
 // process after it; the run's own jobs a stopped run left in the queue go before the data check.
+// v4: Video (its own button; ui/bench_video.js plans it and writes its lines): picture to video and first + last frame with the video LoRA,
+// and picture to video without it, each one clip through the queue with its time a step, decode, total, peak memory and whether the LoRA
+// was applied. Quick and Full never run these (their numbers compare run to run as before).
+import { VTESTS, videoPlan, videoCall, videoNumbers, videoLines, VIDEO_PICS, isVideoTest, beatWords } from './bench_video.js';
 import { FEATURES, featurePlan, runOrder, etaOf, isFeature, featureOf, featureLines, derive, snapDiff, fxAdd, fxDrop, summary, fail, notRun, nameOf,
   cardOrder, splitScan, afterReload } from './bench_core.js';
 
@@ -33,6 +37,7 @@ export const TESTS = {
   clip: { name: 'Clip · 2 s, 832 × 480', model: 'video', eta: 300 },
   song: { name: 'Song · 30 s instrumental', model: 'music', eta: 120 },
 };
+for (const [k, T] of Object.entries(VTESTS)) TESTS[k] = { name: T.name, model: T.model || 'video', eta: T.eta, video: true };   // v4: the Video benchmark's (never in Quick or Full)
 const PIC = { media: 'image', kind: 't2i', width: 768, height: 768, steps: 4 };
 const CLIP = { media: 'video', kind: 't2v', width: 832, height: 480, frames: 33 };
 
@@ -65,6 +70,39 @@ function uaWhy(ua = (typeof navigator !== 'undefined' && navigator.userAgent) ||
   if (!ios && v && +v[1] < 27 && /Safari\//.test(ua) && !/Chrome\/|Chromium|Edg\//.test(ua)) return 'needs Safari 27';
   return 'not available in this browser';   // the app's E4B_WHY says more when it knows (e.g. no second process here)
 }
+// v4 (Josh's iPhone, Nov 2: the Video run's page ended in Klein's 2nd step and nothing said how): a Video step's engine call is watched.
+// Every progress event (the engines send one a block or a part) moves its heartbeat, kept in localStorage at most every 3 s and at each
+// new message: if the phone ends the page, the next page's card says how far the step got, its memory and how long it was quiet
+// (bench_video.js beatWords). A step silent for STALL_S s (or 4x its longest gap so far, if longer) is stopped: the call is aborted and
+// the step fails as "stalled", so a GPU that stops answering is recorded and the run goes on instead of hanging.
+export const BEAT_KEY = 'pf.app.benchBeat';
+export const STALL_S = 240;
+const beatSet = (b) => { try { if (b) localStorage.setItem(BEAT_KEY, JSON.stringify(b)); else localStorage.removeItem(BEAT_KEY); } catch (e) { /* private mode: no heartbeat */ } };
+export const beatGet = () => { try { return JSON.parse(localStorage.getItem(BEAT_KEY) || 'null'); } catch (e) { return null; } };
+/** call(o) -> the engine's promise for o = {onProgress, signal}; watched by the step's watchdog. opts.stallS / opts.tickMs: tests */
+export async function watched(test, call, ctx, opts = {}) {
+  const stallS = opts.stallS || STALL_S, t0 = Date.now(), ac = new AbortController();
+  if (ctx.signal) { if (ctx.signal.aborted) ac.abort(); else ctx.signal.addEventListener('abort', () => ac.abort(), { once: true }); }
+  let last = t0, gap = 0, saved = 0, msg = null, iv = 0;
+  const beat = (p) => beatSet({ test, phase: p.phase || null, message: p.message || null, step: p.step, steps: p.steps, frac: p.frac, aliveMB: p.aliveMB, peakMB: p.peakMB, startedAt: t0, at: Date.now() });
+  beat({ phase: 'load', message: 'Getting ready' });
+  const onProgress = (p) => {
+    const now = Date.now(); gap = Math.max(gap, now - last); last = now;
+    if (p && (now - saved > 3000 || p.message !== msg)) { saved = now; msg = p.message; beat(p); }
+    if (ctx.progress) ctx.progress(p);
+  };
+  const dog = new Promise((_, rej) => {
+    iv = setInterval(() => {
+      const quiet = (Date.now() - last) / 1000;
+      if (quiet <= Math.max(stallS, (4 * gap) / 1000)) return;
+      clearInterval(iv); ac.abort();
+      rej(Object.assign(new Error(`stalled: nothing from the engine for ${Math.round(quiet)} s at “${msg || 'the start'}” (the step was stopped)`), { code: 'STALLED' }));
+    }, opts.tickMs || 5000);
+  });
+  try { return await Promise.race([call({ onProgress, signal: ac.signal }), dog]); }
+  finally { clearInterval(iv); beatSet(null); }   // settled (done, failed or stalled): only a page that ends keeps its heartbeat
+}
+
 export function benchRunner({ MODELS, RUN }) {
   return {
     model: (j) => { const T = TESTS[j.params.test], M = T && MODELS[T.model]; return (M || MODELS.brain).id; }, needsConsent: false,   // 3.8 v040: an unknown test fails in run()
@@ -74,6 +112,24 @@ export function benchRunner({ MODELS, RUN }) {
         return llmTest(ctx, t, t0);   // 3.8 v040: one shape for every language-model test (LLM, above)
       }
       if (LLM[t]) return llmTest(ctx, t, t0);   // 3.8 v040: Juli's long answer and the Bigger brain's tests
+      if (isVideoTest(t)) {   // v4: Video: the bundled pictures (and clip), one clip, numbers only (the clip is thrown away)
+        const T = VTESTS[t], pic = async (u) => { const r = await fetch(u); if (!r.ok) throw new Error('the test file is missing (' + u + ')'); return r.blob(); };
+        let clip = null, styled = null;
+        if (T.mode === 'v2v') {   // Phase 3: frame 0 as the step before restyled it (the queue's blob), the bundled clip read frame by frame
+          styled = ctx.params.firstKey ? await ctx.getBlob(ctx.params.firstKey) : null;
+          if (!styled) throw new Error('the restyled first frame is missing');
+          const { clipFrames } = await import('./clipframes.js'); clip = await clipFrames(await pic(VIDEO_PICS.clip)); clip.hash = 'bench:' + VIDEO_PICS.clip;
+        }
+        try {
+          const c = videoCall(t, { first: await pic(VIDEO_PICS.first), last: T.mode === 'flf' ? await pic(VIDEO_PICS.last) : null, styled },
+            { pic: MODELS.lora && MODELS.lora.id, style: MODELS.lora2 && MODELS.lora2.id }, clip);
+          const r = await watched(t, (o) => ctx.engine[c.method](Object.assign(c.opts, o)), ctx);   // v4: the step's watchdog + heartbeat
+          try { if (r && r.url) URL.revokeObjectURL(r.url); } catch (e) { /* */ }
+          const n = videoNumbers(t, r, (performance.now() - t0) / 1000);
+          if (T.mode === 'edit' && n.ok) n.styled = await ctx.putBlob(r.blob, { role: 'bench' });   // for the next step (the queue drops it with that job)
+          return n;
+        } finally { if (clip) clip.close(); }
+      }
       if (!['picture', 'clip', 'song'].includes(t)) throw new Error('unknown benchmark test ' + t);   // never a render for a test this version does not have
       const seed = 1234567;
       const r = t === 'picture' ? await RUN.picture.run(sub({ prompt: 'a red bicycle leaning on a white wall by the sea, morning light, photo', width: PIC.width, height: PIC.height, steps: PIC.steps, seed }))
@@ -150,7 +206,7 @@ export function createBench(api) {
     const why = `the page reloaded during this ${k && isFeature(k) ? 'check' : 'test'} (the phone may have run short of memory${endedAt(po, res)})`
       + (full && k ? (plan.stop ? (plan.why ? `; the run stopped here: ${plan.why}` : '') : '; the run went on') : '');
     if (k && isFeature(k)) { res.features = res.features || {}; res.features[featureOf(k)] = fail(why); }   // 3.9
-    else if (k) res.tests[k] = { error: why.slice(0, 200) };
+    else if (k) { const bw = isVideoTest(k) && beatGet(); res.tests[k] = { error: (why + (bw && bw.test === k ? '; ' + beatWords(bw) : '')).slice(0, 360) }; beatSet(null); }   // v4: + the step's heartbeat
     if (k && full) res.reloads = (res.reloads || []).concat({ i: cut.i, k, t: Date.now() });
     if (!plan.stop) {   // 3.9: still at this step until the next begins (a page that ends again first counts here: the same step twice)
       const next = k === 'f:final' ? cut.i : cut.i + 1;   // the data check runs again
@@ -210,6 +266,7 @@ export function createBench(api) {
   function plan(full) {
     const out = [], skipped = [], why = {}, mskip = [];
     for (const [k, T] of Object.entries(TESTS)) {
+      if (T.video) continue;   // v4: the Video benchmark's own
       if (!full && !T.quick) continue;
       if (T.e4b) {   // 3.8 v040: the Bigger brain's tests, or ONE line saying why they were not run
         const w = e4bWhyNot();
@@ -249,8 +306,26 @@ export function createBench(api) {
     const no = mk('button', 'btn', 'Not now'); no.type = 'button'; no.onclick = close;
     sheet.append(go, no);
   }
-  async function run(tests, full, from, why, env0, notHere) {   // from = a run a planned fresh page interrupted: carry on with its job, then the rest
-    const Q = api.Q(), res = from ? from.res : { when: new Date().toISOString(), full, app: api.version, device: api.device(), tests: {}, skip: why || {} };   // 3.8 v040: + why a group was not run
+  /** v4: Video: Quick (picture to video and first + last frame with the LoRA, picture to video without it); Full adds style video to video
+   *  once the build has it (its line says why not until then) */
+  function startVideo(full) {
+    if (B.running) return api.toast('The benchmark is already running');
+    if (!api.consented()) return api.toast('Agree to the p0pc0rn terms first (the short lesson)');
+    const env = api.videoEnv ? api.videoEnv() : {}, p = videoPlan(full, env);
+    if (!p.tests.length) return api.toast(p.skipped.length ? 'Video benchmark: ' + p.skipped[0].why : 'Download the video model first (Settings › Models)');
+    const { sheet, close } = api.sheet('bench-sheet', full ? 'Video benchmark · Full' : 'Video benchmark');
+    sheet.append(mk('p', 'footnote dim', `About ${Math.max(1, Math.round(p.eta / 60))} min: short clips (2 s, 832 × 480) of a test picture and a test clip. Keep p0pc0rn open and the phone plugged in; the screen stays on. Results stay on this phone.`));
+    const ul = mk('ul', 'perm-list');
+    for (const k of p.tests) { const li = mk('li'); li.append(mk('span', 'callout', TESTS[k].name), mk('span', 'footnote dim', fmt(TESTS[k].eta))); ul.append(li); }
+    for (const s of p.skipped) if (full || !VTESTS[s.k].full) ul.append(mk('li', 'footnote dim', `Skipped · ${TESTS[s.k].name}: ${s.why}`));
+    sheet.append(ul);
+    const go = mk('button', 'btn cta', 'Start'); go.type = 'button'; go.id = 'bench-go';
+    go.onclick = () => { api.wake.on(); close(); run(p.tests, false, null, {}, null, null, { video: true, full, vskip: p.skipped }); };
+    const no = mk('button', 'btn', 'Not now'); no.type = 'button'; no.onclick = close;
+    sheet.append(go, no);
+  }
+  async function run(tests, full, from, why, env0, notHere, vid) {   // from = a run a planned fresh page interrupted: carry on with its job, then the rest
+    const Q = api.Q(), res = from ? from.res : Object.assign({ when: new Date().toISOString(), full, app: api.version, device: api.device(), tests: {}, skip: why || {} }, vid || {});   // 3.8 v040: + why a group was not run; v4: + video
     if (!from) {
       const lastEnd = Math.max(0, ...Q.list().filter((j) => j.kind !== 'bench' && j.endedAt).map((j) => j.endedAt));   // a job that just ended leaves the phone warm
       res.workedAgoS = lastEnd ? Math.round((Date.now() - lastEnd) / 1000) : null;
@@ -283,7 +358,8 @@ export function createBench(api) {
         if (off) { res.tests[k] = { error: 'not run: ' + off }; continue; }   // 3.8 v040: once is enough (a big load that fails can end the page)
         if (TESTS[k].idle) { res.tests[k] = await appsCheck(Q); continue; }   // the Apps check: between jobs, when no model is in memory
         let id = here ? from.job : null;   // the job a fresh page carried over
-        if (!id) id = (await Q.add('bench', { test: k }, { title: TESTS[k].name })).id;
+        if (k === 'vv2vl' && !id && !(res.tests.vv2vedit && res.tests.vv2vedit.styled)) { res.tests[k] = { error: 'not run: frame 0 was not restyled' }; continue; }   // v4 Phase 3
+        if (!id) id = (await Q.add('bench', Object.assign({ test: k }, k === 'vv2vl' ? { firstKey: res.tests.vv2vedit.styled } : {}), { title: TESTS[k].name })).id;
         api.ls.set('pf.app.benchRun', { res, tests, i, full, at: Date.now(), job: id });
         res.tests[k] = await wait(Q, id);
         if (k === 'picture') api.learn(PIC, res.tests[k].seconds);
@@ -358,6 +434,7 @@ export function createBench(api) {
     });
   }
   function text(r) {
+    if (r.video) return [`p0pc0rn benchmark · Video · ${r.full ? 'Full' : 'Quick'} · ${r.app}`, r.device, new Date(r.when).toLocaleString(), ...videoLines(r)].join('\n');   // v4
     const L = [`p0pc0rn benchmark · ${r.full ? 'Full' : 'Quick'} · ${r.app}`, r.device, new Date(r.when).toLocaleString()];
     if (r.heat) L.push(r.heat.warm ? `Heat: phone warm${r.workedAgoS != null && r.workedAgoS < 180 ? ' (it was working ' + Math.max(1, Math.round(r.workedAgoS / 60)) + ' min ago)' : ''}${r.heat.canary && r.heat.best ? ` · first answer ${r.heat.canary} tokens/s, this phone's best ${r.heat.best}` : ''}: numbers may read low`
       : `Heat: cool${r.heat.canary ? ` · first answer ${r.heat.canary} tokens/s` + (r.heat.newBest ? ` (this phone's best so far; before ${r.heat.best})` : r.heat.best ? `, this phone's best ${r.heat.best}` : ' (the first run on this phone sets its baseline)') : ''}`);
@@ -401,6 +478,7 @@ export function createBench(api) {
   function render() {
     const box = $('s-bench-out'); if (!box) return;
     $('s-bench-quick').disabled = $('s-bench-full').disabled = !!B.running;
+    if ($('s-bench-video')) $('s-bench-video').disabled = !!B.running;   // v4
     box.replaceChildren();
     if (B.running) { const k = B.running.tests[B.running.i]; box.append(mk('p', 'callout', `Running ${B.running.i + 1} of ${B.running.tests.length}: ${nameOfStep(k)} (${fmt(etaOfStep(k))})`)); box.hidden = false; return; }
     if (!B.results) { box.hidden = true; return; }
@@ -412,8 +490,9 @@ export function createBench(api) {
   }
   $('s-bench-quick').onclick = () => start(false);
   $('s-bench-full').onclick = () => start(true);
+  if ($('s-bench-video')) $('s-bench-video').onclick = () => startVideo(false);   // v4: Settings › Benchmark › Video
   const mc = $('s-bench-music');   // 3.9: Music's lock-screen check (ui/music.js), the part of Music a phone must show with its screen locked
   if (mc) mc.onclick = () => { const M = api.MUSIC ? api.MUSIC() : null; if (!M || !M.check) return api.toast('Music is not in this version'); if (B.running) return api.toast('The benchmark is running'); try { if (globalThis.SHELL) SHELL.open('music'); } catch (e) { /* */ } M.check(); };
   render();
-  return { render, text, plan, get state() { return B; } };
+  return { render, text, plan, startVideo, get state() { return B; } };
 }

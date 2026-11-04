@@ -31,6 +31,7 @@ import { GpuError } from '../core/gpu.js';
 import { specLoop, sampReady } from './spec.js';
 import { KS as SAMP_KMAX } from './lops_samp.js';
 import { loadDrafter, drafterFromStore } from './drafter.js';
+import { adMinCK } from './lopsd.js';   // v4 (autotune): the decode attention's smallest key chunk (the partials scratch)
 
 const f32 = (b) => new Float32Array(b);
 const ffree = (g, ...bs) => { g.runner.flush(); for (const b of bs) if (b) g.free(b); };   // never destroy a buffer an unsubmitted dispatch uses
@@ -99,9 +100,10 @@ export class Gemma4 {
   //      3.8: kept from prompt to prompt while the size is the same; the rings are sized for the largest chunk (this.opts.chunk, 256),
   //      so every prompt length shares one shape.  The attention reads keys by position (below the query's), so rows an earlier
   //      answer left are never read.
+  //      -> true when the caches were made (again): nothing an earlier prompt left is in them (v4: a read-in that starts past 0 refuses)
   allocKV(cap, chunk = 256) {
     const ch = Math.max(chunk, (this.opts && this.opts.chunk) || 256);
-    if (this.kv && this.ctxCap === cap && this._kvChunk === ch) return;
+    if (this.kv && this.ctxCap === cap && this._kvChunk === ch) return false;
     this.freeKV();
     const kv = []; this.ctxCap = cap; this._kvChunk = ch;
     for (let l = 0; l < this.NL; l++) {
@@ -110,12 +112,92 @@ export class Gemma4 {
       kv.push({ full, hd, len, ring, kc: this.g.buffer(len * this.NKV * hd * 2, `kc${l}`), vc: this.g.buffer(len * this.NKV * hd * 2, `vc${l}`) });   // [kvh][len][hd] f16
     }
     this.kv = kv;
+    return true;
   }
-  freeKV() { this.g.runner.flush(); if (this.kv) for (const c of this.kv) if (c) { this.g.free(c.kc); this.g.free(c.vc); } this.kv = null; }
+  freeKV() { this.dropPrefix(); this.g.runner.flush(); if (this.kv) for (const c of this.kv) if (c) { this.g.free(c.kc); this.g.free(c.vc); } this.kv = null; }
+  // v4 (the prefix snapshot; voice mode first): the K and V rows of a prompt's fixed start, positions [0, P), in every cache this part
+  // holds (its own layers' and its mirrors: in a split each process keeps its own), copied aside after a read-in that reached P (prefill
+  // snapAt + snapKey) and put back before a read-in that starts at P (prefill from): an answer whose prompt starts the same way reads in
+  // only what follows.  A ring keeps its slots [0, min(P, ring)) (the slots of the last `ring` positions: every row a later read can
+  // touch), a full layer its rows [0, P), every KV head.  Up to `max` prefixes per part (the least recently used goes first), each by its
+  // key (llm.js prefixKey: the prefix tokens' count and hash); a cache made again or freed drops them all.
+  prefixBytes(P) { let b = 0; for (const c of this.kv || []) if (c) b += 2 * this.NKV * (c.ring ? Math.min(P, c.ring) : P) * c.hd * 2; return b; }
+  /** the MB this part's prefixes take */
+  prefixMB() { let b = 0; if (this._pfx) for (const s of this._pfx.values()) b += s.bytes; return +(b / 1e6).toFixed(1); }
+  hasPrefix(key) { return !!(this._pfx && this._pfx.get(key)); }
+  /** the first position a read-in may start from on a start kept at P (a partial hit: llm.js). A ring keeps only the last `ring`
+   *  positions: the first query read in must still find its whole window there (+ 64 to spare); a full layer keeps them all */
+  prefixReuseFrom(P) {
+    const ch = this._kvChunk || Math.max(256, (this.opts && this.opts.chunk) || 256), ring = (this.ctxCap || 0) > this.win + ch ? this.win + ch : 0;
+    return ring && P > ring ? P - (ring - this.win) + 64 : 0;
+  }
+  /** copies the rows aside (recorded on the runner after the read-in's work). capMB = this part's GPU memory with them at most (0 = no
+   *  limit): the least recently used prefixes go first, then it keeps none -> { bytes, MB (all this part's prefixes) } or { bytes: 0, why } */
+  snapshotPrefix(P, key, { capMB = 0, max = 2 } = {}) {
+    if (!this._pfx) this._pfx = new Map();
+    this.dropPrefix(key);
+    if (!this.kv || !(P > 0)) return { bytes: 0, why: 'no KV cache' };
+    const g = this.g, R = g.runner, NKV = this.NKV, need = this.prefixBytes(P), over = () => capMB > 0 && g.alive + need > capMB * 1e6;
+    while (this._pfx.size && (this._pfx.size >= Math.max(1, max) || over())) this.dropPrefix(this._pfx.keys().next().value);
+    if (over()) return { bytes: 0, why: `no room (${Math.round(g.alive / 1e6)} + ${Math.round(need / 1e6)} MB > ${capMB} MB)` };
+    const bufs = [];
+    for (let l = 0; l < this.kv.length; l++) {
+      const c = this.kv[l]; if (!c) continue;
+      const n = c.ring ? Math.min(P, c.ring) : P, rb = c.hd * 2, b = { l, n, k: g.buffer(NKV * n * rb, `pfx.k${l}`), v: g.buffer(NKV * n * rb, `pfx.v${l}`) };
+      for (let h = 0; h < NKV; h++) { R.copy(c.kc, h * c.len * rb, b.k, h * n * rb, n * rb); R.copy(c.vc, h * c.len * rb, b.v, h * n * rb, n * rb); }
+      bufs.push(b);
+    }
+    R.flush();
+    this._pfx.set(key, { P, key, bufs, bytes: need });
+    return { bytes: need, MB: this.prefixMB() };
+  }
+  /** puts a prefix's rows back for a read-in from P (the caches are made first if their size changed: that drops every prefix) -> P, or 0
+   *  (none for this key) */
+  restorePrefix(key) {
+    if (!this.ctxCap) return 0;
+    this.allocKV(this.ctxCap, 0);   // the read-in's own allocKV then keeps them (same size)
+    const s = this._pfx && this._pfx.get(key);
+    if (!s || !this.kv) return 0;
+    this._pfx.delete(key); this._pfx.set(key, s);   // the most recently used
+    const R = this.g.runner, NKV = this.NKV;
+    for (const b of s.bufs) {
+      const c = this.kv[b.l], rb = c.hd * 2;
+      for (let h = 0; h < NKV; h++) { R.copy(b.k, h * b.n * rb, c.kc, h * c.len * rb, b.n * rb); R.copy(b.v, h * b.n * rb, c.vc, h * c.len * rb, b.n * rb); }
+    }
+    R.flush();   // submitted before the read-in (a worker part's read-in restarts the runner's uniform ring)
+    return s.P;
+  }
+  /** one prefix (key), or every one: its buffers freed */
+  dropPrefix(key) {
+    if (!this._pfx || !this._pfx.size) return;
+    let flushed = false;
+    for (const k of key == null ? [...this._pfx.keys()] : [key]) {
+      const s = this._pfx.get(k); if (!s) continue;
+      if (!flushed) { this.g.runner.flush(); flushed = true; }
+      this._pfx.delete(k); for (const b of s.bufs) { this.g.free(b.k); this.g.free(b.v); }
+    }
+  }
+  /** a prefix's rows of these layers as bytes, in writePrefixRows' order (a worker part sends its mirror layers' rows to a page that
+   *  keeps none of its own) -> { rows: [{ l, n, ring, hd }], ab } or null */
+  async prefixRows(key, layers) {
+    const s = this._pfx && this._pfx.get(key); if (!s) return null;
+    const parts = layers.map((l) => s.bufs.find((b) => b.l === l)); if (parts.some((b) => !b)) return null;
+    const size = (b) => this.NKV * b.n * this.kv[b.l].hd * 2, out = new Uint8Array(parts.reduce((a, b) => a + 2 * size(b), 0)); let o = 0;
+    for (const b of parts) for (const buf of [b.k, b.v]) { out.set(new Uint8Array(await this.g.read(buf, 0, size(b))), o); o += size(b); }
+    return { rows: parts.map((b) => ({ l: b.l, n: b.n, ring: this.kv[b.l].ring, hd: this.kv[b.l].hd })), ab: out.buffer };
+  }
+  /** writes such rows into this part's caches (the page's mirrors) -> false (nothing written) when a cache has another shape */
+  writePrefixRows(rows, ab) {
+    for (const r of rows) { const c = this.kv && this.kv[r.l]; if (!c || c.ring !== r.ring || c.hd !== r.hd || c.len < r.n) return false; }
+    const q = this.g.device.queue, NKV = this.NKV; let o = 0;
+    this.g.runner.flush();
+    for (const r of rows) { const c = this.kv[r.l], rb = c.hd * 2; for (const buf of [c.kc, c.vc]) { for (let h = 0; h < NKV; h++) q.writeBuffer(buf, h * c.len * rb, ab, o + h * r.n * rb, r.n * rb); o += NKV * r.n * rb; } }
+    return true;
+  }
   _cache(l) { return this.kv[this.kvSrc[l]]; }
   /** 3.8: the KV sources this part's layers read but another part runs (NVIDIA Bolt E4B split at 24 since 3.9: layers 22 and 23): their keys and values
    *  come back with each hop into these MIRROR caches (engine/llm/split.js); none in one process or in a worker part */
-  mirrorKV() { const s = new Set(); for (let l = this.l0; l < this.l1; l++) if (this.kvSrc[l] < this.l0) s.add(this.kvSrc[l]); return [...s].sort((a, b) => a - b); }
+  mirrorKV() { const s = new Set(); for (let l = this.l0; l < this.l1; l++) if (this.kvSrc[l] < this.l0) s.add(this.kvSrc[l]); for (const l of this.mirrorPlus || []) if (l < this.l0 && this.kvSrc[l] === l) s.add(l); return [...s].sort((a, b) => a - b); }   // v4: + mirrorPlus (a split whose page runs no layer that reads them: the drafter's KV sources)
   _row(c, pos) { return c.ring ? pos % c.ring : pos; }
 
   // ---------------------------------------------------------------- prefill: chunks of C tokens (positions p0 .. p0+C-1), each chunk
@@ -163,7 +245,8 @@ export class Gemma4 {
     return (this._pb = s);
   }
   /** v045's loop: one chunk in flight, the PLE / ids / gate buffers made per chunk or layer (the attention follows this.opts) */
-  async _prefillSeq(ids, { inputsEmbeds = null, imageSpans = [], check, onLayer, chunk } = {}) {
+  async _prefillSeq(ids, { inputsEmbeds = null, imageSpans = [], check, onLayer, chunk, from = 0, snapKey = null } = {}) {
+    if (from || snapKey) throw new Error('the prefix snapshot needs the load-ahead read-in');   // v4 (llm.js asks only with it)
     const g = this.g, M = ids.length, D = this.D, NL = this.NL, C = Math.min(M, chunk || this.opts?.chunk || 256);
     this._ensureRope(this.ctxCap || M + 2048);
     this.allocKV(this.ctxCap || M + 2048, C);
@@ -190,42 +273,49 @@ export class Gemma4 {
       return r;
     } finally { g.runner.flush(); for (const b of s.free) g.free(b); if (ple) g.free(ple); }
   }
-  /** v046: the load-ahead loop (see prefill) */
-  async _prefillAhead(ids, { inputsEmbeds = null, imageSpans = [], check, onLayer, chunk } = {}) {
+  /** v046: the load-ahead loop (see prefill).  v4 (the prefix snapshot): from = the first position read in (the caches hold [0, from):
+   *  restorePrefix); snapAt + snapKey = a chunk ends at snapAt and this part keeps the rows [0, snapAt) (snapshotPrefix with snapCapMB and
+   *  snapMax; snapSelf false = it keeps none: a split's page that takes its mirrors' rows from the worker part); this._pfxLast = what it
+   *  kept.  onLayer(-1, p0, rows) */
+  async _prefillAhead(ids, { inputsEmbeds = null, imageSpans = [], check, onLayer, chunk, from = 0, snapAt = 0, snapKey = null, snapSelf = true, snapCapMB = 0, snapMax = 2 } = {}) {
     const g = this.g, M = ids.length, D = this.D, NL = this.NL, C = Math.min(M, chunk || this.opts?.chunk || 256), NT = NL * this.m.ple_dim;
+    if (!(from >= 0 && from < M)) throw new Error(`a read-in from ${from} of ${M} tokens`);
     this._ensureRope(this.ctxCap || M + 2048);
-    this.allocKV(this.ctxCap || M + 2048, C);
+    if (this.allocKV(this.ctxCap || M + 2048, C) && from) throw new Error(`the KV cache was made again: a read-in cannot start at ${from}`);   // never a turn on rows that are not there
+    if (snapKey) this._pfxLast = null;
+    const cks = []; for (let p = from; p < M;) { let e = Math.min(M, p + C); if (snapKey && snapAt > p && snapAt < e) e = snapAt; cks.push([p, e]); p = e; }   // chunks of C (one ends at snapAt)
     const s = this._keptPrefillBufs(C);   // 3.8: kept on the model (no free + make per prompt)
     const pre = { proj2: s.proj2, out: s.ple, x16: s.x16 };   // v048: no token-rows buffer (plefinIP)
     this._dbg = s;
     const psc = Math.fround(this.m.ple_scale), img = this.m.image_token, pad = this.m.pad, R = g.runner, bs0 = R.batchSeconds;
     R.batchSeconds = (this.opts || {}).prefillBatch || 0.4;   // fewer, larger submits while the prompt is read in (restored below)
-    const rowsOf = (p0) => this.pleRows(ids.slice(p0, p0 + C).map((i) => (i === img ? pad : i)))   // image tokens use the PLE of pad (HF)
+    const rowsOf = (k) => this.pleRows(ids.slice(cks[k][0], cks[k][1]).map((i) => (i === img ? pad : i)))   // image tokens use the PLE of pad (HF)
       .then((t) => { for (let i = 0; i < t.length; i++) t[i] = Math.fround(t[i] * psc); return t; });
-    let next = rowsOf(0), prev = null;
+    let next = rowsOf(0), prev = null, MC = 0;
     // 3.8 test switches (off unless this.opts sets them; the phone bench's fit test): one chunk in flight, and with it the runner's
     // uniform ring restarted per chunk, so each chunk reuses the bind groups of the chunk before it
     const one = (this.opts || {}).prefillInFlight === 1, ringSync = one && !!(this.opts || {}).prefillRingSync;
     try {
-      for (let p0 = 0; p0 < M; p0 += C) {
-        const idc = ids.slice(p0, p0 + C), MC = idc.length;
+      for (let k = 0; k < cks.length; k++) {
+        const [p0, e] = cks[k], idc = ids.slice(p0, e); MC = idc.length;
         const spans = imageSpans.filter((sp) => sp.pos >= p0 && sp.pos < p0 + MC).map((sp) => Object.assign({}, sp, { pos: sp.pos - p0 }));
-        const rows = await next; next = p0 + C < M ? rowsOf(p0 + C) : null;   // the next chunk's rows are read while this chunk runs
+        const rows = await next; next = k + 1 < cks.length ? rowsOf(k + 1) : null;   // the next chunk's rows are read while this chunk runs
         await this._embedTokens(idc, s.x, s.st, inputsEmbeds, spans, s.idb);
         await this._ple(idc, s.x, MC, Object.assign({ rows }, pre));
         dropAB(rows.buffer);   // 3.9 (E4B room): its bytes are on the GPU now
-        if (onLayer) await onLayer(-1, p0);
+        if (onLayer) await onLayer(-1, p0, MC);
         for (let l = this.l0; l < this.l1; l++) {
           await this._layerPrefill(l, MC, p0, s);
           if (check) check(); if (onLayer) await onLayer(l, p0);
         }
+        if (snapKey && e === snapAt) this._pfxLast = snapSelf ? this.snapshotPrefix(snapAt, snapKey, { capMB: snapCapMB, max: snapMax }) : { bytes: 0, why: 'off on this side' };   // v4: this part's rows [0, snapAt)
         g.runner.flush();
         const done = g.device.queue.onSubmittedWorkDone();
         if (one) { await this._chunkWait(done); if (ringSync) R.sync(); continue; }   // 3.8 test switches (above)
         if (prev) await this._chunkWait(prev);   // at most two chunks in flight (the queued batches' uniform buffers stay bounded)
         prev = done;
       }
-      const ML = M - Math.floor((M - 1) / C) * C;                                   // rows in the last chunk
+      const ML = MC;                                                                // rows in the last chunk
       rowstats(g, { x: { buf: s.x, off: (ML - 1) * D * 4, ld: D }, rows: 1, cols: D, mode: 'rms', eps: this.eps, st: { buf: s.st } });
       return await this._head({ buf: s.x, rowB: (ML - 1) * D }, { buf: s.st, off: 1 });
     } finally {
@@ -573,7 +663,7 @@ export class Gemma4 {
     return {
       x: B(D * 4, 'd.x'), st: B(64, 'd.st'), proj: B(NT * 4, 'd.proj'), ple: B(NT * 4, 'd.ple'),
       qkvp: B((this.NH * maxHd + 2 * this.NKV * maxHd) * 4, 'd.qkv'), q: B(this.NH * maxHd * 4, 'd.q'), ao: B(this.NH * maxHd * 4, 'd.ao'),
-      apart: B(Math.ceil(this.ctxCap / 64) * this.NH * (2 + maxHd) * 4, 'd.apart'), tpart: B(Math.ceil(maxInter / 2048) * D * 4, 'd.tpart'),
+      apart: B(Math.ceil(this.ctxCap / adMinCK()) * this.NH * (2 + maxHd) * 4, 'd.apart'), tpart: B(Math.ceil(maxInter / 2048) * D * 4, 'd.tpart'),   // v4: apart = the chunks of this device's decode attention (64 keys as shipped)
       mbuf: B(maxInter * 4, 'd.m'), gate: B(256 * 4, 'd.gate'),   // 3.9 (E4B room): - two unused window buffers (0.5 MB each)
       idb: B(16, 'd.id'), pler: B(NT * 4, 'd.pleRow'),   // v044: the token id + its PLE row, written per token (never freed per token)
     };

@@ -2,9 +2,14 @@
 // pinned made apps, letter icons, the Browser's address logic and bookmarks, the agentic-app widgets. ui/shell.js draws them.
 // Josh (Oct-25): the dock = Juli, Create, Music, Settings; the home screen scrolls up and down (no pages); red number badges; made apps
 // may land on the home screen; a Browser icon; a grayed Connection icon.
+// v4 (Josh, Nov 2: Settings moves to the home screen, and a Messages app takes its place in the dock, grayed out for now): the dock = Juli, Create, Music, Messages (grayed, "Coming soon"); Settings sits on the
+// home screen after Connection, and a saved order gets it next to Connection (orderHome), so it never goes missing.
 
-export const DOCK = ['assistant', 'create', 'music', 'settings'];
-export const HOME_ORDER = ['library', 'apps', 'browser', 'games', 'skills', 'connection'];
+export const DOCK = ['assistant', 'create', 'music', 'messages'];
+export const HOME_ORDER = ['library', 'apps', 'browser', 'games', 'skills', 'connection', 'settings'];
+/** the screens that only say "Coming soon" when tapped (until something switches them on) */
+export const SOON = 'Coming soon';
+export const GRAYED = ['connection', 'messages'];
 
 /** the home grid for a screen `width` CSS px wide: 4 columns on a phone (more on wider screens), the icons spread to the margins; a
  *  phone too narrow for the full icon gets smaller icons, never fewer columns */
@@ -45,6 +50,22 @@ export function orderIds(saved, available) {
   const have = new Set(available), out = [];
   if (Array.isArray(saved)) for (const id of saved) if (have.has(id) && !out.includes(id)) out.push(id);
   for (const id of available) if (!out.includes(id)) out.push(id);
+  return out;
+}
+/** the home screen's order: the person's saved one (orderIds), with an icon that is new to it (Settings, moved out of the dock in v4)
+ *  placed right after the icon it follows in `defaults` (Settings after Connection), wherever the person moved that one; an icon with
+ *  no place in `defaults` (a registered screen, a pinned app) goes last, as before */
+export function orderHome(saved, available, defaults = HOME_ORDER) {
+  if (!Array.isArray(saved)) return orderIds(saved, available);
+  const have = new Set(available), out = [];
+  for (const id of saved) if (have.has(id) && !out.includes(id)) out.push(id);
+  for (const id of available) {
+    if (out.includes(id)) continue;
+    const d = defaults.indexOf(id);
+    let at = -1;
+    for (let k = d - 1; d > 0 && k >= 0 && at < 0; k--) { const i = out.indexOf(defaults[k]); if (i >= 0) at = i + 1; }
+    if (at < 0) out.push(id); else out.splice(at, 0, id);
+  }
   return out;
 }
 

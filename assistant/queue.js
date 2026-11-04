@@ -19,9 +19,12 @@
 // woken to look at its result and answer), FIFO among chats; (3) everything else in family order. A running job is never preempted
 // or paused: priority only decides what starts next, so a chat can slot between a music video's not-yet-started children (whose
 // relative order never changes) but never splits a running one. runOrder() / positionOf() give the Queue view the same order.
+// v4: a runner may also return {wait: 'external'}: the job waits ('waiting') for something outside the queue (a job another device
+// makes), takes no turn and holds no model meanwhile; q.note(id, p) shows its progress, q.wake(id, statePatch) puts it back in line
+// with its saved state updated, and its runner then finishes it. A page kill never counts against such a job (it is not running).
 import { openDB, uid } from './idb.js';
 
-export const RENDER_KINDS = new Set(['picture', 'edit', 'clip', 'animate', 'between', 'foley', 'song', 'musicvideo', 'assemble', 'say', 'talk', 'lipsync']);   // + p0pc0rn Cast
+export const RENDER_KINDS = new Set(['picture', 'edit', 'clip', 'animate', 'between', 'restyle', 'foley', 'song', 'musicvideo', 'assemble', 'say', 'talk', 'lipsync']);   // + p0pc0rn Cast; v4: + restyle (Create > Video > Restyle a clip)
 export const SEEDED_KINDS = new Set(['picture', 'edit', 'clip', 'animate', 'between', 'foley', 'song', 'say']);
 export const PRIORITY_KINDS = new Set(['chat']);
 const TERMINAL = new Set(['done', 'failed', 'cancelled']);
@@ -221,6 +224,19 @@ export class JobQueue {
     }
     this.emit('removed', id); return true;
   }
+  /** v4: an 'external' wait is over: the job goes back in line with `patch` merged into its saved state (its runner finishes it) */
+  async wake(id, patch = null) {
+    const j = this.jobs.get(id); if (!j || j.status !== 'waiting' || j.waitFor !== 'external') return false;
+    if (patch) j.state = Object.assign({}, j.state || {}, patch);
+    j.status = 'queued'; await this.save(j);
+    if (!this.pumping) queueMicrotask(() => this.pump());
+    return true;
+  }
+  /** v4: the progress of a job that waits on something outside the queue (shown as a running job's would be) */
+  note(id, p) {
+    const j = this.jobs.get(id); if (!j || isTerminal(j) || !p) return;
+    j.progress = Object.assign({}, p, { at: Date.now() }); this.emit('progress', j, j.progress);
+  }
   pause() { this.paused = true; this.emit('paused'); }
   resume() { this.paused = false; this.emit('resumed-queue'); this.pump(); }
 
@@ -270,7 +286,7 @@ export class JobQueue {
     this.active = null;
     if (err) await this.fail(j, err);
     else if (out && out.wait) {
-      Object.assign(j, { status: 'waiting', waitFor: out.wait === 'any' ? 'any' : 'all' });
+      Object.assign(j, { status: 'waiting', waitFor: out.wait === 'any' ? 'any' : out.wait === 'external' ? 'external' : 'all' });
       await this.save(j);
       await this.maybeWake(j);                      // all its children may already be finished
     } else {
@@ -330,6 +346,7 @@ export class JobQueue {
     if (p && p.status === 'waiting') await this.maybeWake(p);
   }
   async maybeWake(p) {
+    if (p.waitFor === 'external') return;   // v4: only wake() ends this wait
     const kids = this.children(p.id);
     const fin = kids.filter(isTerminal).length;
     if (kids.length === 0 || (p.waitFor === 'any' ? fin > (p.wokeAt || 0) : fin === kids.length)) {

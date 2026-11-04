@@ -3,6 +3,12 @@
 .env.*
 *token*
 !*tokenizer*
+# Token Watch (v4): its own files, by exact path (they hold no token of any kind)
+!makeapp/tokenwatch.js
+!makeapp/skeletons/token-watch.p0skel.json
+!skills/watch-tokens.md
+!icons/apps/token-watch-180.png
+!icons/apps/token-watch-120.png
 pack/
 .cache/
 node_modules/

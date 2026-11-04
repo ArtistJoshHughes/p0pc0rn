@@ -69,7 +69,7 @@ export class MusicEngine {
     try {
       if (!navigator.gpu) c.reason = 'needs iOS 26 Safari (or another browser) with WebGPU';
       else {
-        const ad = await navigator.gpu.requestAdapter(this.opts.powerPreference ? { powerPreference: this.opts.powerPreference } : undefined);
+        const ad = await navigator.gpu.requestAdapter({ powerPreference: this.opts.powerPreference || 'high-performance' });   // v4: the adapter its device asks for (a laptop's card where the browser honours it)
         if (!ad) c.reason = 'no WebGPU adapter';
         else {
           const i = ad.info || {}; c.gpu = [i.vendor, i.architecture, i.description].filter(Boolean).join(' '); c.subgroups = ad.features.has('subgroups');

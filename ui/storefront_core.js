@@ -12,14 +12,18 @@ export const withJuli = (m) => !!m && Array.isArray((m.permissions || {}).juli) 
 export const isGame = (m) => !!m && m.kind === 'game';
 export const WORKS = 'Works for you';
 
+/** v4 Token Watch: the chains it offers, by name (makeapp/tokenwatch.js CHAINS has the rest) */
+const TOKEN_CHAIN_NAMES = { avalanche: 'Avalanche', solana: 'Solana', base: 'Base', ethereum: 'Ethereum', bsc: 'BNB Chain', arbitrum: 'Arbitrum' };
 /** the online sources in plain words (makeapp/sources.js has the hosts) */
 export const PLAIN_SOURCES = {
   'weather.nws': { short: 'the weather', what: 'the weather forecast', who: 'the US National Weather Service' },
   'alerts.nws': { short: 'weather alerts', what: 'weather alerts', who: 'the US National Weather Service' },
-  'geocode.openmeteo': { short: 'places', what: 'the places you type', who: 'Open-Meteo place search' },
+  'geocode.local': { short: 'places', what: 'the places you type', who: 'a US list of towns and ZIP codes on this phone', local: true },   // v4: nothing typed leaves the phone
+  'geocode.openmeteo': { short: 'places', what: 'the places you type', who: 'a US list of towns and ZIP codes on this phone', local: true },   // the same source, for apps made before
   'fires.wfigs': { short: 'wildfires', what: 'wildfires near your place', who: 'the US wildfire service (NIFC)' },
   'prices.coingecko': { short: 'prices', what: 'the prices you pick', who: 'CoinGecko' },
   'chain.snowtrace': { short: 'public Avalanche addresses on Snowtrace', what: 'the public activity of the addresses you add', who: 'Snowtrace, the public Avalanche explorer' },   // 3.9 Wallet Watch
+  'tokens.dexscreener': { short: 'new tokens on DEX Screener', what: 'the newest tokens on the chains you pick', who: 'DEX Screener, with GeckoTerminal, GoPlus and RugCheck' },   // v4 Token Watch
 };
 /** 3.9 Wallet Watch: a source whose data carries its maker's credit (their terms: "Powered by Routescan.io APIs"), with direct links to
  *  its official site and its official X account. p0pc0rn shows them (the permission sheet, the app's settings page, under the running
@@ -29,7 +33,24 @@ export const SOURCE_CREDITS = {
   'chain.snowtrace': { line: 'Powered by Routescan.io APIs', links: [
     { text: 'routescan.io', href: 'https://routescan.io', label: 'Routescan’s official site, routescan.io' },
     { text: '@routescan_io on X', href: 'https://x.com/routescan_io', label: 'Routescan’s official account on X, @routescan_io' }] },
+  // v4 Token Watch: its four sources, credited in one line with each one's link inside it (inline: the link texts are in the line)
+  'tokens.dexscreener': { line: 'Data: DEX Screener · New pools: GeckoTerminal by CoinGecko · Solana checks: RugCheck · Powered by GoPlus Security', inline: true, links: [   // 4.0: GoPlus asks for "Powered by GoPlus Security" with a link
+    { text: 'DEX Screener', href: 'https://dexscreener.com', label: 'DEX Screener’s site, dexscreener.com' },
+    { text: 'GeckoTerminal', href: 'https://www.geckoterminal.com', label: 'GeckoTerminal by CoinGecko, geckoterminal.com' },
+    { text: 'RugCheck', href: 'https://rugcheck.xyz', label: 'RugCheck’s site, rugcheck.xyz' },
+    { text: 'GoPlus Security', href: 'https://gopluslabs.io', label: 'GoPlus Security’s site, gopluslabs.io' }] },
 };
+/** v4: a credit as the parts it is drawn from -> [{text} | {text, href, label}]: "line: link · link" (Wallet Watch's), or, for an inline
+ *  credit, its line with each link where its text first appears after the one before (Token Watch's) */
+export function creditParts(c) {
+  if (!c) return [];
+  const links = (c.links || []).filter((l) => l && l.text && /^https:\/\//.test(String(l.href)));
+  if (!c.inline) { const out = [{ text: c.line + ': ' }]; links.forEach((l, i) => { if (i) out.push({ text: ' · ' }); out.push(l); }); return out; }
+  const out = []; let rest = String(c.line || '');
+  for (const l of links) { const i = rest.indexOf(l.text); if (i < 0) continue; if (i) out.push({ text: rest.slice(0, i) }); out.push(l); rest = rest.slice(i + l.text.length); }
+  if (rest) out.push({ text: rest });
+  return out;
+}
 /** the credits a design's sources ask for -> [{line, links}] (each once) */
 export const creditsOf = (m) => [...new Set(((m && m.permissions) || {}).online || [])].map((s) => SOURCE_CREDITS[s]).filter(Boolean);
 export const sourceShort = (id) => (PLAIN_SOURCES[id] || {}).short || 'a source';
@@ -54,6 +75,7 @@ export function firstSentence(d) {
 export function cadence(m) {
   const T = (m && m.triggers) || [], open = T.some((t) => t && t.type === 'on-open'), iv = T.find((t) => t && t.type === 'interval');
   if (!open && !iv) return '';
+  if (iv && (((m && m.permissions) || {}).online || []).includes('tokens.dexscreener')) return 'when you ask it to watch closely: every 15 minutes, for 2 hours at most, while p0pc0rn is open';   // v4 Token Watch: it looks only when asked
   const every = iv ? (iv.minMinutes >= 600 ? 'about twice a day' : iv.minMinutes >= 180 ? 'a few times a day' : iv.minMinutes >= 60 ? 'every few hours' : `at most every ${iv.minMinutes} minutes`) : '';   // 3.9 Wallet Watch: + minutes
   return (open && every ? `when p0pc0rn opens and ${every}` : open ? 'when p0pc0rn opens' : every) + ' while p0pc0rn is open';
 }
@@ -64,7 +86,7 @@ export function plainOf(m) {
   if (!m) return '';
   if (typeof m.plain === 'string' && m.plain.trim()) return m.plain.trim();
   const first = firstSentence(m.description) || String(m.name || 'An app');
-  const P = m.permissions || {}, on = (P.online || []).map((s) => (PLAIN_SOURCES[s] || {}).short).filter(Boolean);
+  const P = m.permissions || {}, on = (P.online || []).filter((s) => !(PLAIN_SOURCES[s] || {}).local).map((s) => (PLAIN_SOURCES[s] || {}).short).filter(Boolean);   // v4: the place search is not online
   const when = worksAlone(m) ? ` It works on its own ${cadence(m)}.` : ' It works when you open it.';
   const out = on.length ? ` It only looks up ${and([...new Set(on)])}; everything else stays on this phone.` : ' It keeps everything on this phone and never goes online.';
   return (first + when + out).slice(0, 400);
@@ -106,14 +128,24 @@ export function permRows(m, hosts = {}) {
   if (nws.length) rows.push({ icon: 'cloud', text: nws.length === 2 ? 'Check the weather and weather alerts' : nws[0] === 'alerts.nws' ? 'Check weather alerts' : 'Check the weather', sub: `For the places you add, from the US National Weather Service (${host(nws[0]) || 'api.weather.gov'}).` });
   for (const s of online) {
     if (s === 'weather.nws' || s === 'alerts.nws') continue;
+    if (s === 'chain.snowtrace' && (P.tap || []).includes(s)) {   // v4 Token Watch: an Avalanche token's contract, at a tap, once
+      rows.push({ icon: 'chart', text: 'Check an Avalanche token on Snowtrace when you tap', sub: `Only when you tap “Check on Snowtrace” on an Avalanche token, and once per token (the answer is kept): its public contract address goes to Snowtrace, the public Avalanche explorer${host(s) ? ' (' + host(s) + ')' : ''}, for its holder count, whether its source is verified and its newest 100 transactions. Nothing about you: no key, no account, no wallet.`, credit: SOURCE_CREDITS[s] });
+      continue;
+    }
     if (s === 'chain.snowtrace') {   // 3.9 Wallet Watch: what goes out, plainly, and Routescan's credit with its links
       rows.push({ icon: 'chart', text: 'Look up the addresses you add on Snowtrace', sub: `The addresses you add are sent to Snowtrace, the public Avalanche explorer${host(s) ? ' (' + host(s) + ')' : ''}, to read their public activity: transactions, transfers and balances; once a day, so are a few addresses they deal with most, for their public names. Nothing else: no key, no account, no name.`, credit: SOURCE_CREDITS[s] });
       continue;
     }
+    if (s === 'tokens.dexscreener') {   // v4 Token Watch: what goes out, plainly, and its four sources' credit with their links
+      rows.push({ icon: 'chart', text: 'Look up new tokens on the chains you pick', sub: 'Only when you open it, or while it watches closely. The chains you pick and public token addresses go to DEX Screener (api.dexscreener.com) for the numbers and to GeckoTerminal (api.geckoterminal.com) for new pools; the top 5 tokens’ addresses go to GoPlus (api.gopluslabs.io) and RugCheck (api.rugcheck.xyz) for safety checks. Nothing about you: no key, no account, no wallet.', credit: SOURCE_CREDITS[s] });
+      continue;
+    }
     const p = PLAIN_SOURCES[s]; if (!p) continue;
-    rows.push({ icon: s === 'geocode.openmeteo' ? 'pin' : s === 'fires.wfigs' ? 'flame' : 'chart', text: s === 'geocode.openmeteo' ? 'Find the places you type' : `Look up ${p.what}`, sub: `From ${p.who}${host(s) ? ' (' + host(s) + ')' : ''}. Only what it needs is sent.` });
+    if (p.local) { rows.push({ icon: 'pin', text: 'Find the places you type', sub: 'On this phone, in a US Census Bureau list of towns and ZIP codes: nothing you type is sent anywhere. US places only for now.' }); continue; }   // v4
+    rows.push({ icon: s === 'fires.wfigs' ? 'flame' : 'chart', text: `Look up ${p.what}`, sub: `From ${p.who}${host(s) ? ' (' + host(s) + ')' : ''}. Only what it needs is sent.` });
   }
   if (withJuli(m)) rows.push({ icon: 'juli', text: 'Ask Juli to read and sum up for it', sub: 'Juli runs on this phone: nothing goes online for this.' });
+  if ((P.juli || []).includes('big')) rows.push({ icon: 'juli', text: 'Use the Bigger brain, if you turn it on in the app', sub: 'Off until you turn it on. Name references: a token’s public name is looked up on Wikipedia and Fandom through Juli’s lookups, and the Bigger brain compares them on this phone. If it is not downloaded, the app offers the download (free); you accept its licence yourself.' });   // v4 Token Watch
   if ((P.juli || []).includes('choose')) rows.push({ icon: 'game', text: 'Juli picks her moves in this app (on this phone only)', sub: 'While you have it open, Juli chooses from the moves the app offers. Her own small model loads next to the app and leaves when you close it.' });
   if (P['chat.post']) rows.push({ icon: 'chat', text: 'Post short notes in Juli’s chat', sub: 'Labelled with its name, at most 10 an hour.' });
   if (P.location === 'place') rows.push({ icon: 'pin', text: 'Use a place you type', sub: 'Never your phone’s location.' });
@@ -139,6 +171,7 @@ export function previewLine(m, slots, name) {
     case 'tiles-log': line = `a log with ${plural(n(S.tiles), 'tile')}` + (n(S.tiles) ? `: ${and((S.tiles || []).slice(0, 4).map((x) => x && x.label).filter(Boolean))}` : ''); break;
     case 'trip-watch': line = 'a weather watch for your trips: it flags' + ` wind over ${S.wind_mph || 25} mph, rain over ${S.rain_pct || 50}%, heat over ${S.hot_f || 90}°F and cold under ${S.cold_f || 32}°F`; break;
     case 'wallet-watch': line = `a watch for public Avalanche addresses${n(S.addresses) ? ' (' + and((S.addresses || []).slice(0, 3).map((x) => x && x.label).filter(Boolean)) + ')' : ''}, every ${S.interval_min || 30} minutes while p0pc0rn is open and your phone is idle`; break;   // 3.9 Wallet Watch
+    case 'token-watch': { const L = (Array.isArray(S.chains) ? S.chains : []).map((c) => TOKEN_CHAIN_NAMES[c]).filter(Boolean); line = `a watch for the new tokens that rose most since launch${L.length ? ' on ' + and(L.slice(0, 3)) : ''}, when you open it or ask it to watch closely`; break; }   // v4 Token Watch
     case 'weather-alerts': line = 'weather alerts for a place you pick'; break;
     case 'wildfire-watch': line = `a wildfire watch within ${S.radius_mi || 50} miles of a place you pick`; break;
     default: line = `a ${what}`;
@@ -165,11 +198,12 @@ export const GLYPHS = {
   'wildfire-watch': ['M12 3.8c.9 2.9 4.6 4.6 4.6 8.8a4.6 4.6 0 0 1-9.2 0c0-2 1-3.3 2-4.3.2 1.4.9 2.3 1.8 2.6-.5-2.3-.1-4.6.8-7.1Z', 'M12 19.2a2 2 0 0 1-2-2c0-1.2.9-1.9 2-3 1.1 1.1 2 1.8 2 3a2 2 0 0 1-2 2Z'],
   'trip-watch': ['M3.5 18.5 9 10.5l3.6 5.1 2.4-3.3 5.5 6.2Z', 'M16.5 4.6a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8Z'],
   'wallet-watch': ['M3.5 12.5h17', 'M7 12.5c0-4 1.3-6.5 5-6.5s5 2.5 5 6.5', 'M8.5 15.5h7l-2 4h-3Z', 'M13.4 16.6h.2'],   // 3.9 Wallet Watch: a hat and a collar (its picture: icons/apps/)
+  'token-watch': ['M14.2 6a5.4 5.4 0 1 1 0 10.8a5.4 5.4 0 1 1 0-10.8Z', 'M14.2 7.5a3.9 3.9 0 1 1 0 7.8a3.9 3.9 0 1 1 0-7.8Z', 'M3.5 11.3L7.1 10.4', 'M2.8 14.3L7.9 13', 'M5.7 16.4L8.4 15.7'],   // v4 Token Watch: a coin rising, as its picture (icons/apps/)
   game: ['M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v10.5h-17V7A1.5 1.5 0 0 1 5 5.5Z', 'M3 17.5h18', 'M8 9.5a1.1 1.1 0 1 1 0 .1M12 9.5a1.1 1.1 0 1 1 0 .1M16 9.5a1.1 1.1 0 1 1 0 .1M8 13.5a1.1 1.1 0 1 1 0 .1M12 13.5a1.1 1.1 0 1 1 0 .1M16 13.5a1.1 1.1 0 1 1 0 .1'],
 };
 /** the glyph's colour on the tile (the home screen's icon family: warm glyphs on a plum tile) */
 export const TINTS = { 'list-tasks': '#FFD27A', 'flashcards-learn': '#FFB86B', 'dashboard-live': '#FF8F6B', 'daily-counter': '#7FD8FF', 'tiles-log': '#FFE08A',
-  'weather-alerts': '#FFC24D', 'wildfire-watch': '#FF9255', 'trip-watch': '#9EE6B8', 'wallet-watch': '#F2B33D', game: '#FFD34D' };
+  'weather-alerts': '#FFC24D', 'wildfire-watch': '#FF9255', 'trip-watch': '#9EE6B8', 'wallet-watch': '#F2B33D', 'token-watch': '#F0C050', game: '#FFD34D' };
 export function iconOf(m) {
   const id = m && m.id, key = id && GLYPHS[id] && id !== 'game' ? id : isGame(m) ? 'game' : '';
   if (key) return { glyph: GLYPHS[key], tint: TINTS[key] || '#FFD27A' };
@@ -178,7 +212,7 @@ export function iconOf(m) {
 
 /** 3.9 Wallet Watch: a design that comes with p0pc0rn and ships its own icon (icons/apps/<id>-180.png / -120.png, a picture made for it):
  *  the picture for its card, its made apps and their home-screen tile (an icon Juli makes for one app still wins) -> {src, srcset} | null */
-export const ART_DESIGNS = new Set(['wallet-watch']);
+export const ART_DESIGNS = new Set(['wallet-watch', 'token-watch']);   // v4: + Token Watch's (Josh's pick, Nov 1)
 export const designArt = (id) => (ART_DESIGNS.has(id) ? { src: `icons/apps/${id}-180.png`, srcset: `icons/apps/${id}-120.png 120w, icons/apps/${id}-180.png 180w` } : null);
 /** a game's cover picture: one file per game (icons/games/<the id in its design>-cover.png); without it the screen draws one */
 export const coverPath = (id) => `icons/games/${String(id || '').replace(/[^a-z0-9-]/g, '')}-cover.png`;
